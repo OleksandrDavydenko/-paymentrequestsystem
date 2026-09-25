@@ -1,0 +1,6 @@
+.env
+.venv/
+flask_session/
+__pycache__/
+*.pyc
+*.PublishSettings

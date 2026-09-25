@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block header_right %}
+  <span>{{ name }} · <a href="{{ url_for('identity.logout') }}">Вийти</a></span>
+{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>Вітаємо, {{ name }}!</h2>
+  <p>Ви увійшли через обліковий запис Microsoft вашої організації.</p>
+  <dl>
+    <dt>Email</dt><dd>{{ email }}</dd>
+    <dt>ID користувача (oid)</dt><dd>{{ oid }}</dd>
+  </dl>
+  <p><em>Тут з'являться заявки на оплату.</em></p>
+</div>
+{% endblock %}

@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+
+{% block title %}Помилка входу{% endblock %}
+
+{% block content %}
+<div class="card">
+  <h2>Не вдалося увійти</h2>
+  <p>Доступ дозволено лише користувачам облікових записів Microsoft вашої організації.</p>
+  <dl>
+    <dt>{{ error }}</dt>
+    <dd>{{ error_description }}</dd>
+  </dl>
+  <p><a href="/">Спробувати ще раз</a></p>
+</div>
+{% endblock %}
