@@ -10,6 +10,8 @@ from copy import deepcopy
 from datetime import date, datetime
 from decimal import Decimal
 
+import workflow
+
 # ---------------------------------------------------------------- довідники
 
 ORGANIZATIONS = {
@@ -44,14 +46,7 @@ PAYMENT_FORMS = {
     "bank": "Безготівка",
 }
 
-# код -> (назва, css-клас бейджа)
-STATUSES = {
-    "draft": ("Чернетка", "grey"),
-    "pending": ("На погодженні", "amber"),
-    "approved": ("Погоджено", "green"),
-    "rejected": ("Відхилено", "red"),
-    "paid": ("Оплачено", "blue"),
-}
+STATUSES = workflow.STATUSES
 
 # Рахунки контрагентів (у майбутньому — підбір з 1С)
 INVOICES = [
@@ -66,14 +61,31 @@ INVOICES = [
     {"id": 9, "counterparty_id": 6, "number": "ОС-3321", "date": "2026-09-12", "amount": "3150.00", "currency": "UAH", "deal": "Видаткова накладна №3321"},
 ]
 
-# ---------------------------------------------------------------- заявки
+
+# ---------------------------------------------------------------- користувачі (мок)
 
 _ME = ("od@ftpua.com", "Oleksandr Davydenko")
 _OTHER = ("i.petrenko@ftpua.com", "Ірина Петренко")
+_HEAD = ("m.shevchenko@ftpua.com", "Михайло Шевченко")
+_ACC = ("o.bondar@ftpua.com", "Олена Бондар")
+_CFO = ("a.melnyk@ftpua.com", "Андрій Мельник")
+
+# ---------------------------------------------------------------- заявки
+
+# Типові кроки процесу для мокової історії: (дата-час, користувач, роль, дія, коментар)
+def _route(day, *steps):
+    return [(f"2026-09-{day + i:02d}T{9 + i:02d}:15:00", *step) for i, step in enumerate(steps)]
 
 
-def _req(id_, created, author, pay_date, cp, org, exp, form, cur, amount, status, note="", lines=()):
-    return {
+_SUBMIT = (_ME, "initiator", "submit", "")
+_HEAD_OK = (_HEAD, "head", "approve", "")
+_ACC_OK = (_ACC, "accountant", "approve", "Документи в порядку")
+_CFO_OK = (_CFO, "cfo", "approve", "")
+
+
+def _req(id_, author, pay_date, cp, org, exp, form, cur, amount, steps, note="", lines=()):
+    created = steps[0][0] if steps else "2026-09-24T10:00:00"
+    req = {
         "id": id_,
         "number": f"{id_:09d}",
         "created_at": datetime.fromisoformat(created),
@@ -86,36 +98,65 @@ def _req(id_, created, author, pay_date, cp, org, exp, form, cur, amount, status
         "payment_form": form,
         "currency": cur,
         "amount": Decimal(amount),
-        "status": status,
+        "status": "draft",
         "note": note,
         "lines": [
             {"invoice": n, "amount": Decimal(a), "currency": c, "deal": d}
             for n, a, c, d in lines
         ],
+        "history": [],
+        "attachments": [],
     }
+    req["history"].append({
+        "at": req["created_at"], "user_name": author[1], "user_email": author[0], "role": "initiator",
+        "action": "create", "from_status": None, "to_status": "draft", "comment": "",
+    })
+    # Прогнати кроки по таблиці переходів, щоб історія й статус були узгоджені
+    for at, user, role, action, comment in steps:
+        if user is _ME:
+            user = author
+        old = req["status"]
+        new = workflow.WORKFLOW[old][1][action]
+        req["history"].append({
+            "at": datetime.fromisoformat(at), "user_name": user[1], "user_email": user[0], "role": role,
+            "action": action, "from_status": old, "to_status": new, "comment": comment,
+        })
+        req["status"] = new
+    return req
 
 
 _REQUESTS = {
     r["id"]: r
     for r in [
-        _req(1, "2026-09-02T09:14:00", _ME, "2026-09-05", 1, 1, 1, "bank", "UAH", "12450.00", "paid",
+        _req(1, _ME, "2026-09-05", 1, 1, 1, "bank", "UAH", "12450.00",
+             _route(1, _SUBMIT, _HEAD_OK, _ACC_OK, _CFO_OK, (_ACC, "accountant", "pay", "Платіжне доручення №1245")),
              "Доставка документів у серпні",
              [("НП-104512", "12450.00", "UAH", "Договір №15/2025 від 10.01.2025")]),
-        _req(2, "2026-09-03T11:40:00", _OTHER, "2026-09-06", 2, 1, 2, "bank", "UAH", "4820.00", "approved"),
-        _req(3, "2026-09-10T15:02:00", _ME, "2026-09-12", 3, 2, 4, "bank", "UAH", "23999.99", "approved",
-             "Меблі для нового офісу",
-             [("ЕП-55123", "23999.99", "UAH", "Рахунок-оферта")]),
-        _req(4, "2026-09-15T10:21:00", _ME, "2026-09-26", 4, 1, 1, "bank", "USD", "2230.00", "pending",
-             "",
+        _req(2, _OTHER, "2026-09-30", 2, 1, 2, "bank", "UAH", "4820.00",
+             _route(22, _SUBMIT)),
+        _req(3, _ME, "2026-09-26", 3, 2, 4, "bank", "UAH", "23999.99",
+             _route(10, _SUBMIT, _HEAD_OK, _ACC_OK, (_CFO, "cfo", "approve", "Оплатити до кінця місяця"))),
+        _req(4, _ME, "2026-09-26", 4, 1, 1, "bank", "USD", "2230.00",
+             _route(15, _SUBMIT, _HEAD_OK), "",
              [("UC-0915", "1250.00", "USD", "Договір інспекції №UC-12"),
               ("UC-0920", "980.00", "USD", "Договір інспекції №UC-12")]),
-        _req(5, "2026-09-18T13:55:00", _OTHER, "2026-09-25", 5, 2, 1, "bank", "EUR", "5150.00", "pending"),
-        _req(6, "2026-09-20T08:30:00", _ME, "2026-09-22", 6, 3, 4, "cash", "UAH", "3150.00", "rejected",
-             "Відхилено: немає накладної"),
-        _req(7, "2026-09-23T16:12:00", _ME, "2026-09-30", 5, 1, 5, "bank", "EUR", "3400.00", "draft",
-             "",
-             [("MSK-7781203", "3400.00", "EUR", "Booking 245887123")]),
-        _req(8, "2026-09-24T12:05:00", _OTHER, "2026-09-29", 3, 3, 6, "cash", "UAH", "1800.00", "draft"),
+        _req(5, _OTHER, "2026-09-29", 5, 2, 1, "bank", "EUR", "5150.00",
+             _route(18, _SUBMIT, _HEAD_OK, _ACC_OK),
+             "", [("MSK-7781455", "5150.00", "EUR", "Booking 245889010")]),
+        _req(6, _ME, "2026-09-22", 6, 3, 4, "cash", "UAH", "3150.00",
+             _route(20, _SUBMIT, (_HEAD, "head", "reject", "Закупівля не узгоджена, немає видаткової накладної"))),
+        _req(7, _ME, "2026-09-30", 5, 1, 5, "bank", "EUR", "3400.00", [],
+             "", [("MSK-7781203", "3400.00", "EUR", "Booking 245887123")]),
+        _req(8, _OTHER, "2026-09-29", 3, 3, 6, "cash", "UAH", "1800.00", []),
+        _req(9, _ME, "2026-10-02", 1, 1, 1, "bank", "UAH", "8300.50",
+             _route(16, _SUBMIT, _HEAD_OK,
+                    (_ACC, "accountant", "rework", "Додайте, будь ласка, договір з контрагентом та рахунок у PDF")),
+             "Доставка вантажів, вересень",
+             [("НП-104788", "8300.50", "UAH", "Договір №15/2025 від 10.01.2025")]),
+        _req(10, _OTHER, "2026-10-01", 6, 2, 4, "bank", "UAH", "2640.00",
+             _route(21, _SUBMIT, _HEAD_OK), "Папір, картриджі"),
+        _req(11, _OTHER, "2026-10-05", 4, 1, 1, "bank", "USD", "980.00",
+             _route(23, _SUBMIT)),
     ]
 }
 
@@ -127,6 +168,12 @@ def list_requests(author_email, status=None):
         and (not status or r["status"] == status)
     ]
     return sorted(rows, key=lambda r: r["created_at"], reverse=True)
+
+
+def list_for_stage(statuses):
+    """Заявки, що чекають на дію на вказаних етапах (черга погоджувача)."""
+    rows = [r for r in _REQUESTS.values() if r["status"] in statuses]
+    return sorted(rows, key=lambda r: r["history"][-1]["at"])
 
 
 def get_request(request_id):
@@ -146,3 +193,12 @@ def save_request(data):
         data["id"] = int(data["number"])
     _REQUESTS[data["id"]] = data
     return data["id"]
+
+
+def find_attachment(file_id):
+    """Повертає (заявка, метадані файлу) або (None, None)."""
+    for r in _REQUESTS.values():
+        for a in r.get("attachments", []):
+            if a["id"] == file_id:
+                return deepcopy(r), dict(a)
+    return None, None

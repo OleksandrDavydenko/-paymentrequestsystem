@@ -16,9 +16,35 @@
 {%- endmacro %}
 
 {% block content %}
+{% set st = STATUSES[req.status] %}
+{% set last = req.history[-1] if req.history else none %}
+
+<div class="card">
+  <div class="title-row">
+    <h1>Заявка на оплату витрат № {{ req.number }} від {{ req.created_at | dt }}</h1>
+    <span class="badge {{ st[1] }}">{{ st[0] }}</span>
+  </div>
+
+  {% if req.id %}
+  <ol class="route">
+    <li class="done"><span>Ініціатор</span></li>
+    {% for name, state in stages %}
+    <li class="{{ state }}"><span>{{ name }}</span></li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+
+  {% if req.status in ('rework', 'rejected') and last and last.action in ('rework', 'reject') %}
+  <div class="callout {{ 'orange' if req.status == 'rework' else 'red' }}">
+    <strong>{{ ACTIONS[last.action][1] }}</strong> — {{ last.user_name }} ({{ ROLES[last.role] }}), {{ last.at | dt }}
+    <div class="callout-text">{{ last.comment }}</div>
+  </div>
+  {% endif %}
+</div>
+
 <form method="post" class="card" id="request-form" novalidate>
-  <h1>Заявка на оплату витрат № {{ req.number }} від {{ req.created_at | dt }}</h1>
   {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
+  <fieldset {{ 'disabled' if not editable }}>
 
   <div class="form-grid">
     <div class="field">
@@ -82,22 +108,15 @@
              class="{{ 'invalid' if errors.amount }}" placeholder="0,00">
       {{ err('amount') }}
     </div>
-
-    <div class="field">
-      <label for="status">Статус</label>
-      <select id="status" name="status">
-        {% for code, (label, _) in STATUSES.items() %}
-        <option value="{{ code }}" {{ 'selected' if code == req.status }}>{{ label }}</option>
-        {% endfor %}
-      </select>
-    </div>
   </div>
 
   <div class="section">
     <div class="section-head">
       <h2>Рахунки</h2>
+      {% if editable %}
       <button type="button" class="btn btn-sm" id="add-line">+ Додати рядок</button>
       <button type="button" class="btn btn-sm" id="pick-invoices">Підбір рахунків</button>
+      {% endif %}
     </div>
     <div class="table-wrap">
     <table class="lines">
@@ -116,7 +135,7 @@
             </select>
           </td>
           <td><input type="text" name="lines-{{ loop.index0 }}-deal" value="{{ line.deal }}"></td>
-          <td><button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button></td>
+          <td>{% if editable %}<button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button>{% endif %}</td>
         </tr>
         {% endfor %}
         <tr id="no-lines" {{ 'hidden' if req.lines }}><td colspan="6" class="empty">Рахунків не додано</td></tr>
@@ -133,13 +152,88 @@
     <label for="note">Примітка</label>
     <textarea id="note" name="note">{{ req.note or '' }}</textarea>
   </div>
+  </fieldset>
 
   <div class="form-actions">
-    <button type="submit" name="action" value="ok" class="btn btn-primary">OK</button>
-    <button type="submit" name="action" value="save" class="btn">Записати</button>
-    <a href="{{ url_for('requests_list') }}" class="btn">Закрити</a>
+    {% if editable %}
+      {% if can_submit %}
+      <button type="submit" name="action" value="submit" class="btn btn-primary"
+              {% if req.status == 'rework' %}title="Після виправлень заявка знову піде за маршрутом з першого етапу"{% endif %}>
+        {{ 'Відправити повторно' if req.status == 'rework' else 'Відправити на погодження' }}
+      </button>
+      {% endif %}
+      <button type="submit" name="action" value="ok" class="btn">OK</button>
+      <button type="submit" name="action" value="save" class="btn">Записати</button>
+    {% endif %}
+    <a href="{{ url_for('approvals') if role != 'initiator' else url_for('requests_list') }}" class="btn">Закрити</a>
   </div>
 </form>
+
+{% if actions %}
+<form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision">
+  <h2>Рішення — {{ ROLES[role] }}</h2>
+  <textarea name="comment" placeholder="Коментар (обов'язковий, якщо повертаєте або відхиляєте — напр. «Додайте договір та рахунок у PDF»)">{{ draft_comment }}</textarea>
+  <div class="decision-buttons">
+    {% for a in actions %}
+    <button type="submit" name="action" value="{{ a }}" class="btn btn-{{ ACTIONS[a][2] }}">{{ ACTIONS[a][0] }}</button>
+    {% endfor %}
+  </div>
+</form>
+{% endif %}
+
+<div class="card" id="documents">
+  <div class="section-head">
+    <h2>Документи</h2>
+    <span class="muted">{{ req.attachments | length if req.attachments else 0 }}</span>
+  </div>
+  {% if req.attachments %}
+  <ul class="files">
+    {% for f in req.attachments %}
+    <li>
+      <span class="file-ext">{{ f.ext | upper }}</span>
+      <a href="{{ url_for('download_file', file_id=f.id) }}" target="_blank">{{ f.name }}</a>
+      <span class="muted">{{ f.size | filesize }} · {{ f.user_name }} · {{ f.at | dt }}</span>
+      {% if req.status not in CLOSED_STATUSES and f.user_email | lower == current_email | lower %}
+      <form method="post" action="{{ url_for('delete_file', file_id=f.id) }}" data-msg="Видалити «{{ f.name }}»?" onsubmit="return confirm(this.dataset.msg)">
+        <button type="submit" class="btn-link" title="Видалити">✕</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% elif req.id %}
+  <p class="muted">Документів ще немає.</p>
+  {% endif %}
+
+  {% if not req.id %}
+    <p class="muted">Щоб додати документи, спочатку запишіть заявку.</p>
+  {% elif can_attach %}
+  <form method="post" action="{{ url_for('upload_files', request_id=req.id) }}" enctype="multipart/form-data" class="upload">
+    <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx">
+    <button type="submit" class="btn btn-sm">Завантажити</button>
+    <span class="muted">PDF, фото, Word, Excel — до 10 МБ</span>
+  </form>
+  {% endif %}
+</div>
+
+{% if req.history %}
+<div class="card">
+  <h2 class="card-title">Історія погодження</h2>
+  <ul class="timeline">
+    {% for h in req.history | reverse %}
+    <li class="{{ ACTIONS[h.action][2] }}">
+      <div class="tl-head">
+        <span class="badge {{ ACTIONS[h.action][2] }}">{{ ACTIONS[h.action][1] }}</span>
+        <strong>{{ h.user_name }}</strong>
+        <span class="muted">{{ ROLES[h.role] }} · {{ h.at | dt }}</span>
+        {% if h.to_status and h.from_status %}<span class="muted">→ {{ STATUSES[h.to_status][0] }}</span>{% endif %}
+      </div>
+      {% if h.comment %}<div class="tl-comment">{{ h.comment }}</div>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
 
 <dialog id="invoice-dialog">
   <div class="dlg-head">Підбір рахунків <span id="dlg-cp" style="font-weight:400;color:var(--muted)"></span></div>
@@ -203,7 +297,6 @@ function addLine(data = {}) {
   return tr;
 }
 
-document.getElementById('add-line').onclick = () => addLine().querySelector('input').focus();
 body.addEventListener('click', e => {
   if (e.target.classList.contains('remove-line')) { e.target.closest('tr').remove(); refresh(); }
 });
@@ -212,37 +305,40 @@ body.addEventListener('change', refresh);
 
 // Підбір рахунків (мокові дані; пізніше — з 1С)
 const dlg = document.getElementById('invoice-dialog');
-document.getElementById('pick-invoices').onclick = () => {
-  const cpSelect = document.getElementById('counterparty_id');
-  const cp = Number(cpSelect.value);
-  if (!cp) { alert('Спочатку оберіть контрагента'); cpSelect.focus(); return; }
-  const added = new Set(rows().map(tr => tr.querySelector('[name$="-invoice"]').value));
-  const list = INVOICES.filter(inv => inv.counterparty_id === cp);
-  document.getElementById('dlg-cp').textContent = '— ' + cpSelect.selectedOptions[0].text;
-  const tbody = document.getElementById('dlg-rows');
-  tbody.innerHTML = '';
-  if (!list.length) tbody.innerHTML = '<tr><td colspan="6" class="empty">Рахунків цього контрагента немає</td></tr>';
-  list.forEach(inv => {
-    const tr = document.createElement('tr');
-    const dis = added.has(inv.number);
-    tr.innerHTML = `<td><input type="checkbox" value="${inv.id}" ${dis ? 'disabled checked' : ''}></td>
-      <td></td><td>${inv.date.split('-').reverse().join('.')}</td>
-      <td class="num">${fmt(num(inv.amount))}</td><td>${inv.currency}</td><td></td>`;
-    tr.children[1].textContent = inv.number;
-    tr.children[5].textContent = inv.deal;
-    if (dis) tr.title = 'Вже додано';
-    tbody.appendChild(tr);
-  });
-  dlg.showModal();
-};
-document.getElementById('dlg-close').onclick = () => dlg.close();
-document.getElementById('dlg-add').onclick = () => {
-  dlg.querySelectorAll('input[type=checkbox]:checked:not(:disabled)').forEach(cb => {
-    const inv = INVOICES.find(i => i.id === Number(cb.value));
-    addLine({invoice: inv.number, amount: inv.amount, currency: inv.currency, deal: inv.deal});
-  });
-  dlg.close();
-};
+if (document.getElementById('add-line')) {
+  document.getElementById('add-line').onclick = () => addLine().querySelector('input').focus();
+  document.getElementById('pick-invoices').onclick = () => {
+    const cpSelect = document.getElementById('counterparty_id');
+    const cp = Number(cpSelect.value);
+    if (!cp) { alert('Спочатку оберіть контрагента'); cpSelect.focus(); return; }
+    const added = new Set(rows().map(tr => tr.querySelector('[name$="-invoice"]').value));
+    const list = INVOICES.filter(inv => inv.counterparty_id === cp);
+    document.getElementById('dlg-cp').textContent = '— ' + cpSelect.selectedOptions[0].text;
+    const tbody = document.getElementById('dlg-rows');
+    tbody.innerHTML = '';
+    if (!list.length) tbody.innerHTML = '<tr><td colspan="6" class="empty">Рахунків цього контрагента немає</td></tr>';
+    list.forEach(inv => {
+      const tr = document.createElement('tr');
+      const dis = added.has(inv.number);
+      tr.innerHTML = `<td><input type="checkbox" value="${inv.id}" ${dis ? 'disabled checked' : ''}></td>
+        <td></td><td>${inv.date.split('-').reverse().join('.')}</td>
+        <td class="num">${fmt(num(inv.amount))}</td><td>${inv.currency}</td><td></td>`;
+      tr.children[1].textContent = inv.number;
+      tr.children[5].textContent = inv.deal;
+      if (dis) tr.title = 'Вже додано';
+      tbody.appendChild(tr);
+    });
+    dlg.showModal();
+  };
+  document.getElementById('dlg-close').onclick = () => dlg.close();
+  document.getElementById('dlg-add').onclick = () => {
+    dlg.querySelectorAll('input[type=checkbox]:checked:not(:disabled)').forEach(cb => {
+      const inv = INVOICES.find(i => i.id === Number(cb.value));
+      addLine({invoice: inv.number, amount: inv.amount, currency: inv.currency, deal: inv.deal});
+    });
+    dlg.close();
+  };
+}
 
 refresh();
 </script>

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+
+{% block title %}На погодження{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="toolbar">
+    <h1 style="margin:0">На погодження — {{ ROLES[role] }}</h1>
+  </div>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Номер</th>
+        <th>Автор</th>
+        <th>Дата оплати</th>
+        <th>Організація</th>
+        <th>Контрагент</th>
+        <th>Вид витрат</th>
+        <th class="num">Сума</th>
+        <th>Етап</th>
+        <th>Очікує з</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in requests %}
+      {% set st = STATUSES[r.status] %}
+      <tr class="clickable" onclick="location.href='{{ url_for('request_card', request_id=r.id) }}'">
+        <td><a href="{{ url_for('request_card', request_id=r.id) }}">{{ r.number }}</a></td>
+        <td>{{ r.author_name }}</td>
+        <td>{{ r.pay_date | d }}</td>
+        <td>{{ ORGANIZATIONS[r.organization_id] }}</td>
+        <td>{{ COUNTERPARTIES[r.counterparty_id] }}</td>
+        <td>{{ EXPENSE_TYPES[r.expense_type_id] }}</td>
+        <td class="num">{{ r.amount | money }} {{ r.currency }}</td>
+        <td><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
+        <td>{{ r.history[-1].at | dt }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="empty">Немає заявок, що чекають на ваше рішення</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

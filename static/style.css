@@ -92,3 +92,69 @@ dialog .dlg-foot { padding: 12px 20px; border-top: 1px solid #eaeef2; display: f
   header { flex-wrap: wrap; padding: 8px 16px; gap: 8px 16px; }
   .table-wrap { overflow-x: auto; }
 }
+
+/* ---------- Погодження ---------- */
+.badge.orange { background: #ffe8d2; color: #a14a00; }
+.btn-green { background: #1f883d; border-color: #1f883d; color: #fff; }
+.btn-green:hover { background: #1a7f37; }
+.btn-orange { background: #fff; border-color: #d97706; color: #a14a00; }
+.btn-red { background: #fff; border-color: #cf222e; color: #cf222e; }
+.btn-blue { background: var(--primary); border-color: var(--primary); color: #fff; }
+.muted { color: var(--muted); font-size: 13px; }
+.card + .card, .card + form.card, form.card + .card, form.card + form.card { margin-top: 16px; }
+.card h2, .card-title { font-size: 15px; margin: 0 0 12px; }
+fieldset { border: none; margin: 0; padding: 0; min-width: 0; }
+fieldset:disabled input, fieldset:disabled select, fieldset:disabled textarea { background: #f6f8fa; color: var(--text); }
+
+.title-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.title-row h1 { margin: 0; }
+
+header .count { background: #fff; color: var(--primary); border-radius: 999px; padding: 0 7px; font-size: 12px; font-weight: 700; margin-left: 4px; }
+.role-switch { display: flex; align-items: center; gap: 6px; }
+.role-switch select { width: auto; padding: 3px 6px; background: #fff3; color: #fff; border-color: #fff6; }
+.role-switch option { color: var(--text); }
+
+/* Смуга маршруту */
+.route { display: flex; list-style: none; padding: 0; margin: 16px 0 0; counter-reset: st; }
+.route li { flex: 1; position: relative; text-align: center; font-size: 13px; color: var(--muted); padding-top: 26px; }
+.route li::before { counter-increment: st; content: counter(st); position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+  width: 22px; height: 22px; line-height: 22px; border-radius: 50%; background: #eaeef2; color: var(--muted); font-weight: 700; font-size: 12px; z-index: 1; }
+.route li::after { content: ""; position: absolute; top: 10px; left: -50%; width: 100%; height: 2px; background: #eaeef2; }
+.route li:first-child::after { display: none; }
+.route li.done::before { background: #1f883d; color: #fff; content: "✓"; }
+.route li.done::after, .route li.current::after, .route li.returned::after, .route li.rejected::after { background: #1f883d; }
+.route li.current::before { background: var(--primary); color: #fff; box-shadow: 0 0 0 4px #0f6cbd33; }
+.route li.current { color: var(--primary); font-weight: 600; }
+.route li.returned::before { background: #d97706; color: #fff; content: "↺"; }
+.route li.returned { color: #a14a00; font-weight: 600; }
+.route li.rejected::before { background: #cf222e; color: #fff; content: "✕"; }
+.route li.rejected { color: #cf222e; font-weight: 600; }
+
+.callout { margin-top: 16px; padding: 10px 14px; border-radius: 6px; border-left: 4px solid; }
+.callout.orange { background: #fff4e5; border-color: #d97706; }
+.callout.red { background: #fdecea; border-color: #cf222e; }
+.callout-text { margin-top: 4px; white-space: pre-wrap; }
+
+/* Панель рішення */
+.decision { border-top: 3px solid var(--primary); }
+.decision textarea { margin-bottom: 10px; }
+.decision-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+
+/* Документи */
+.files { list-style: none; padding: 0; margin: 0 0 12px; }
+.files li { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-bottom: 1px solid #eaeef2; flex-wrap: wrap; }
+.files form { margin-left: auto; }
+.file-ext { font-size: 11px; font-weight: 700; background: #eaeef2; color: var(--muted); border-radius: 4px; padding: 2px 6px; min-width: 42px; text-align: center; }
+.upload { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+/* Історія */
+.timeline { list-style: none; margin: 0; padding: 0 0 0 16px; border-left: 2px solid #eaeef2; }
+.timeline li { position: relative; padding: 0 0 16px 12px; }
+.timeline li::before { content: ""; position: absolute; left: -23px; top: 4px; width: 12px; height: 12px; border-radius: 50%; background: #d0d7de; border: 2px solid #fff; }
+.timeline li.green::before { background: #1f883d; }
+.timeline li.orange::before { background: #d97706; }
+.timeline li.red::before { background: #cf222e; }
+.timeline li.blue::before { background: var(--primary); }
+.tl-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.tl-comment { margin-top: 6px; background: #f6f8fa; border-radius: 6px; padding: 8px 12px; white-space: pre-wrap; }
+@media (max-width: 760px) { .route li { font-size: 11px; } }
