@@ -1,0 +1,249 @@
+{% extends "base.html" %}
+
+{% block title %}Заявка № {{ req.number }}{% endblock %}
+
+{% macro select_ref(name, items, selected, placeholder) -%}
+  <select id="{{ name }}" name="{{ name }}" class="{{ 'invalid' if errors[name] }}">
+    <option value="">{{ placeholder }}</option>
+    {% for key, label in items.items() %}
+    <option value="{{ key }}" {{ 'selected' if key == selected }}>{{ label }}</option>
+    {% endfor %}
+  </select>
+{%- endmacro %}
+
+{% macro err(name) -%}
+  {% if errors[name] %}<span class="err">{{ errors[name] }}</span>{% endif %}
+{%- endmacro %}
+
+{% block content %}
+<form method="post" class="card" id="request-form" novalidate>
+  <h1>Заявка на оплату витрат № {{ req.number }} від {{ req.created_at | dt }}</h1>
+  {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
+
+  <div class="form-grid">
+    <div class="field">
+      <label>Номер</label>
+      <input type="text" value="{{ req.number }}" readonly>
+    </div>
+    <div class="field">
+      <label>Дата заявки</label>
+      <input type="text" value="{{ req.created_at | dt }}" readonly>
+    </div>
+
+    <div class="field">
+      <label>Автор</label>
+      <input type="text" value="{{ req.author_name }}" title="{{ req.author_email }}" readonly>
+    </div>
+    <div class="field">
+      <label for="pay_date">Дата оплати</label>
+      <input type="date" id="pay_date" name="pay_date" value="{{ req.pay_date.isoformat() if req.pay_date }}" class="{{ 'invalid' if errors.pay_date }}">
+      {{ err('pay_date') }}
+    </div>
+
+    <div class="field">
+      <label for="counterparty_id">Контрагент</label>
+      {{ select_ref('counterparty_id', COUNTERPARTIES, req.counterparty_id, '— оберіть контрагента —') }}
+      {{ err('counterparty_id') }}
+    </div>
+    <div class="field">
+      <label for="organization_id">Організація</label>
+      {{ select_ref('organization_id', ORGANIZATIONS, req.organization_id, '— оберіть організацію —') }}
+      {{ err('organization_id') }}
+    </div>
+
+    <div class="field">
+      <label for="expense_type_id">Вид витрат</label>
+      {{ select_ref('expense_type_id', EXPENSE_TYPES, req.expense_type_id, '— оберіть вид витрат —') }}
+      {{ err('expense_type_id') }}
+    </div>
+    <div class="field">
+      <label>Форма оплати</label>
+      <div class="radio-group">
+        {% for code, label in PAYMENT_FORMS.items() %}
+        <label><input type="radio" name="payment_form" value="{{ code }}" {{ 'checked' if code == req.payment_form }}> {{ label }}</label>
+        {% endfor %}
+      </div>
+      {{ err('payment_form') }}
+    </div>
+
+    <div class="field">
+      <label for="currency">Валюта</label>
+      <select id="currency" name="currency" class="{{ 'invalid' if errors.currency }}">
+        {% for c in CURRENCIES %}
+        <option value="{{ c }}" {{ 'selected' if c == req.currency }}>{{ c }}</option>
+        {% endfor %}
+      </select>
+      {{ err('currency') }}
+    </div>
+    <div class="field">
+      <label for="amount">Сума</label>
+      <input type="text" inputmode="decimal" id="amount" name="amount"
+             value="{{ req.amount_raw if req.amount_raw is defined else (req.amount if req.amount is not none else '') }}"
+             class="{{ 'invalid' if errors.amount }}" placeholder="0,00">
+      {{ err('amount') }}
+    </div>
+
+    <div class="field">
+      <label for="status">Статус</label>
+      <select id="status" name="status">
+        {% for code, (label, _) in STATUSES.items() %}
+        <option value="{{ code }}" {{ 'selected' if code == req.status }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-head">
+      <h2>Рахунки</h2>
+      <button type="button" class="btn btn-sm" id="add-line">+ Додати рядок</button>
+      <button type="button" class="btn btn-sm" id="pick-invoices">Підбір рахунків</button>
+    </div>
+    <div class="table-wrap">
+    <table class="lines">
+      <thead>
+        <tr><th>№</th><th>Рахунок</th><th class="num">Сума</th><th>Валюта</th><th>Угода</th><th></th></tr>
+      </thead>
+      <tbody id="lines-body">
+        {% for line in req.lines %}
+        <tr>
+          <td class="n">{{ loop.index }}</td>
+          <td><input type="text" name="lines-{{ loop.index0 }}-invoice" value="{{ line.invoice }}"></td>
+          <td><input type="text" inputmode="decimal" name="lines-{{ loop.index0 }}-amount" value="{{ line.amount_raw if line.amount_raw is defined else line.amount }}" style="text-align:right"></td>
+          <td>
+            <select name="lines-{{ loop.index0 }}-currency">
+              {% for c in CURRENCIES %}<option {{ 'selected' if c == line.currency }}>{{ c }}</option>{% endfor %}
+            </select>
+          </td>
+          <td><input type="text" name="lines-{{ loop.index0 }}-deal" value="{{ line.deal }}"></td>
+          <td><button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button></td>
+        </tr>
+        {% endfor %}
+        <tr id="no-lines" {{ 'hidden' if req.lines }}><td colspan="6" class="empty">Рахунків не додано</td></tr>
+      </tbody>
+      <tfoot>
+        <tr><td></td><td>Разом</td><td class="num" id="lines-total"></td><td colspan="3"></td></tr>
+      </tfoot>
+    </table>
+    </div>
+    {% if errors.lines %}<div class="lines-err">{{ errors.lines }}</div>{% endif %}
+  </div>
+
+  <div class="section field full">
+    <label for="note">Примітка</label>
+    <textarea id="note" name="note">{{ req.note or '' }}</textarea>
+  </div>
+
+  <div class="form-actions">
+    <button type="submit" name="action" value="ok" class="btn btn-primary">OK</button>
+    <button type="submit" name="action" value="save" class="btn">Записати</button>
+    <a href="{{ url_for('requests_list') }}" class="btn">Закрити</a>
+  </div>
+</form>
+
+<dialog id="invoice-dialog">
+  <div class="dlg-head">Підбір рахунків <span id="dlg-cp" style="font-weight:400;color:var(--muted)"></span></div>
+  <div class="dlg-body">
+    <table>
+      <thead><tr><th></th><th>Рахунок</th><th>Дата</th><th class="num">Сума</th><th>Валюта</th><th>Угода</th></tr></thead>
+      <tbody id="dlg-rows"></tbody>
+    </table>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" class="btn btn-primary" id="dlg-add">Додати вибрані</button>
+    <button type="button" class="btn" id="dlg-close">Скасувати</button>
+  </div>
+</dialog>
+
+<template id="line-template">
+  <tr>
+    <td class="n"></td>
+    <td><input type="text" data-f="invoice"></td>
+    <td><input type="text" inputmode="decimal" data-f="amount" style="text-align:right"></td>
+    <td><select data-f="currency">{% for c in CURRENCIES %}<option>{{ c }}</option>{% endfor %}</select></td>
+    <td><input type="text" data-f="deal"></td>
+    <td><button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button></td>
+  </tr>
+</template>
+
+<script>
+const INVOICES = {{ invoices | tojson }};
+const body = document.getElementById('lines-body');
+const noLines = document.getElementById('no-lines');
+let nextIndex = {{ req.lines | length }};
+
+function num(v) { return parseFloat(String(v).replace(/\s/g, '').replace(',', '.')) || 0; }
+function fmt(v) { return v.toLocaleString('uk-UA', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function rows() { return [...body.querySelectorAll('tr:not(#no-lines)')]; }
+
+function refresh() {
+  const r = rows();
+  r.forEach((tr, i) => tr.querySelector('.n').textContent = i + 1);
+  noLines.hidden = r.length > 0;
+  // Підсумок по валютах
+  const totals = {};
+  r.forEach(tr => {
+    const cur = tr.querySelector('select').value;
+    totals[cur] = (totals[cur] || 0) + num(tr.querySelector('[name$="-amount"]').value);
+  });
+  document.getElementById('lines-total').textContent =
+    Object.entries(totals).map(([c, v]) => fmt(v) + ' ' + c).join(' + ') || '0,00';
+}
+
+function addLine(data = {}) {
+  const tr = document.getElementById('line-template').content.firstElementChild.cloneNode(true);
+  const i = nextIndex++;
+  tr.querySelectorAll('[data-f]').forEach(el => {
+    el.name = `lines-${i}-${el.dataset.f}`;
+    if (data[el.dataset.f] !== undefined) el.value = data[el.dataset.f];
+  });
+  if (!data.currency) tr.querySelector('select').value = document.getElementById('currency').value;
+  body.insertBefore(tr, noLines);
+  refresh();
+  return tr;
+}
+
+document.getElementById('add-line').onclick = () => addLine().querySelector('input').focus();
+body.addEventListener('click', e => {
+  if (e.target.classList.contains('remove-line')) { e.target.closest('tr').remove(); refresh(); }
+});
+body.addEventListener('input', refresh);
+body.addEventListener('change', refresh);
+
+// Підбір рахунків (мокові дані; пізніше — з 1С)
+const dlg = document.getElementById('invoice-dialog');
+document.getElementById('pick-invoices').onclick = () => {
+  const cpSelect = document.getElementById('counterparty_id');
+  const cp = Number(cpSelect.value);
+  if (!cp) { alert('Спочатку оберіть контрагента'); cpSelect.focus(); return; }
+  const added = new Set(rows().map(tr => tr.querySelector('[name$="-invoice"]').value));
+  const list = INVOICES.filter(inv => inv.counterparty_id === cp);
+  document.getElementById('dlg-cp').textContent = '— ' + cpSelect.selectedOptions[0].text;
+  const tbody = document.getElementById('dlg-rows');
+  tbody.innerHTML = '';
+  if (!list.length) tbody.innerHTML = '<tr><td colspan="6" class="empty">Рахунків цього контрагента немає</td></tr>';
+  list.forEach(inv => {
+    const tr = document.createElement('tr');
+    const dis = added.has(inv.number);
+    tr.innerHTML = `<td><input type="checkbox" value="${inv.id}" ${dis ? 'disabled checked' : ''}></td>
+      <td></td><td>${inv.date.split('-').reverse().join('.')}</td>
+      <td class="num">${fmt(num(inv.amount))}</td><td>${inv.currency}</td><td></td>`;
+    tr.children[1].textContent = inv.number;
+    tr.children[5].textContent = inv.deal;
+    if (dis) tr.title = 'Вже додано';
+    tbody.appendChild(tr);
+  });
+  dlg.showModal();
+};
+document.getElementById('dlg-close').onclick = () => dlg.close();
+document.getElementById('dlg-add').onclick = () => {
+  dlg.querySelectorAll('input[type=checkbox]:checked:not(:disabled)').forEach(cb => {
+    const inv = INVOICES.find(i => i.id === Number(cb.value));
+    addLine({invoice: inv.number, amount: inv.amount, currency: inv.currency, deal: inv.deal});
+  });
+  dlg.close();
+};
+
+refresh();
+</script>
+{% endblock %}

@@ -1,0 +1,55 @@
+{% extends "base.html" %}
+
+{% block title %}Мої заявки{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="toolbar">
+    <h1 style="margin:0">Мої заявки на оплату</h1>
+    <span class="spacer"></span>
+    <form method="get">
+      <select name="status" onchange="this.form.submit()" aria-label="Статус">
+        <option value="">Усі статуси</option>
+        {% for code, (label, _) in STATUSES.items() %}
+        <option value="{{ code }}" {{ 'selected' if code == status_filter }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </form>
+    <a class="btn btn-primary" href="{{ url_for('request_card') }}">+ Створити заявку</a>
+  </div>
+
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Номер</th>
+        <th>Дата заявки</th>
+        <th>Дата оплати</th>
+        <th>Організація</th>
+        <th>Контрагент</th>
+        <th>Вид витрат</th>
+        <th class="num">Сума</th>
+        <th>Статус</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in requests %}
+      {% set st = STATUSES[r.status] %}
+      <tr class="clickable" onclick="location.href='{{ url_for('request_card', request_id=r.id) }}'">
+        <td><a href="{{ url_for('request_card', request_id=r.id) }}">{{ r.number }}</a></td>
+        <td>{{ r.created_at | dt }}</td>
+        <td>{{ r.pay_date | d }}</td>
+        <td>{{ ORGANIZATIONS[r.organization_id] }}</td>
+        <td>{{ COUNTERPARTIES[r.counterparty_id] }}</td>
+        <td>{{ EXPENSE_TYPES[r.expense_type_id] }}</td>
+        <td class="num">{{ r.amount | money }} {{ r.currency }}</td>
+        <td><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
+      </tr>
+      {% else %}
+      <tr><td colspan="8" class="empty">Заявок ще немає</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

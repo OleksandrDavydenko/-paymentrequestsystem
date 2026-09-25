@@ -4,21 +4,27 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Заявки на оплату{% endblock %}</title>
-  <style>
-    body { font-family: "Segoe UI", Arial, sans-serif; margin: 0; background: #f5f6f8; color: #1f2328; }
-    header { background: #0f6cbd; color: #fff; padding: 12px 24px; display: flex; justify-content: space-between; align-items: center; }
-    header a { color: #fff; }
-    main { max-width: 900px; margin: 24px auto; padding: 0 16px; }
-    .card { background: #fff; border-radius: 8px; padding: 20px 24px; box-shadow: 0 1px 3px rgba(0,0,0,.08); }
-    dt { font-weight: 600; margin-top: 8px; }
-    dd { margin: 0; color: #57606a; }
-  </style>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
   <header>
-    <strong>Система заявок на оплату</strong>
-    {% block header_right %}{% endblock %}
+    <a class="brand" href="/">Система заявок на оплату</a>
+    <nav>
+      {% if user_name %}
+      <a href="{{ url_for('requests_list') }}" class="{{ 'active' if request.endpoint in ('requests_list', 'request_card') }}">Мої заявки</a>
+      {% endif %}
+    </nav>
+    {% if user_name %}
+    <span class="user">{{ user_name }} · <a href="{{ url_for('identity.logout') }}">Вийти</a></span>
+    {% endif %}
   </header>
-  <main>{% block content %}{% endblock %}</main>
+  <main>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+        <div class="flash {{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
 </body>
 </html>
