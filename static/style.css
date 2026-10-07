@@ -268,3 +268,60 @@ header .user-dropdown a.btn { color: var(--text); }
     min-width: 140px; box-shadow: 2px 0 4px rgba(0,0,0,.05); }
   .admin-users th:first-child { background: #f6f8fa; }
 }
+
+/* ---------- Фільтр періоду, план платежів ---------- */
+.filters-card { margin-bottom: 16px; }
+.filters input[type=search] { width: 280px; }
+.period { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 24px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { display: inline-block; padding: 4px 12px; border-radius: 999px; border: 1px solid var(--border); background: #fff;
+  color: var(--text); text-decoration: none; font-size: 13px; white-space: nowrap; }
+.chip:hover { border-color: var(--primary); color: var(--primary); }
+.chip.active { background: var(--primary); border-color: var(--primary); color: #fff; }
+.chip.chip-red:not(.active) { border-color: #f1b5b1; color: #b3261e; }
+.chip.chip-red.active { background: #cf222e; border-color: #cf222e; }
+.date-range { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.date-range label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.date-range input[type=date] { width: auto; }
+.date-field-switch { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin-bottom: 10px; font-size: 13px; }
+.date-field-switch label { display: inline-flex; align-items: center; gap: 5px; }
+
+details.plan { margin-bottom: 16px; }
+details.plan > summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px; }
+details.plan > summary::-webkit-details-marker { display: none; }
+details.plan > summary::before { content: "▸"; color: var(--muted); transition: transform .15s; }
+details.plan[open] > summary::before { transform: rotate(90deg); }
+details.plan > summary h2 { margin: 0; }
+details.plan[open] > summary { margin-bottom: 12px; }
+.plan-table td, .plan-table th { font-variant-numeric: tabular-nums; }
+.plan-table tr.overdue td { background: #fff8f7; }
+.plan-table tr.today td { background: #fffbea; }
+.plan-table tfoot td { font-weight: 700; border-top: 2px solid #d0d7de; border-bottom: none; }
+.plan-table td a { color: var(--text); }
+
+/* ---------- Сортування ---------- */
+th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable-th:hover { color: var(--text); background: #eef1f4; }
+th.sortable-th::after { content: "↕"; margin-left: 4px; opacity: .3; font-size: 11px; }
+th.sorted-asc::after { content: "▲"; opacity: 1; color: var(--primary); }
+th.sorted-desc::after { content: "▼"; opacity: 1; color: var(--primary); }
+th.sortable-th:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.mobile-sort { display: none; }
+
+@media (max-width: 760px) {
+  .filters input[type=search] { width: 100%; }
+  .period { gap: 10px; }
+  .date-range { width: 100%; }
+  .date-range label { flex: 1; }
+  .date-range input[type=date] { flex: 1; min-width: 0; }
+  .date-range .btn { width: 100%; justify-content: center; }
+  .mobile-sort { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; font-size: 13px; color: var(--muted); }
+  .mobile-sort select { flex: 1; }
+}
+@media (max-width: 760px) {
+  .plan-table { font-size: 12px; }
+  .plan-table th, .plan-table td { padding: 6px 5px; }
+  .plan-table .badge { display: none; }
+  .plan-table tr.overdue td:first-child a { color: #b3261e; font-weight: 600; }
+}
+.table-wrap { overflow-x: auto; }

@@ -2,7 +2,7 @@ import os
 import re
 import uuid
 from functools import wraps
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 from dotenv import load_dotenv
@@ -218,7 +218,7 @@ def _home():
     if "initiator" not in g.roles and g.roles & wf.APPROVER_ROLES:
         return url_for("approvals")
     if g.roles == {"admin"}:
-        return url_for("admin_users")
+        return url_for("admin_requests")
     return url_for("requests_list")
 
 
@@ -262,7 +262,7 @@ def approvals(*, context):
 @app.route("/requests/new", methods=["GET", "POST"])
 @app.route("/requests/<int:request_id>", methods=["GET", "POST"])
 @auth.login_required
-@requires("initiator", *wf.APPROVER_ROLES)
+@requires("initiator", "admin", *wf.APPROVER_ROLES)
 def request_card(request_id=None, *, context):
     user, roles = g.user, g.roles
     if request_id is None:
@@ -353,43 +353,160 @@ def request_action(request_id, *, context):
                     else url_for("approvals"))
 
 
-@app.route("/to-pay")
-@auth.login_required
-@requires(*wf.ACCOUNTANT_ROLES, "cfo")
-def to_pay(*, context):
-    roles = g.roles
-    all_rows = db.list_to_pay(roles)
-    form_filter = request.args.get("form") if request.args.get("form") in wf.PAYMENT_FORMS else ""
-    org_filter = _parse_ref(request.args.get("org"), db.ORGANIZATIONS)
-    rows = [r for r in all_rows
-            if (not form_filter or r["payment_form"] == form_filter)
-            and (not org_filter or r["organization_id"] == org_filter)]
+# ---------------------------------------------------------------- списки: дати, підсумки
 
-    today = date.today()
-    totals = {}  # валюта -> {сума, кількість, прострочено, за формами оплати}
+def _parse_date(raw):
+    try:
+        return date.fromisoformat(raw or "")
+    except ValueError:
+        return None
+
+
+def date_presets(today):
+    """Швидкі періоди для фільтра дати: код -> (назва, з, по)."""
+    week_start = today - timedelta(days=today.weekday())
+    next_week = week_start + timedelta(days=7)
+    month_start = today.replace(day=1)
+    next_month = (month_start + timedelta(days=32)).replace(day=1)
+    return {
+        "overdue": ("Прострочені", None, today - timedelta(days=1)),
+        "today": ("Сьогодні", today, today),
+        "week": ("Цей тиждень", week_start, week_start + timedelta(days=6)),
+        "next_week": ("Наступний тиждень", next_week, next_week + timedelta(days=6)),
+        "month": ("Цей місяць", month_start, next_month - timedelta(days=1)),
+    }
+
+
+def _currency_order(cur):
+    return db.CURRENCIES.index(cur) if cur in db.CURRENCIES else 99
+
+
+def currency_totals(rows, today):
+    """Підсумки за валютами: сума, кількість, прострочено, розбивка за формою оплати."""
+    totals = {}
     for r in rows:
         t = totals.setdefault(r["currency"], {"amount": Decimal(0), "count": 0, "overdue": Decimal(0),
                                               "overdue_count": 0, "by_form": {}})
         t["amount"] += r["amount"]
         t["count"] += 1
         t["by_form"][r["payment_form"]] = t["by_form"].get(r["payment_form"], Decimal(0)) + r["amount"]
-        if r["pay_date"] < today:
+        if r["status"] == "to_pay" and r["pay_date"] < today:
             t["overdue"] += r["amount"]
             t["overdue_count"] += 1
-    totals = dict(sorted(totals.items(), key=lambda kv: db.CURRENCIES.index(kv[0])
-                         if kv[0] in db.CURRENCIES else 99))
+    return dict(sorted(totals.items(), key=lambda kv: _currency_order(kv[0])))
+
+
+def payment_plan(rows):
+    """План платежів: [(дата, {валюта: сума}, кількість)] за зростанням дати + разом."""
+    by_date = {}
+    for r in rows:
+        day = by_date.setdefault(r["pay_date"], {"sums": {}, "count": 0})
+        day["sums"][r["currency"]] = day["sums"].get(r["currency"], Decimal(0)) + r["amount"]
+        day["count"] += 1
+    currencies = sorted({r["currency"] for r in rows}, key=_currency_order)
+    total = {c: sum((d["sums"].get(c, Decimal(0)) for d in by_date.values()), Decimal(0)) for c in currencies}
+    return {
+        "currencies": currencies,
+        "days": [(d, v["sums"], v["count"]) for d, v in sorted(by_date.items())],
+        "total": total,
+        "count": len(rows),
+    }
+
+
+def _date_filter(args, today):
+    """Період з параметрів ?period= або ?from=&to=. Повертає (код пресету, з, по)."""
+    presets = date_presets(today)
+    period = args.get("period", "")
+    if period in presets:
+        _, d_from, d_to = presets[period]
+        return period, d_from, d_to
+    return "", _parse_date(args.get("from")), _parse_date(args.get("to"))
+
+
+def _in_period(value, d_from, d_to):
+    return (not d_from or value >= d_from) and (not d_to or value <= d_to)
+
+
+@app.route("/to-pay")
+@auth.login_required
+@requires(*wf.ACCOUNTANT_ROLES, "cfo")
+def to_pay(*, context):
+    roles = g.roles
+    today = date.today()
+    all_rows = db.list_to_pay(roles)
+    form_filter = request.args.get("form") if request.args.get("form") in wf.PAYMENT_FORMS else ""
+    org_filter = _parse_ref(request.args.get("org"), db.ORGANIZATIONS)
+    period, d_from, d_to = _date_filter(request.args, today)
+    rows = [r for r in all_rows
+            if (not form_filter or r["payment_form"] == form_filter)
+            and (not org_filter or r["organization_id"] == org_filter)
+            and _in_period(r["pay_date"], d_from, d_to)]
 
     return render_template(
         "to_pay.html",
         user_name=g.user["name"],
         requests=rows,
-        totals=totals,
+        totals=currency_totals(rows, today),
+        plan=payment_plan(rows),
         today=today,
         form_filter=form_filter,
         org_filter=org_filter,
+        period=period,
+        d_from=d_from,
+        d_to=d_to,
+        presets=date_presets(today),
         # Фільтр за формою оплати має сенс, якщо видно більше однієї форми
         visible_forms=[f for f in wf.PAYMENT_FORMS if any(r["payment_form"] == f for r in all_rows)],
         payable={r["id"] for r in rows if wf.acting_role(r, roles, g.user["email"])},
+    )
+
+
+@app.route("/admin/requests")
+@auth.login_required
+@requires("admin")
+def admin_requests(*, context):
+    today = date.today()
+    args = request.args
+    status = args.get("status") if args.get("status") in wf.STATUSES else ""
+    form_filter = args.get("form") if args.get("form") in wf.PAYMENT_FORMS else ""
+    org_filter = _parse_ref(args.get("org"), db.ORGANIZATIONS)
+    date_field = "pay" if args.get("date_field") == "pay" else "created"
+    period, d_from, d_to = _date_filter(args, today)
+    q = (args.get("q") or "").strip().lower()
+
+    def matches(r):
+        if status and r["status"] != status:
+            return False
+        if form_filter and r["payment_form"] != form_filter:
+            return False
+        if org_filter and r["organization_id"] != org_filter:
+            return False
+        value = r["pay_date"] if date_field == "pay" else r["created_at"].date()
+        if not _in_period(value, d_from, d_to):
+            return False
+        if q:
+            haystack = " ".join([r["number"], r["author_name"], r["author_email"], r.get("note") or "",
+                                 db.COUNTERPARTIES.get(r["counterparty_id"], "")]).lower()
+            return q in haystack
+        return True
+
+    rows = [r for r in db.list_all() if matches(r)]
+    return render_template(
+        "admin_requests.html",
+        user_name=g.user["name"],
+        requests=rows,
+        totals=currency_totals(rows, today),
+        today=today,
+        status_filter=status,
+        form_filter=form_filter,
+        org_filter=org_filter,
+        date_field=date_field,
+        period=period,
+        d_from=d_from,
+        d_to=d_to,
+        q=args.get("q", ""),
+        presets=date_presets(today),
+        ACTIONS=wf.ACTIONS,
     )
 
 
@@ -594,7 +711,7 @@ def upload_files(request_id, *, context):
 
 @app.route("/files/<file_id>")
 @auth.login_required
-@requires("initiator", *wf.APPROVER_ROLES)
+@requires("initiator", "admin", *wf.APPROVER_ROLES)
 def download_file(file_id, *, context):
     req, att = db.find_attachment(file_id)
     if not req or not wf.can_view(req, g.roles, g.user["email"]):
@@ -624,6 +741,18 @@ def delete_file(file_id, *, context):
         pass
     flash(f"Документ «{att['name']}» видалено", "success")
     return redirect(url_for("request_card", request_id=req["id"]) + "#documents")
+
+
+@app.template_global()
+def url_with(changes):
+    """Поточна адреса з заміненими параметрами запиту (None/"" — прибрати параметр)."""
+    args = request.args.to_dict()
+    for key, value in changes.items():
+        if value in (None, ""):
+            args.pop(key, None)
+        else:
+            args[key] = value
+    return url_for(request.endpoint, **args)
 
 
 @app.template_filter("filesize")

@@ -26,17 +26,17 @@
   {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
   <div class="table-wrap">
-  <table class="admin-users">
+  <table class="admin-users sortable" id="admin-users">
     <thead>
       <tr>
         <th>Користувач</th>
         {% for r in role_order %}
-        <th class="role-col" title="{{ ROLES[r] }}">
+        <th class="role-col" title="{{ ROLES[r] }}" data-nosort>
           {{ ROLE_SHORT[r] }}
           {% if groups[r] %}<a href="{{ group_url(groups[r]) }}" target="_blank" title="Група в Azure">↗</a>{% endif %}
         </th>
         {% endfor %}
-        <th></th>
+        <th data-nosort></th>
       </tr>
     </thead>
     <tbody>

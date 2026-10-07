@@ -1,0 +1,19 @@
+{# Фільтр періоду: швидкі чипи + поля «з / по». Очікує presets, period, d_from, d_to.
+   Поля from/to мають бути всередині батьківської GET-форми. #}
+<div class="period">
+  <div class="chips">
+    <a class="chip {{ 'active' if not period and not d_from and not d_to }}"
+       href="{{ url_with({'period': None, 'from': None, 'to': None}) }}">Усі</a>
+    {% for code, (label, _, _) in presets.items() if not (code == 'overdue' and period_label == 'Дата заявки') %}
+    <a class="chip {{ 'active' if period == code }} {{ 'chip-red' if code == 'overdue' }}"
+       href="{{ url_with({'period': code, 'from': None, 'to': None}) }}">{{ label }}</a>
+    {% endfor %}
+  </div>
+  <div class="date-range">
+    <label>{{ period_label | default('Дата оплати') }} з
+      <input type="date" name="from" value="{{ d_from.isoformat() if d_from }}"></label>
+    <label>по
+      <input type="date" name="to" value="{{ d_to.isoformat() if d_to }}"></label>
+    <button type="submit" class="btn btn-sm">Застосувати</button>
+  </div>
+</div>

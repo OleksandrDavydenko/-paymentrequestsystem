@@ -117,7 +117,8 @@ def in_payments(req, roles):
 
 
 def can_view(req, roles, user_email):
-    return is_author(req, user_email) or bool(roles & APPROVER_ROLES)
+    # Адміністратор бачить усі заявки (лише перегляд — дії визначаються іншими ролями)
+    return is_author(req, user_email) or bool(roles & (APPROVER_ROLES | {"admin"}))
 
 
 def can_edit(req, roles, user_email):

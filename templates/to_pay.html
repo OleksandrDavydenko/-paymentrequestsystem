@@ -3,55 +3,74 @@
 {% block title %}До оплати{% endblock %}
 
 {% block content %}
-<div class="toolbar">
-  <h1 style="margin:0">До оплати</h1>
-  <span class="spacer"></span>
-  <form method="get" class="filters">
-    {% if visible_forms | length > 1 %}
-    <select name="form" onchange="this.form.submit()" aria-label="Форма оплати">
-      <option value="">Усі форми оплати</option>
-      {% for f in visible_forms %}
-      <option value="{{ f }}" {{ 'selected' if f == form_filter }}>{{ PAYMENT_FORMS[f] }}</option>
-      {% endfor %}
-    </select>
-    {% endif %}
-    <select name="org" onchange="this.form.submit()" aria-label="Організація">
-      <option value="">Усі організації</option>
-      {% for key, label in ORGANIZATIONS.items() %}
-      <option value="{{ key }}" {{ 'selected' if key == org_filter }}>{{ label }}</option>
-      {% endfor %}
-    </select>
-  </form>
-</div>
-
-{% if totals %}
-<div class="totals">
-  {% for cur, t in totals.items() %}
-  <div class="total-card">
-    <div class="total-cur">{{ cur }}</div>
-    <div class="total-amount">{{ t.amount | money }}</div>
-    <div class="muted">{{ t.count }} {{ 'заявка' if t.count == 1 else 'заявки' if t.count < 5 else 'заявок' }}</div>
-    {% if t.by_form | length > 1 %}
-    <ul class="total-breakdown">
-      {% for f, amount in t.by_form.items() %}
-      <li><span>{{ PAYMENT_FORMS[f] }}</span><span>{{ amount | money }}</span></li>
-      {% endfor %}
-    </ul>
-    {% endif %}
-    {% if t.overdue_count %}
-    <div class="total-overdue">Прострочено: {{ t.overdue | money }} ({{ t.overdue_count }})</div>
-    {% endif %}
+<form method="get" class="card filters-card">
+  <div class="toolbar" style="margin-bottom:12px">
+    <h1 style="margin:0">До оплати</h1>
+    <span class="spacer"></span>
+    <div class="filters">
+      {% if visible_forms | length > 1 %}
+      <select name="form" onchange="this.form.submit()" aria-label="Форма оплати">
+        <option value="">Усі форми оплати</option>
+        {% for f in visible_forms %}
+        <option value="{{ f }}" {{ 'selected' if f == form_filter }}>{{ PAYMENT_FORMS[f] }}</option>
+        {% endfor %}
+      </select>
+      {% endif %}
+      <select name="org" onchange="this.form.submit()" aria-label="Організація">
+        <option value="">Усі організації</option>
+        {% for key, label in ORGANIZATIONS.items() %}
+        <option value="{{ key }}" {{ 'selected' if key == org_filter }}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
   </div>
-  {% endfor %}
-</div>
+  {% include "_period.html" %}
+</form>
+
+{% include "_totals.html" %}
+
+{% if plan.days %}
+<details class="card plan" open>
+  <summary><h2>План платежів за датами</h2></summary>
+  <div class="table-wrap">
+  <table class="plan-table">
+    <thead>
+      <tr>
+        <th>Дата оплати</th>
+        {% for c in plan.currencies %}<th class="num">{{ c }}</th>{% endfor %}
+        <th class="num">Заявок</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for day, sums, count in plan.days %}
+      <tr class="{{ 'overdue' if day < today else 'today' if day == today }}">
+        <td>
+          <a href="{{ url_with({'period': None, 'from': day.isoformat(), 'to': day.isoformat()}) }}" title="Показати лише цю дату">{{ day | d }}</a>
+          {% if day < today %}<span class="badge red">прострочено</span>{% elif day == today %}<span class="badge amber">сьогодні</span>{% endif %}
+        </td>
+        {% for c in plan.currencies %}<td class="num">{{ sums[c] | money if sums[c] else '—' }}</td>{% endfor %}
+        <td class="num">{{ count }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+    <tfoot>
+      <tr>
+        <td>Разом</td>
+        {% for c in plan.currencies %}<td class="num">{{ plan.total[c] | money }}</td>{% endfor %}
+        <td class="num">{{ plan.count }}</td>
+      </tr>
+    </tfoot>
+  </table>
+  </div>
+</details>
 {% endif %}
 
 <form method="post" action="{{ url_for('to_pay_bulk', **request.args) }}" class="card" id="pay-form">
   <div class="table-wrap">
-  <table class="stack">
+  <table class="stack sortable" id="to-pay">
     <thead>
       <tr>
-        {% if payable %}<th class="chk"><input type="checkbox" id="check-all" aria-label="Вибрати всі"></th>{% endif %}
+        {% if payable %}<th class="chk" data-nosort><input type="checkbox" id="check-all" aria-label="Вибрати всі"></th>{% endif %}
         <th>Номер</th>
         <th>Дата оплати</th>
         <th>Організація</th>
@@ -75,8 +94,8 @@
           {% endif %}
         </td>
         {% endif %}
-        <td data-label="Номер"><a href="{{ url_for('request_card', request_id=r.id) }}">{{ r.number }}</a></td>
-        <td data-label="Дата оплати">
+        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('request_card', request_id=r.id) }}">{{ r.number }}</a></td>
+        <td data-label="Дата оплати" data-sort="{{ r.pay_date.isoformat() }}">
           {{ r.pay_date | d }}
           {% if overdue %}<span class="badge red">прострочено</span>{% elif due_today %}<span class="badge amber">сьогодні</span>{% endif %}
         </td>
@@ -84,11 +103,11 @@
         <td data-label="Контрагент">{{ COUNTERPARTIES[r.counterparty_id] }}</td>
         <td data-label="Вид витрат">{{ EXPENSE_TYPES[r.expense_type_id] }}</td>
         <td data-label="Форма оплати">{{ PAYMENT_FORMS[r.payment_form] }}</td>
-        <td data-label="Сума" class="num"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
+        <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
         <td data-label="Автор">{{ r.author_name }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="9" class="empty">Немає заявок, що чекають оплати</td></tr>
+      <tr><td colspan="9" class="empty">Немає заявок, що чекають оплати{{ " за вибраний період" if period or d_from or d_to }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

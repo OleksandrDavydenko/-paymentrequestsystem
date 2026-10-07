@@ -1,0 +1,22 @@
+{# Картки підсумків за валютами. Очікує змінну totals (див. currency_totals в app.py). #}
+{% if totals %}
+<div class="totals">
+  {% for cur, t in totals.items() %}
+  <div class="total-card">
+    <div class="total-cur">{{ cur }}</div>
+    <div class="total-amount">{{ t.amount | money }}</div>
+    <div class="muted">{{ t.count }} {{ 'заявка' if t.count % 10 == 1 and t.count % 100 != 11 else 'заявки' if t.count % 10 in (2, 3, 4) and t.count % 100 not in (12, 13, 14) else 'заявок' }}</div>
+    {% if t.by_form | length > 1 %}
+    <ul class="total-breakdown">
+      {% for f, amount in t.by_form.items() %}
+      <li><span>{{ PAYMENT_FORMS[f] }}</span><span>{{ amount | money }}</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if t.overdue_count %}
+    <div class="total-overdue">Прострочено: {{ t.overdue | money }} ({{ t.overdue_count }})</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}

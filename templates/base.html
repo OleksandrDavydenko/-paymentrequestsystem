@@ -24,7 +24,8 @@
       </a>
       {% endif %}
       {% if 'admin' in roles %}
-      <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin_') }}">Адміністрування</a>
+      <a href="{{ url_for('admin_requests') }}" class="{{ 'active' if request.endpoint == 'admin_requests' }}">Усі заявки</a>
+      <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin_users') }}">Адміністрування</a>
       {% endif %}
     </nav>
     {% if user_name %}
@@ -54,6 +55,7 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  <script src="{{ url_for('static', filename='sort.js') }}"></script>
   <script>
     // Закрити меню користувача кліком поза ним
     document.addEventListener('click', e => {

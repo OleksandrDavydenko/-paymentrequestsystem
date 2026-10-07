@@ -189,6 +189,11 @@ def list_queue(roles):
     return sorted(rows, key=lambda r: r["history"][-1]["at"])
 
 
+def list_all():
+    """Усі заявки системи (для адміністратора), нові — першими."""
+    return sorted(_REQUESTS.values(), key=lambda r: r["created_at"], reverse=True)
+
+
 def list_to_pay(roles):
     """Заявки «До оплати», видимі цим ролям; найближча дата оплати — першою."""
     rows = [r for r in _REQUESTS.values() if workflow.in_payments(r, roles)]
