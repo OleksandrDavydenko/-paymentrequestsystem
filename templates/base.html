@@ -18,6 +18,11 @@
         На погодження{% if queue_count %} <span class="count">{{ queue_count }}</span>{% endif %}
       </a>
       {% endif %}
+      {% if can_see_payments %}
+      <a href="{{ url_for('to_pay') }}" class="{{ 'active' if request.endpoint == 'to_pay' }}">
+        До оплати{% if payments_count %} <span class="count">{{ payments_count }}</span>{% endif %}
+      </a>
+      {% endif %}
       {% if 'admin' in roles %}
       <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin_') }}">Адміністрування</a>
       {% endif %}

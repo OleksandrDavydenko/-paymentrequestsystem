@@ -209,6 +209,8 @@ def inject_roles():
         "ROLE_SHORT": wf.ROLE_SHORT,
         "is_approver": bool(roles & wf.APPROVER_ROLES),
         "queue_count": len(db.list_queue(roles)) if roles & wf.APPROVER_ROLES else 0,
+        "can_see_payments": wf.can_see_payments(roles),
+        "payments_count": len(db.list_to_pay(roles)) if wf.can_see_payments(roles) else 0,
     }
 
 
@@ -347,7 +349,74 @@ def request_action(request_id, *, context):
         return redirect(url_for("request_card", request_id=request_id))
     db.save_request(req)
     flash(f"Заявка № {req['number']}: {wf.ACTIONS[action][1].lower()}", "success")
-    return redirect(url_for("approvals"))
+    return redirect(url_for("to_pay") if action == "pay" or request.form.get("next") == "to_pay"
+                    else url_for("approvals"))
+
+
+@app.route("/to-pay")
+@auth.login_required
+@requires(*wf.ACCOUNTANT_ROLES, "cfo")
+def to_pay(*, context):
+    roles = g.roles
+    all_rows = db.list_to_pay(roles)
+    form_filter = request.args.get("form") if request.args.get("form") in wf.PAYMENT_FORMS else ""
+    org_filter = _parse_ref(request.args.get("org"), db.ORGANIZATIONS)
+    rows = [r for r in all_rows
+            if (not form_filter or r["payment_form"] == form_filter)
+            and (not org_filter or r["organization_id"] == org_filter)]
+
+    today = date.today()
+    totals = {}  # валюта -> {сума, кількість, прострочено, за формами оплати}
+    for r in rows:
+        t = totals.setdefault(r["currency"], {"amount": Decimal(0), "count": 0, "overdue": Decimal(0),
+                                              "overdue_count": 0, "by_form": {}})
+        t["amount"] += r["amount"]
+        t["count"] += 1
+        t["by_form"][r["payment_form"]] = t["by_form"].get(r["payment_form"], Decimal(0)) + r["amount"]
+        if r["pay_date"] < today:
+            t["overdue"] += r["amount"]
+            t["overdue_count"] += 1
+    totals = dict(sorted(totals.items(), key=lambda kv: db.CURRENCIES.index(kv[0])
+                         if kv[0] in db.CURRENCIES else 99))
+
+    return render_template(
+        "to_pay.html",
+        user_name=g.user["name"],
+        requests=rows,
+        totals=totals,
+        today=today,
+        form_filter=form_filter,
+        org_filter=org_filter,
+        # Фільтр за формою оплати має сенс, якщо видно більше однієї форми
+        visible_forms=[f for f in wf.PAYMENT_FORMS if any(r["payment_form"] == f for r in all_rows)],
+        payable={r["id"] for r in rows if wf.acting_role(r, roles, g.user["email"])},
+    )
+
+
+@app.route("/to-pay/pay", methods=["POST"])
+@auth.login_required
+@requires(*wf.ACCOUNTANT_ROLES)
+def to_pay_bulk(*, context):
+    paid, skipped = [], []
+    comment = request.form.get("comment", "")
+    for raw in request.form.getlist("ids"):
+        req = db.get_request(int(raw)) if raw.isdigit() else None
+        if not req:
+            continue
+        try:
+            wf.apply_action(req, "pay", g.roles, g.user, comment)
+        except wf.WorkflowError:
+            skipped.append(req["number"])
+            continue
+        db.save_request(req)
+        paid.append(req["number"])
+    if paid:
+        flash(f"Позначено оплаченими: {', '.join('№ ' + n for n in paid)}", "success")
+    if skipped:
+        flash(f"Не можна оплатити (не ваша форма оплати або вже змінено статус): {', '.join(skipped)}", "error")
+    if not paid and not skipped:
+        flash("Оберіть заявки галочками", "error")
+    return redirect(url_for("to_pay", **{k: v for k, v in request.args.items()}))
 
 
 # ---------------------------------------------------------------- адміністрування

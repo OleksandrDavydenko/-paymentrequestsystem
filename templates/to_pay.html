@@ -1,0 +1,134 @@
+{% extends "base.html" %}
+
+{% block title %}До оплати{% endblock %}
+
+{% block content %}
+<div class="toolbar">
+  <h1 style="margin:0">До оплати</h1>
+  <span class="spacer"></span>
+  <form method="get" class="filters">
+    {% if visible_forms | length > 1 %}
+    <select name="form" onchange="this.form.submit()" aria-label="Форма оплати">
+      <option value="">Усі форми оплати</option>
+      {% for f in visible_forms %}
+      <option value="{{ f }}" {{ 'selected' if f == form_filter }}>{{ PAYMENT_FORMS[f] }}</option>
+      {% endfor %}
+    </select>
+    {% endif %}
+    <select name="org" onchange="this.form.submit()" aria-label="Організація">
+      <option value="">Усі організації</option>
+      {% for key, label in ORGANIZATIONS.items() %}
+      <option value="{{ key }}" {{ 'selected' if key == org_filter }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+
+{% if totals %}
+<div class="totals">
+  {% for cur, t in totals.items() %}
+  <div class="total-card">
+    <div class="total-cur">{{ cur }}</div>
+    <div class="total-amount">{{ t.amount | money }}</div>
+    <div class="muted">{{ t.count }} {{ 'заявка' if t.count == 1 else 'заявки' if t.count < 5 else 'заявок' }}</div>
+    {% if t.by_form | length > 1 %}
+    <ul class="total-breakdown">
+      {% for f, amount in t.by_form.items() %}
+      <li><span>{{ PAYMENT_FORMS[f] }}</span><span>{{ amount | money }}</span></li>
+      {% endfor %}
+    </ul>
+    {% endif %}
+    {% if t.overdue_count %}
+    <div class="total-overdue">Прострочено: {{ t.overdue | money }} ({{ t.overdue_count }})</div>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form method="post" action="{{ url_for('to_pay_bulk', **request.args) }}" class="card" id="pay-form">
+  <div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        {% if payable %}<th class="chk"><input type="checkbox" id="check-all" aria-label="Вибрати всі"></th>{% endif %}
+        <th>Номер</th>
+        <th>Дата оплати</th>
+        <th>Організація</th>
+        <th>Контрагент</th>
+        <th>Вид витрат</th>
+        <th>Форма оплати</th>
+        <th class="num">Сума</th>
+        <th>Автор</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in requests %}
+      {% set overdue = r.pay_date < today %}
+      {% set due_today = r.pay_date == today %}
+      <tr class="clickable {{ 'overdue' if overdue }}" data-href="{{ url_for('request_card', request_id=r.id) }}">
+        {% if payable %}
+        <td class="chk">
+          {% if r.id in payable %}
+          <input type="checkbox" name="ids" value="{{ r.id }}" data-amount="{{ r.amount }}" data-cur="{{ r.currency }}"
+                 aria-label="Вибрати заявку {{ r.number }}">
+          {% endif %}
+        </td>
+        {% endif %}
+        <td><a href="{{ url_for('request_card', request_id=r.id) }}">{{ r.number }}</a></td>
+        <td>
+          {{ r.pay_date | d }}
+          {% if overdue %}<span class="badge red">прострочено</span>{% elif due_today %}<span class="badge amber">сьогодні</span>{% endif %}
+        </td>
+        <td>{{ ORGANIZATIONS[r.organization_id] }}</td>
+        <td>{{ COUNTERPARTIES[r.counterparty_id] }}</td>
+        <td>{{ EXPENSE_TYPES[r.expense_type_id] }}</td>
+        <td>{{ PAYMENT_FORMS[r.payment_form] }}</td>
+        <td class="num"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
+        <td>{{ r.author_name }}</td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="empty">Немає заявок, що чекають оплати</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+
+  {% if payable %}
+  <div class="pay-bar" id="pay-bar" hidden>
+    <div><strong>Вибрано: <span id="sel-count">0</span></strong> · <span id="sel-total"></span></div>
+    <input type="text" name="comment" placeholder="Коментар до оплати (напр. № платіжного доручення)">
+    <button type="submit" class="btn btn-blue">Позначити оплаченими</button>
+  </div>
+  {% endif %}
+</form>
+
+<script>
+// Клік по рядку відкриває картку (крім клику по галочці)
+document.querySelectorAll('tr[data-href]').forEach(tr => tr.addEventListener('click', e => {
+  if (!e.target.closest('input, a')) location.href = tr.dataset.href;
+}));
+
+const boxes = [...document.querySelectorAll('input[name=ids]')];
+const bar = document.getElementById('pay-bar');
+function fmt(v) { return v.toLocaleString('uk-UA', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
+function refresh() {
+  if (!bar) return;
+  const sel = boxes.filter(b => b.checked);
+  const totals = {};
+  sel.forEach(b => totals[b.dataset.cur] = (totals[b.dataset.cur] || 0) + parseFloat(b.dataset.amount));
+  document.getElementById('sel-count').textContent = sel.length;
+  document.getElementById('sel-total').textContent =
+    Object.entries(totals).map(([c, v]) => fmt(v) + ' ' + c).join(' + ');
+  bar.hidden = sel.length === 0;
+  boxes.forEach(b => b.closest('tr').classList.toggle('selected', b.checked));
+}
+boxes.forEach(b => b.addEventListener('change', refresh));
+const all = document.getElementById('check-all');
+if (all) all.addEventListener('change', () => { boxes.forEach(b => b.checked = all.checked); refresh(); });
+document.getElementById('pay-form').addEventListener('submit', e => {
+  const n = boxes.filter(b => b.checked).length;
+  if (!confirm(`Позначити оплаченими ${n} заявок(и)?`)) e.preventDefault();
+});
+</script>
+{% endblock %}

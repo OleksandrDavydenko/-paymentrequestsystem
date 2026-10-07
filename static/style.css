@@ -174,3 +174,23 @@ code { background: #0000000d; padding: 1px 5px; border-radius: 4px; font-size: 1
 .role-checks { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 6px; }
 .role-checks label { display: inline-flex; align-items: center; gap: 6px; }
 button:disabled { opacity: .5; cursor: not-allowed; }
+
+/* ---------- До оплати ---------- */
+.filters { display: flex; gap: 8px; flex-wrap: wrap; }
+.filters select { width: auto; }
+.totals { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; margin-bottom: 16px; }
+.total-card { background: var(--card); border-radius: 8px; padding: 16px 20px; box-shadow: 0 1px 3px rgba(0,0,0,.08); border-top: 4px solid var(--primary); }
+.total-cur { font-size: 13px; font-weight: 700; color: var(--primary); letter-spacing: .05em; }
+.total-amount { font-size: 28px; font-weight: 700; margin: 4px 0 2px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.total-breakdown { list-style: none; padding: 8px 0 0; margin: 8px 0 0; border-top: 1px solid #eaeef2; font-size: 13px; }
+.total-breakdown li { display: flex; justify-content: space-between; gap: 8px; color: var(--muted); padding: 2px 0; }
+.total-breakdown li span:last-child { color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.total-overdue { margin-top: 8px; font-size: 13px; color: #b3261e; font-weight: 600; }
+td.chk, th.chk { width: 36px; text-align: center; }
+td.chk input, th.chk input { width: 18px; height: 18px; cursor: pointer; }
+tr.overdue td { background: #fff8f7; }
+tr.selected td { background: #e8f1fb !important; }
+.pay-bar { position: sticky; bottom: 0; display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 16px -24px -20px; padding: 12px 24px; background: #fff; border-top: 2px solid var(--primary);
+  border-radius: 0 0 8px 8px; box-shadow: 0 -4px 12px rgba(0,0,0,.06); }
+.pay-bar input[type=text] { flex: 1; min-width: 200px; }

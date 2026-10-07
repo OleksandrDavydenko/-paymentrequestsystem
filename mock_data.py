@@ -157,6 +157,19 @@ _REQUESTS = {
              _route(21, _SUBMIT), "Папір, картриджі"),
         _req(11, _OTHER, "2026-10-05", 4, 1, 1, "bank_resident", "USD", "980.00",
              _route(23, _SUBMIT)),
+        # Погоджені фіндиректором — чекають оплати
+        _req(12, _OTHER, "2026-10-06", 4, 2, 1, "bank_resident", "USD", "1250.00",
+             _route(1, _SUBMIT, _ACC_OK, _CFO_OK), "",
+             [("UC-0915", "1250.00", "USD", "Договір інспекції №UC-12")]),
+        _req(13, _OTHER, "2026-10-09", 5, 1, 1, "bank_nonresident", "EUR", "5150.00",
+             _route(2, _SUBMIT, _ACC_OK, _CFO_OK), "Фрахт, жовтень",
+             [("MSK-7781455", "5150.00", "EUR", "Booking 245889010")]),
+        _req(14, _ME, "2026-10-08", 6, 3, 4, "cash", "UAH", "2400.00",
+             _route(3, _SUBMIT, _ACC_OK, _CFO_OK), "Канцтовари для складу"),
+        _req(15, _OTHER, "2026-10-12", 2, 1, 2, "bank_resident", "UAH", "6180.00",
+             _route(4, _SUBMIT, _ACC_OK, _CFO_OK), "Зв'язок, жовтень"),
+        _req(16, _ME, "2026-10-14", 5, 2, 5, "bank_nonresident", "USD", "3700.00",
+             _route(5, _SUBMIT, _ACC_OK, _CFO_OK)),
     ]
 }
 
@@ -174,6 +187,12 @@ def list_queue(roles):
     """Заявки, що чекають на рішення однієї з ролей (черга «На погодження»)."""
     rows = [r for r in _REQUESTS.values() if workflow.in_queue(r, roles)]
     return sorted(rows, key=lambda r: r["history"][-1]["at"])
+
+
+def list_to_pay(roles):
+    """Заявки «До оплати», видимі цим ролям; найближча дата оплати — першою."""
+    rows = [r for r in _REQUESTS.values() if workflow.in_payments(r, roles)]
+    return sorted(rows, key=lambda r: (r["pay_date"], r["id"]))
 
 
 def get_request(request_id):

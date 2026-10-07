@@ -101,9 +101,19 @@ def acting_role(req, roles, user_email):
 
 
 def in_queue(req, roles):
-    """Чи чекає заявка на рішення однієї з ролей погоджувача (для «На погодження»)."""
+    """Чи чекає заявка на рішення однієї з ролей погоджувача (для «На погодження»).
+    Етап «До оплати» сюди не входить — він у окремому розділі."""
     actor = stage_actor(req)
-    return actor in APPROVER_ROLES and actor in roles
+    return req["status"] != "to_pay" and actor in APPROVER_ROLES and actor in roles
+
+
+def can_see_payments(roles):
+    return bool(roles & (ACCOUNTANT_ROLES | {"cfo"}))
+
+
+def in_payments(req, roles):
+    """Розділ «До оплати»: фіндиректор бачить усі, бухгалтер — лише свою форму оплати."""
+    return req["status"] == "to_pay" and ("cfo" in roles or stage_actor(req) in roles)
 
 
 def can_view(req, roles, user_email):
