@@ -287,7 +287,6 @@ def approvals(*, context):
         requests=apply_ref_filters(source, refs),
         refs=refs,
         view=view,
-        processed_count=len(db.list_processed(g.roles)),
         processed_entry=lambda r: wf.processed_entry(r, g.roles),
         ACTIONS=wf.ACTIONS,
     )
@@ -508,7 +507,6 @@ def to_pay(*, context):
         "to_pay.html",
         user_name=g.user["name"],
         view=view,
-        paid_count=len(db.list_paid(roles)),
         paid_entry=wf.paid_entry,
         requests=rows,
         totals=currency_totals(rows, today),

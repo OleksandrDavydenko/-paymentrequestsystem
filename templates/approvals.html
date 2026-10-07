@@ -7,7 +7,7 @@
 {% block content %}
 <nav class="tabs" aria-label="Розділи">
   <a href="{{ url_for('approvals') }}" class="tab {{ 'active' if view == 'queue' }}">Очікують рішення{% if queue_count %} <span class="count">{{ queue_count }}</span>{% endif %}</a>
-  <a href="{{ url_for('approvals', view='processed') }}" class="tab {{ 'active' if view == 'processed' }}">Опрацьовані <span class="count muted-count">{{ processed_count }}</span></a>
+  <a href="{{ url_for('approvals', view='processed') }}" class="tab {{ 'active' if view == 'processed' }}">Опрацьовані</a>
 </nav>
 <div class="card">
   <div class="toolbar">
