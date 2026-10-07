@@ -18,6 +18,6 @@
   <option value="{{ key }}" {{ 'selected' if key == refs.exp }}>{{ label }}</option>
   {% endfor %}
 </select>
-{% if request.args | length %}
-<a class="btn btn-sm reset-filters" href="{{ url_for(request.endpoint) }}">✕ Скинути фільтри</a>
+{% if request.args | reject('equalto', 'view') | list | length %}
+<a class="btn btn-sm reset-filters" href="{{ url_for(request.endpoint, view=request.args.get('view')) }}">✕ Скинути фільтри</a>
 {% endif %}

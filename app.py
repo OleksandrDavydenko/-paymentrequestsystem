@@ -279,8 +279,18 @@ def requests_list(*, context):
 @requires(*wf.APPROVER_ROLES)
 def approvals(*, context):
     refs = ref_filters(request.args)
-    rows = apply_ref_filters(db.list_queue(g.roles), refs)
-    return render_template("approvals.html", user_name=g.user["name"], requests=rows, refs=refs)
+    view = "processed" if request.args.get("view") == "processed" else "queue"
+    source = db.list_processed(g.roles) if view == "processed" else db.list_queue(g.roles)
+    return render_template(
+        "approvals.html",
+        user_name=g.user["name"],
+        requests=apply_ref_filters(source, refs),
+        refs=refs,
+        view=view,
+        processed_count=len(db.list_processed(g.roles)),
+        processed_entry=lambda r: wf.processed_entry(r, g.roles),
+        ACTIONS=wf.ACTIONS,
+    )
 
 
 @app.route("/requests/new", methods=["GET", "POST"])
@@ -354,6 +364,7 @@ def request_card(request_id=None, *, context):
         ACTIONS=wf.ACTIONS,
         CLOSED_STATUSES=wf.CLOSED_STATUSES,
         draft_comment=session.pop("draft_comment", ""),
+        admin_comment=session.pop("admin_comment", ""),
         current_email=user["email"],
         back_url=url_for("requests_list") if wf.is_author(req, user["email"]) and "initiator" in roles
         else _home(),
@@ -453,23 +464,52 @@ def _in_period(value, d_from, d_to):
     return (not d_from or value >= d_from) and (not d_to or value <= d_to)
 
 
+@app.route("/requests/<int:request_id>/admin-status", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_change_status(request_id, *, context):
+    req = db.get_request(request_id)
+    if not req:
+        abort(404)
+    new_status = request.form.get("status", "")
+    try:
+        wf.admin_set_status(req, new_status, g.user, request.form.get("comment"))
+    except wf.WorkflowError as e:
+        flash(str(e), "error")
+        session["admin_comment"] = request.form.get("comment", "")
+        return redirect(url_for("request_card", request_id=request_id) + "#admin-status")
+    db.save_request(req)
+    flash(f"Заявка № {req['number']}: статус змінено на «{wf.STATUSES[new_status][0]}»", "success")
+    return redirect(url_for("request_card", request_id=request_id))
+
+
 @app.route("/to-pay")
 @auth.login_required
 @requires(*wf.ACCOUNTANT_ROLES, "cfo")
 def to_pay(*, context):
     roles = g.roles
     today = date.today()
-    all_rows = db.list_to_pay(roles)
+    view = "paid" if request.args.get("view") == "paid" else "to_pay"
+    all_rows = db.list_paid(roles) if view == "paid" else db.list_to_pay(roles)
     form_filter = request.args.get("form") if request.args.get("form") in wf.CHANNELS else ""
     refs = ref_filters(request.args)
     period, d_from, d_to = _date_filter(request.args, today)
+
+    def period_date(r):
+        # Для оплачених — фактична дата оплати, для решти — планова
+        entry = wf.paid_entry(r) if view == "paid" else None
+        return entry["at"].date() if entry else r["pay_date"]
+
     rows = [r for r in apply_ref_filters(all_rows, refs)
             if (not form_filter or wf.channel_of(r) == form_filter)
-            and _in_period(r["pay_date"], d_from, d_to)]
+            and _in_period(period_date(r), d_from, d_to)]
 
     return render_template(
         "to_pay.html",
         user_name=g.user["name"],
+        view=view,
+        paid_count=len(db.list_paid(roles)),
+        paid_entry=wf.paid_entry,
         requests=rows,
         totals=currency_totals(rows, today),
         plan=payment_plan(rows),
@@ -482,7 +522,7 @@ def to_pay(*, context):
         presets=date_presets(today),
         # Фільтр за формою оплати має сенс, якщо видно більше однієї форми
         visible_forms=[f for f in wf.CHANNELS if any(wf.channel_of(r) == f for r in all_rows)],
-        payable={r["id"] for r in rows if wf.acting_role(r, roles, g.user["email"])},
+        payable={r["id"] for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])},
     )
 
 

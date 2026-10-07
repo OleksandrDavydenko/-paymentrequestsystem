@@ -33,6 +33,7 @@
     <label><input type="radio" name="date_field" value="pay" {{ 'checked' if date_field == 'pay' }} onchange="this.form.submit()"> датою оплати</label>
   </div>
   {% set period_label = 'Дата заявки' if date_field == 'created' else 'Дата оплати' %}
+  {% set hide_overdue = date_field == 'created' %}
   {% include "_period.html" %}
 </form>
 

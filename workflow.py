@@ -83,6 +83,7 @@ ACTIONS = {
     "pay": ("Позначити оплаченою", "Оплачено", "blue", False),
     "file_add": (None, "Додано документ", "grey", False),
     "file_delete": (None, "Видалено документ", "grey", False),
+    "admin_status": (None, "Статус змінено адміністратором", "purple", True),
 }
 
 # статус -> (хто діє: "author", "accountant" (за формою оплати) або роль, {дія: новий статус})
@@ -133,6 +134,42 @@ def can_see_payments(roles):
 def in_payments(req, roles):
     """Розділ «До оплати»: фіндиректор бачить усі, бухгалтер — лише свою форму оплати."""
     return req["status"] == "to_pay" and ("cfo" in roles or stage_actor(req) in roles)
+
+
+DECISION_ACTIONS = {"approve", "rework", "reject", "pay"}
+
+
+def processed_entry(req, roles):
+    """Останнє рішення, ухвалене однією з ролей погоджувача (для «Опрацьовані»), або None."""
+    mine = roles & APPROVER_ROLES
+    return next((h for h in reversed(req.get("history", []))
+                 if h["action"] in DECISION_ACTIONS and h["role"] in mine), None)
+
+
+def in_paid(req, roles):
+    """Оплачені заявки: фіндиректор бачить усі, бухгалтер — свого каналу оплати."""
+    return req["status"] == "paid" and (
+        "cfo" in roles or ACCOUNTANT_BY_CHANNEL.get(channel_of(req)) in roles)
+
+
+def paid_entry(req):
+    """Запис історії, яким заявку позначено оплаченою (останній), або None."""
+    return next((h for h in reversed(req.get("history", []))
+                 if h.get("to_status") == "paid"), None)
+
+
+def admin_set_status(req, new_status, user, comment):
+    """Адміністратор вручну змінює статус будь-якої заявки. Коментар обов'язковий."""
+    comment = (comment or "").strip()
+    if new_status not in STATUSES:
+        raise WorkflowError("Невідомий статус")
+    if new_status == req["status"]:
+        raise WorkflowError("Заявка вже має цей статус")
+    if not comment:
+        raise WorkflowError("Вкажіть причину зміни статусу — вона буде видна в історії заявки")
+    old = req["status"]
+    req["status"] = new_status
+    add_history(req, "admin_status", user, "admin", comment, old, new_status)
 
 
 def can_view(req, roles, user_email):

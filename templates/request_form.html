@@ -182,6 +182,27 @@
 </form>
 {% endif %}
 
+{% if 'admin' in roles and req.id %}
+<details class="card admin-status" id="admin-status" {{ 'open' if admin_comment }}>
+  <summary><h2>Адміністратор: змінити статус</h2><span class="muted">поточний — {{ STATUSES[req.status][0] }}</span></summary>
+  <form method="post" action="{{ url_for('admin_change_status', request_id=req.id) }}"
+        data-msg="Змінити статус заявки № {{ req.number }}?" onsubmit="return confirm(this.dataset.msg)">
+    <p class="muted">Для виправлення помилок, наприклад якщо заявка помилково потрапила до оплати.
+      Зміна записується в історію погодження разом із причиною.</p>
+    <div class="admin-status-row">
+      <label for="admin-new-status">Новий статус</label>
+      <select id="admin-new-status" name="status" required>
+        {% for code, (label, _) in STATUSES.items() if code != req.status %}
+        <option value="{{ code }}">{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <textarea name="comment" required placeholder="Причина зміни статусу (обов'язково)">{{ admin_comment }}</textarea>
+    <button type="submit" class="btn btn-purple">Змінити статус</button>
+  </form>
+</details>
+{% endif %}
+
 <div class="card" id="documents">
   <div class="section-head">
     <h2>Документи</h2>

@@ -4,7 +4,7 @@
   <div class="chips">
     <a class="chip {{ 'active' if not period and not d_from and not d_to }}"
        href="{{ url_with({'period': None, 'from': None, 'to': None}) }}">Усі</a>
-    {% for code, (label, _, _) in presets.items() if not (code == 'overdue' and period_label == 'Дата заявки') %}
+    {% for code, (label, _, _) in presets.items() if not (code == 'overdue' and hide_overdue) %}
     <a class="chip {{ 'active' if period == code }} {{ 'chip-red' if code == 'overdue' }}"
        href="{{ url_with({'period': code, 'from': None, 'to': None}) }}">{{ label }}</a>
     {% endfor %}

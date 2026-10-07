@@ -378,3 +378,33 @@ table.sortable tr.selected td:first-child { background: #e8f1fb; }
 }
 .route-hint { grid-column: 2; font-size: 12px; color: var(--primary); }
 @media (max-width: 760px) { .route-hint { grid-column: 1; } }
+
+/* ---------- Вкладки «До оплати / Оплачені» ---------- */
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid #e1e5ea; }
+.tab { padding: 8px 16px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 600; }
+.tab:hover { color: var(--text); }
+.tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+.tab .count { background: var(--primary); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 12px; margin-left: 4px; }
+.tab .muted-count { background: #e1e5ea; color: var(--muted); }
+
+/* ---------- Зміна статусу адміністратором ---------- */
+.badge.purple { background: #efe4fb; color: #6f2dbd; }
+.timeline li.purple::before { background: #8250df; }
+.btn-purple { background: #8250df; border-color: #8250df; color: #fff; }
+.btn-purple:hover { background: #6f42c1; border-color: #6f42c1; color: #fff; }
+details.admin-status { border-top: 3px solid #8250df; }
+details.admin-status > summary { cursor: pointer; list-style: none; display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+details.admin-status > summary::-webkit-details-marker { display: none; }
+details.admin-status > summary::before { content: "▸"; color: var(--muted); }
+details.admin-status[open] > summary::before { content: "▾"; }
+details.admin-status > summary h2 { margin: 0; }
+details.admin-status form { margin-top: 12px; display: flex; flex-direction: column; gap: 10px; }
+details.admin-status form p { margin: 0; }
+details.admin-status form > .btn { align-self: flex-start; }
+.admin-status-row { display: flex; align-items: center; gap: 10px; }
+.admin-status-row select { width: auto; min-width: 240px; }
+@media (max-width: 760px) {
+  .admin-status-row { flex-direction: column; align-items: stretch; }
+  .admin-status-row select { min-width: 0; }
+  details.admin-status form > .btn { align-self: stretch; justify-content: center; }
+}

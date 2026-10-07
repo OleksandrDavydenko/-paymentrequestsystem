@@ -5,17 +5,22 @@
 {% block main_class %}wide{% endblock %}
 
 {% block content %}
+<nav class="tabs" aria-label="Розділи">
+  <a href="{{ url_for('approvals') }}" class="tab {{ 'active' if view == 'queue' }}">Очікують рішення{% if queue_count %} <span class="count">{{ queue_count }}</span>{% endif %}</a>
+  <a href="{{ url_for('approvals', view='processed') }}" class="tab {{ 'active' if view == 'processed' }}">Опрацьовані <span class="count muted-count">{{ processed_count }}</span></a>
+</nav>
 <div class="card">
   <div class="toolbar">
-    <h1 style="margin:0">На погодження</h1>
+    <h1 style="margin:0">{{ "Опрацьовані мною" if view == "processed" else "На погодження" }}</h1>
     <span class="muted">{% for code, label in ROLES.items() if code in roles and code not in ('admin', 'initiator') %}{{ label }}{{ ' · ' if not loop.last }}{% endfor %}</span>
   </div>
   <form method="get" class="filters filters-row">
+    {% if view == 'processed' %}<input type="hidden" name="view" value="processed">{% endif %}
     {% include "_ref_filters.html" %}
   </form>
 
   <div class="table-wrap">
-  <table class="stack sortable" id="approvals">
+  <table class="stack sortable" id="{{ 'processed' if view == 'processed' else 'approvals' }}">
     <thead>
       <tr>
         <th>Номер</th>
@@ -26,8 +31,8 @@
         <th>Вид витрат</th>
         <th class="num">Сума</th>
         <th>Форма оплати</th>
-        <th>Етап</th>
-        <th>Очікує з</th>
+        <th>{{ "Поточний статус" if view == "processed" else "Етап" }}</th>
+        <th>{{ "Моє рішення" if view == "processed" else "Очікує з" }}</th>
       </tr>
     </thead>
     <tbody>
@@ -42,11 +47,19 @@
         <td data-label="Вид витрат">{{ EXPENSE_TYPES[r.expense_type_id] }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}">{{ r.amount | money }} {{ r.currency }}</td>
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
-        <td data-label="Етап"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
+        <td data-label="{{ 'Поточний статус' if view == 'processed' else 'Етап' }}"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
+        {% if view == 'processed' %}
+        {% set e = processed_entry(r) %}
+        <td data-label="Моє рішення" data-sort="{{ e.at.isoformat() }}">
+          <span class="badge {{ ACTIONS[e.action][2] }}">{{ ACTIONS[e.action][1] }}</span>
+          <span class="muted time">{{ e.at | dt }} · {{ e.user_name }}</span>
+        </td>
+        {% else %}
         <td data-label="Очікує з" data-sort="{{ r.history[-1].at.isoformat() }}">{{ r.history[-1].at | d }} <span class="muted time">{{ r.history[-1].at.strftime('%H:%M') }}</span></td>
+        {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="10" class="empty">{{ "Нічого не знайдено за вибраними фільтрами" if request.args else "Немає заявок, що чекають на ваше рішення" }}</td></tr>
+      <tr><td colspan="10" class="empty">{{ "Нічого не знайдено за вибраними фільтрами" if refs.org or refs.cp or refs.exp else ("Ви ще не ухвалили жодного рішення" if view == "processed" else "Немає заявок, що чекають на ваше рішення") }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -195,6 +195,19 @@ def list_all():
     return sorted(_REQUESTS.values(), key=lambda r: r["created_at"], reverse=True)
 
 
+def list_processed(roles):
+    """Заявки, по яких ці ролі вже ухвалили рішення; найсвіжіше рішення — першим."""
+    rows = [(workflow.processed_entry(r, roles), r) for r in _REQUESTS.values()]
+    return [r for e, r in sorted(((e, r) for e, r in rows if e), key=lambda x: x[0]["at"], reverse=True)]
+
+
+def list_paid(roles):
+    """Оплачені заявки, видимі цим ролям; найсвіжіша оплата — першою."""
+    rows = [r for r in _REQUESTS.values() if workflow.in_paid(r, roles)]
+    return sorted(rows, key=lambda r: workflow.paid_entry(r)["at"] if workflow.paid_entry(r) else r["created_at"],
+                  reverse=True)
+
+
 def list_to_pay(roles):
     """Заявки «До оплати», видимі цим ролям; найближча дата оплати — першою."""
     rows = [r for r in _REQUESTS.values() if workflow.in_payments(r, roles)]
