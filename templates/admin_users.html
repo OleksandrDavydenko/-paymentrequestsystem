@@ -20,7 +20,7 @@
     Не налаштовано групи для ролей:
     {% for r in missing_groups %}<strong>{{ ROLES[r] }}</strong>{{ ', ' if not loop.last }}{% endfor %}.
     Створіть групи в Entra ID і додайте їх Object ID у змінні App Service
-    (<code>GROUP_ADMIN</code>, <code>GROUP_INITIATOR</code>, <code>GROUP_ACCOUNTANT</code>, <code>GROUP_CFO</code>).
+    (<code>GROUP_ADMIN</code>, <code>GROUP_INITIATOR</code>, <code>GROUP_ACC_CASH</code>, <code>GROUP_ACC_RESIDENT</code>, <code>GROUP_ACC_NONRESIDENT</code>, <code>GROUP_CFO</code>).
   </div>
   {% endif %}
   {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
@@ -31,8 +31,8 @@
       <tr>
         <th>Користувач</th>
         {% for r in role_order %}
-        <th class="role-col">
-          {{ ROLES[r] }}
+        <th class="role-col" title="{{ ROLES[r] }}">
+          {{ ROLE_SHORT[r] }}
           {% if groups[r] %}<a href="{{ group_url(groups[r]) }}" target="_blank" title="Група в Azure">↗</a>{% endif %}
         </th>
         {% endfor %}

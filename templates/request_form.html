@@ -262,6 +262,18 @@
 
 <script>
 const INVOICES = {{ invoices | tojson }};
+const NONRESIDENTS = new Set({{ nonresident_counterparties | tojson }});
+
+// Підказка форми оплати за контрагентом: нерезидент -> «Безготівка — нерезидент»
+const cpSel = document.getElementById('counterparty_id');
+if (cpSel && !cpSel.disabled) {
+  cpSel.addEventListener('change', () => {
+    const current = document.querySelector('input[name=payment_form]:checked');
+    if (current && current.value === 'cash') return;  // готівку не чіпаємо
+    const want = NONRESIDENTS.has(Number(cpSel.value)) ? 'bank_nonresident' : 'bank_resident';
+    document.querySelector(`input[name=payment_form][value=${want}]`).checked = true;
+  });
+}
 const body = document.getElementById('lines-body');
 const noLines = document.getElementById('no-lines');
 let nextIndex = {{ req.lines | length }};

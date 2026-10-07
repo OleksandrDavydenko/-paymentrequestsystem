@@ -144,7 +144,10 @@ def parse_request_form(form):
 GROUPS = {
     "admin": os.environ.get("GROUP_ADMIN", ""),
     "initiator": os.environ.get("GROUP_INITIATOR", ""),
-    "accountant": os.environ.get("GROUP_ACCOUNTANT", ""),
+    "acc_cash": os.environ.get("GROUP_ACC_CASH", ""),
+    # GROUP_ACCOUNTANT — стара назва змінної (одна група бухгалтерів), тепер це бухгалтери-резиденти
+    "acc_resident": os.environ.get("GROUP_ACC_RESIDENT") or os.environ.get("GROUP_ACCOUNTANT", ""),
+    "acc_nonresident": os.environ.get("GROUP_ACC_NONRESIDENT", ""),
     "cfo": os.environ.get("GROUP_CFO", ""),
 }
 # Страховка від блокування: ці люди завжди адміністратори
@@ -203,7 +206,9 @@ def inject_roles():
     return {
         "roles": roles,
         "ROLES": wf.ROLES,
-        "queue_count": len(db.list_for_stage(wf.queue_statuses(roles))) if roles & wf.APPROVER_ROLES else 0,
+        "ROLE_SHORT": wf.ROLE_SHORT,
+        "is_approver": bool(roles & wf.APPROVER_ROLES),
+        "queue_count": len(db.list_queue(roles)) if roles & wf.APPROVER_ROLES else 0,
     }
 
 
@@ -248,7 +253,7 @@ def requests_list(*, context):
 @auth.login_required
 @requires(*wf.APPROVER_ROLES)
 def approvals(*, context):
-    rows = db.list_for_stage(wf.queue_statuses(g.roles))
+    rows = db.list_queue(g.roles)
     return render_template("approvals.html", user_name=g.user["name"], requests=rows)
 
 
@@ -269,7 +274,7 @@ def request_card(request_id=None, *, context):
             "author_email": user["email"],
             "author_name": user["name"],
             "status": "draft",
-            "payment_form": "bank",
+            "payment_form": "bank_resident",
             "currency": "UAH",
             "lines": [],
             "history": [],
@@ -312,6 +317,7 @@ def request_card(request_id=None, *, context):
         req=req,
         errors=errors,
         invoices=db.INVOICES,
+        nonresident_counterparties=sorted(db.NONRESIDENT_COUNTERPARTIES),
         editable=wf.can_edit(req, roles, user["email"]),
         can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
         actions=[a for a in available if a != "submit"],
@@ -346,7 +352,7 @@ def request_action(request_id, *, context):
 
 # ---------------------------------------------------------------- адміністрування
 
-ADMIN_ROLE_ORDER = ["admin", "initiator", "accountant", "cfo"]
+ADMIN_ROLE_ORDER = ["admin", "initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo"]
 
 
 def _azure_group_url(group_id):

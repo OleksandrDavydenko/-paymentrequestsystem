@@ -13,7 +13,7 @@
       {% if 'initiator' in roles %}
       <a href="{{ url_for('requests_list') }}" class="{{ 'active' if request.endpoint == 'requests_list' }}">Мої заявки</a>
       {% endif %}
-      {% if 'accountant' in roles or 'cfo' in roles %}
+      {% if is_approver %}
       <a href="{{ url_for('approvals') }}" class="{{ 'active' if request.endpoint == 'approvals' }}">
         На погодження{% if queue_count %} <span class="count">{{ queue_count }}</span>{% endif %}
       </a>

@@ -5,7 +5,7 @@
 {% block content %}
 <div class="card">
   <div class="toolbar">
-    <h1 style="margin:0">На погодження{% for code, label in ROLES.items() if code in roles and code in ('accountant', 'cfo') %}{{ ' — ' if loop.first else ', ' }}{{ label }}{% endfor %}</h1>
+    <h1 style="margin:0">На погодження{% for code, label in ROLES.items() if code in roles and code not in ('admin', 'initiator') %}{{ ' — ' if loop.first else ', ' }}{{ label }}{% endfor %}</h1>
   </div>
 
   <div class="table-wrap">
@@ -19,6 +19,7 @@
         <th>Контрагент</th>
         <th>Вид витрат</th>
         <th class="num">Сума</th>
+        <th>Форма оплати</th>
         <th>Етап</th>
         <th>Очікує з</th>
       </tr>
@@ -34,11 +35,12 @@
         <td>{{ COUNTERPARTIES[r.counterparty_id] }}</td>
         <td>{{ EXPENSE_TYPES[r.expense_type_id] }}</td>
         <td class="num">{{ r.amount | money }} {{ r.currency }}</td>
+        <td>{{ PAYMENT_FORMS[r.payment_form] }}</td>
         <td><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
         <td>{{ r.history[-1].at | dt }}</td>
       </tr>
       {% else %}
-      <tr><td colspan="9" class="empty">Немає заявок, що чекають на ваше рішення</td></tr>
+      <tr><td colspan="10" class="empty">Немає заявок, що чекають на ваше рішення</td></tr>
       {% endfor %}
     </tbody>
   </table>

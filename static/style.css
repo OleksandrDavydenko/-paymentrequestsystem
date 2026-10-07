@@ -65,7 +65,7 @@ input[type=text], input[type=date], select, textarea {
 }
 input[readonly] { background: #f6f8fa; color: var(--muted); }
 input.invalid, select.invalid { border-color: var(--danger); }
-.radio-group { display: flex; gap: 18px; }
+.radio-group { display: flex; flex-wrap: wrap; gap: 6px 18px; }
 .radio-group label { display: inline-flex; align-items: center; gap: 6px; color: var(--text); }
 textarea { min-height: 70px; resize: vertical; }
 

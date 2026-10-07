@@ -43,7 +43,9 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 |---|---|---|
 | Адміністратор | PRS Адміністратори | `GROUP_ADMIN` |
 | Ініціатор | PRS Ініціатори | `GROUP_INITIATOR` |
-| Бухгалтер | PRS Бухгалтери | `GROUP_ACCOUNTANT` |
+| Бухгалтер (готівка) | PRS Бухгалтери — готівка | `GROUP_ACC_CASH` |
+| Бухгалтер (безготівка, резидент) | PRS Бухгалтери — резиденти | `GROUP_ACC_RESIDENT` (стара назва `GROUP_ACCOUNTANT` теж працює) |
+| Бухгалтер (безготівка, нерезидент) | PRS Бухгалтери — нерезиденти | `GROUP_ACC_NONRESIDENT` |
 | Фіндиректор | PRS Фіндиректори | `GROUP_CFO` |
 
 `ADMIN_EMAILS` (за замовчуванням `od@ftpua.com`) — завжди адміністратори, навіть без групи.
@@ -53,4 +55,6 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 - API permissions → Microsoft Graph (Delegated): `User.ReadBasic.All`, `GroupMember.ReadWrite.All`,
   `GroupMember.Read.All` → Grant admin consent
 
-Маршрут погодження: Ініціатор → Бухгалтер → Фіндиректор → Оплата (бухгалтер).
+Маршрут погодження: Ініціатор → Бухгалтер → Фіндиректор → Оплата.
+Бухгалтер (і перевірка, і оплата) визначається формою оплати в заявці:
+Готівка → бухгалтер готівки; Безготівка — резидент → бухгалтер резидентів; Безготівка — нерезидент → бухгалтер нерезидентів.
