@@ -300,7 +300,7 @@ details.plan[open] > summary { margin-bottom: 12px; }
 .plan-table td a { color: var(--text); }
 
 /* ---------- Сортування ---------- */
-th.sortable-th { cursor: pointer; user-select: none; white-space: nowrap; }
+th.sortable-th { cursor: pointer; user-select: none; }
 th.sortable-th:hover { color: var(--text); background: #eef1f4; }
 th.sortable-th::after { content: "↕"; margin-left: 4px; opacity: .3; font-size: 11px; }
 th.sorted-asc::after { content: "▲"; opacity: 1; color: var(--primary); }
@@ -325,3 +325,54 @@ th.sortable-th:focus-visible { outline: 2px solid var(--primary); outline-offset
   .plan-table tr.overdue td:first-child a { color: #b3261e; font-weight: 600; }
 }
 .table-wrap { overflow-x: auto; }
+
+/* ---------- Списки: ширина, компактність, інструменти таблиць ---------- */
+main.wide { max-width: 1480px; }
+table.sortable { font-size: 13px; }
+table.sortable th, table.sortable td { padding: 7px 8px; }
+table.sortable th { position: relative; vertical-align: bottom; line-height: 1.25; }
+table.sortable td.num { white-space: nowrap; }
+table.sortable .badge { white-space: normal; text-align: center; line-height: 1.3; }
+table.sortable .time { display: block; font-size: 12px; }
+table.fixed-layout { table-layout: fixed; }
+table.fixed-layout td, table.fixed-layout th { overflow: hidden; text-overflow: ellipsis; overflow-wrap: anywhere; }
+table.fixed-layout td.num { overflow-wrap: normal; }
+col[hidden] { display: none; }
+
+.col-resizer { position: absolute; top: 0; right: -4px; width: 9px; height: 100%; cursor: col-resize; z-index: 2; touch-action: none; }
+th:last-child > .col-resizer { right: 0; }
+.col-resizer::after { content: ""; position: absolute; top: 25%; bottom: 25%; left: 4px; width: 1px; background: #d0d7de; }
+th:hover .col-resizer::after, .resizing .col-resizer::after { background: var(--primary); width: 2px; }
+body.resizing, body.resizing * { cursor: col-resize !important; user-select: none !important; }
+
+.filters-row { margin: -4px 0 12px; }
+.filters-row select { width: auto; max-width: 240px; }
+.filters select.is-active { border-color: var(--primary); background: #f0f6fc; }
+.reset-filters { align-self: center; }
+
+.table-tools { display: flex; justify-content: flex-end; align-items: center; gap: 8px; margin-bottom: 6px; }
+.columns-menu { position: relative; }
+.columns-menu > summary { list-style: none; }
+.columns-menu > summary::-webkit-details-marker { display: none; }
+.columns-dropdown { position: absolute; right: 0; top: calc(100% + 4px); z-index: 20; background: #fff; border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0,0,0,.16); padding: 10px 14px; min-width: 220px; display: flex; flex-direction: column; gap: 6px; }
+.columns-dropdown label { display: flex; align-items: center; gap: 8px; font-size: 13px; white-space: nowrap; }
+.columns-dropdown label:has(input:disabled) { color: var(--muted); }
+.columns-dropdown .btn { margin-top: 6px; justify-content: center; }
+
+/* Якщо колонок усе ж забагато — «Номер» лишається на місці при прокрутці */
+table.sortable th:first-child, table.sortable td:first-child { position: sticky; left: 0; background: #fff; z-index: 1; }
+table.sortable th:first-child { background: #f6f8fa; z-index: 3; }
+table.sortable tr.clickable:hover td:first-child { background: #f0f6fc; }
+table.sortable tr.overdue td:first-child { background: #fff8f7; }
+table.sortable tr.selected td:first-child { background: #e8f1fb; }
+
+@media (max-width: 760px) {
+  .columns-menu, .col-resizer { display: none; }
+  .table-tools { justify-content: stretch; }
+  .table-tools .mobile-sort { flex: 1; margin-bottom: 0; }
+  table.fixed-layout { table-layout: auto; }
+  table.stack col { width: auto !important; }
+  .filters-row select { max-width: none; width: 100%; }
+  table.sortable th:first-child, table.sortable td:first-child { position: static; }
+}

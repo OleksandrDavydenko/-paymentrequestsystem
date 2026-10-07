@@ -1,0 +1,23 @@
+{# Фільтри за довідниками (організація, контрагент, вид витрат). Очікує refs = ref_filters(...).
+   Вставляється всередину GET-форми. #}
+<select name="org" onchange="this.form.submit()" aria-label="Організація" class="{{ 'is-active' if refs.org }}">
+  <option value="">Усі організації</option>
+  {% for key, label in ORGANIZATIONS.items() %}
+  <option value="{{ key }}" {{ 'selected' if key == refs.org }}>{{ label }}</option>
+  {% endfor %}
+</select>
+<select name="cp" onchange="this.form.submit()" aria-label="Контрагент" class="{{ 'is-active' if refs.cp }}">
+  <option value="">Усі контрагенти</option>
+  {% for key, label in COUNTERPARTIES.items() | sort(attribute='1') %}
+  <option value="{{ key }}" {{ 'selected' if key == refs.cp }}>{{ label }}</option>
+  {% endfor %}
+</select>
+<select name="exp" onchange="this.form.submit()" aria-label="Вид витрат" class="{{ 'is-active' if refs.exp }}">
+  <option value="">Усі види витрат</option>
+  {% for key, label in EXPENSE_TYPES.items() %}
+  <option value="{{ key }}" {{ 'selected' if key == refs.exp }}>{{ label }}</option>
+  {% endfor %}
+</select>
+{% if request.args | length %}
+<a class="btn btn-sm reset-filters" href="{{ url_for(request.endpoint) }}">✕ Скинути фільтри</a>
+{% endif %}

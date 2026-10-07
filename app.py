@@ -229,6 +229,25 @@ def _load_visible(request_id):
     return req
 
 
+# ---------------------------------------------------------------- фільтри списків
+
+REF_FILTERS = {  # параметр запиту -> (поле заявки, довідник)
+    "org": ("organization_id", db.ORGANIZATIONS),
+    "cp": ("counterparty_id", db.COUNTERPARTIES),
+    "exp": ("expense_type_id", db.EXPENSE_TYPES),
+}
+
+
+def ref_filters(args):
+    """Вибрані значення фільтрів довідників: {"org": 1, "cp": None, ...}."""
+    return {key: _parse_ref(args.get(key), ref) for key, (_, ref) in REF_FILTERS.items()}
+
+
+def apply_ref_filters(rows, selected):
+    return [r for r in rows
+            if all(not value or r[REF_FILTERS[key][0]] == value for key, value in selected.items())]
+
+
 # ---------------------------------------------------------------- маршрути
 
 @app.route("/")
@@ -243,11 +262,13 @@ def index(*, context):
 @requires("initiator")
 def requests_list(*, context):
     status = request.args.get("status") if request.args.get("status") in db.STATUSES else ""
+    refs = ref_filters(request.args)
     return render_template(
         "requests_list.html",
         user_name=g.user["name"],
-        requests=db.list_requests(g.user["email"], status or None),
+        requests=apply_ref_filters(db.list_requests(g.user["email"], status or None), refs),
         status_filter=status,
+        refs=refs,
     )
 
 
@@ -255,8 +276,9 @@ def requests_list(*, context):
 @auth.login_required
 @requires(*wf.APPROVER_ROLES)
 def approvals(*, context):
-    rows = db.list_queue(g.roles)
-    return render_template("approvals.html", user_name=g.user["name"], requests=rows)
+    refs = ref_filters(request.args)
+    rows = apply_ref_filters(db.list_queue(g.roles), refs)
+    return render_template("approvals.html", user_name=g.user["name"], requests=rows, refs=refs)
 
 
 @app.route("/requests/new", methods=["GET", "POST"])
@@ -435,11 +457,10 @@ def to_pay(*, context):
     today = date.today()
     all_rows = db.list_to_pay(roles)
     form_filter = request.args.get("form") if request.args.get("form") in wf.PAYMENT_FORMS else ""
-    org_filter = _parse_ref(request.args.get("org"), db.ORGANIZATIONS)
+    refs = ref_filters(request.args)
     period, d_from, d_to = _date_filter(request.args, today)
-    rows = [r for r in all_rows
+    rows = [r for r in apply_ref_filters(all_rows, refs)
             if (not form_filter or r["payment_form"] == form_filter)
-            and (not org_filter or r["organization_id"] == org_filter)
             and _in_period(r["pay_date"], d_from, d_to)]
 
     return render_template(
@@ -450,7 +471,7 @@ def to_pay(*, context):
         plan=payment_plan(rows),
         today=today,
         form_filter=form_filter,
-        org_filter=org_filter,
+        refs=refs,
         period=period,
         d_from=d_from,
         d_to=d_to,
@@ -469,7 +490,7 @@ def admin_requests(*, context):
     args = request.args
     status = args.get("status") if args.get("status") in wf.STATUSES else ""
     form_filter = args.get("form") if args.get("form") in wf.PAYMENT_FORMS else ""
-    org_filter = _parse_ref(args.get("org"), db.ORGANIZATIONS)
+    refs = ref_filters(args)
     date_field = "pay" if args.get("date_field") == "pay" else "created"
     period, d_from, d_to = _date_filter(args, today)
     q = (args.get("q") or "").strip().lower()
@@ -478,8 +499,6 @@ def admin_requests(*, context):
         if status and r["status"] != status:
             return False
         if form_filter and r["payment_form"] != form_filter:
-            return False
-        if org_filter and r["organization_id"] != org_filter:
             return False
         value = r["pay_date"] if date_field == "pay" else r["created_at"].date()
         if not _in_period(value, d_from, d_to):
@@ -490,7 +509,7 @@ def admin_requests(*, context):
             return q in haystack
         return True
 
-    rows = [r for r in db.list_all() if matches(r)]
+    rows = [r for r in apply_ref_filters(db.list_all(), refs) if matches(r)]
     return render_template(
         "admin_requests.html",
         user_name=g.user["name"],
@@ -499,7 +518,7 @@ def admin_requests(*, context):
         today=today,
         status_filter=status,
         form_filter=form_filter,
-        org_filter=org_filter,
+        refs=refs,
         date_field=date_field,
         period=period,
         d_from=d_from,

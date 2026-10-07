@@ -2,11 +2,17 @@
 
 {% block title %}На погодження{% endblock %}
 
+{% block main_class %}wide{% endblock %}
+
 {% block content %}
 <div class="card">
   <div class="toolbar">
-    <h1 style="margin:0">На погодження{% for code, label in ROLES.items() if code in roles and code not in ('admin', 'initiator') %}{{ ' — ' if loop.first else ', ' }}{{ label }}{% endfor %}</h1>
+    <h1 style="margin:0">На погодження</h1>
+    <span class="muted">{% for code, label in ROLES.items() if code in roles and code not in ('admin', 'initiator') %}{{ label }}{{ ' · ' if not loop.last }}{% endfor %}</span>
   </div>
+  <form method="get" class="filters filters-row">
+    {% include "_ref_filters.html" %}
+  </form>
 
   <div class="table-wrap">
   <table class="stack sortable" id="approvals">
@@ -37,10 +43,10 @@
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}">{{ r.amount | money }} {{ r.currency }}</td>
         <td data-label="Форма оплати">{{ PAYMENT_FORMS[r.payment_form] }}</td>
         <td data-label="Етап"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
-        <td data-label="Очікує з" data-sort="{{ r.history[-1].at.isoformat() }}">{{ r.history[-1].at | dt }}</td>
+        <td data-label="Очікує з" data-sort="{{ r.history[-1].at.isoformat() }}">{{ r.history[-1].at | d }} <span class="muted time">{{ r.history[-1].at.strftime('%H:%M') }}</span></td>
       </tr>
       {% else %}
-      <tr><td colspan="10" class="empty">Немає заявок, що чекають на ваше рішення</td></tr>
+      <tr><td colspan="10" class="empty">{{ "Нічого не знайдено за вибраними фільтрами" if request.args else "Немає заявок, що чекають на ваше рішення" }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

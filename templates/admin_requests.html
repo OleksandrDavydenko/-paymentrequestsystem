@@ -2,6 +2,8 @@
 
 {% block title %}Усі заявки{% endblock %}
 
+{% block main_class %}wide{% endblock %}
+
 {% block content %}
 <form method="get" class="card filters-card">
   <div class="toolbar" style="margin-bottom:12px">
@@ -22,12 +24,7 @@
         <option value="{{ code }}" {{ 'selected' if code == form_filter }}>{{ label }}</option>
         {% endfor %}
       </select>
-      <select name="org" onchange="this.form.submit()" aria-label="Організація">
-        <option value="">Усі організації</option>
-        {% for key, label in ORGANIZATIONS.items() %}
-        <option value="{{ key }}" {{ 'selected' if key == org_filter }}>{{ label }}</option>
-        {% endfor %}
-      </select>
+      {% include "_ref_filters.html" %}
     </div>
   </div>
   <div class="date-field-switch">
