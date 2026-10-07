@@ -90,6 +90,7 @@
         {% endfor %}
       </div>
       {{ err('payment_form') }}
+      <span class="route-hint" id="route-hint"></span>
     </div>
 
     <div class="field">
@@ -262,18 +263,23 @@
 
 <script>
 const INVOICES = {{ invoices | tojson }};
-const NONRESIDENTS = new Set({{ nonresident_counterparties | tojson }});
+const NONRESIDENT_ORGS = new Set({{ nonresident_orgs | tojson }});
+const CHANNEL_ROLES = {{ channel_roles | tojson }};
 
-// Підказка форми оплати за контрагентом: нерезидент -> «Безготівка — нерезидент»
-const cpSel = document.getElementById('counterparty_id');
-if (cpSel && !cpSel.disabled) {
-  cpSel.addEventListener('change', () => {
-    const current = document.querySelector('input[name=payment_form]:checked');
-    if (current && current.value === 'cash') return;  // готівку не чіпаємо
-    const want = NONRESIDENTS.has(Number(cpSel.value)) ? 'bank_nonresident' : 'bank_resident';
-    document.querySelector(`input[name=payment_form][value=${want}]`).checked = true;
-  });
+// Підказка: якому бухгалтеру піде заявка (форма оплати + резидентність організації)
+function updateRouteHint() {
+  const hint = document.getElementById('route-hint');
+  const form = document.querySelector('input[name=payment_form]:checked');
+  const org = Number(document.getElementById('organization_id').value);
+  if (!hint) return;
+  if (!form) { hint.textContent = ''; return; }
+  if (form.value === 'bank' && !org) { hint.textContent = 'Оберіть організацію — від неї залежить, хто перевірятиме заявку'; return; }
+  const channel = form.value === 'cash' ? 'cash' : (NONRESIDENT_ORGS.has(org) ? 'bank_nonresident' : 'bank_resident');
+  hint.textContent = 'Заявку перевірить: ' + CHANNEL_ROLES[channel];
 }
+document.querySelectorAll('input[name=payment_form]').forEach(r => r.addEventListener('change', updateRouteHint));
+document.getElementById('organization_id').addEventListener('change', updateRouteHint);
+updateRouteHint();
 const body = document.getElementById('lines-body');
 const noLines = document.getElementById('no-lines');
 let nextIndex = {{ req.lines | length }};

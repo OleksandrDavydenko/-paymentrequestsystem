@@ -41,7 +41,7 @@
         <td data-label="Контрагент">{{ COUNTERPARTIES[r.counterparty_id] }}</td>
         <td data-label="Вид витрат">{{ EXPENSE_TYPES[r.expense_type_id] }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}">{{ r.amount | money }} {{ r.currency }}</td>
-        <td data-label="Форма оплати">{{ PAYMENT_FORMS[r.payment_form] }}</td>
+        <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
         <td data-label="Етап"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
         <td data-label="Очікує з" data-sort="{{ r.history[-1].at.isoformat() }}">{{ r.history[-1].at | d }} <span class="muted time">{{ r.history[-1].at.strftime('%H:%M') }}</span></td>
       </tr>

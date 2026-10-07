@@ -20,18 +20,37 @@ ROLE_SHORT = {
     "acc_nonresident": "Бух. нерезидент",
 }
 
-# Форма оплати визначає, який бухгалтер перевіряє й проводить оплату заявки
+# Форму оплати вибирає ініціатор
 PAYMENT_FORMS = {
+    "cash": "Готівка",
+    "bank": "Безготівка",
+}
+# Канал оплати = форма оплати + резидентність організації. Він визначає,
+# який бухгалтер перевіряє й проводить оплату заявки.
+CHANNELS = {
     "cash": "Готівка",
     "bank_resident": "Безготівка — резидент",
     "bank_nonresident": "Безготівка — нерезидент",
 }
-ACCOUNTANT_BY_FORM = {
+ACCOUNTANT_BY_CHANNEL = {
     "cash": "acc_cash",
     "bank_resident": "acc_resident",
     "bank_nonresident": "acc_nonresident",
 }
-ACCOUNTANT_ROLES = set(ACCOUNTANT_BY_FORM.values())
+ACCOUNTANT_ROLES = set(ACCOUNTANT_BY_CHANNEL.values())
+
+# ID організацій-нерезидентів. Заповнюється з довідника організацій (mock_data, пізніше — 1С).
+NONRESIDENT_ORGANIZATIONS = set()
+
+
+def channel_of(req):
+    """Готівка — завжди «cash»; безготівка — резидент/нерезидент за організацією заявки."""
+    form = req.get("payment_form")
+    if form == "cash":
+        return "cash"
+    if form == "bank":
+        return "bank_nonresident" if req.get("organization_id") in NONRESIDENT_ORGANIZATIONS else "bank_resident"
+    return None
 APPROVER_ROLES = ACCOUNTANT_ROLES | {"cfo"}
 
 # код -> (назва, css-клас бейджа)
@@ -88,7 +107,7 @@ def stage_actor(req):
     """Хто має діяти на поточному етапі: "author", конкретна роль або None (закрита)."""
     actor, _ = WORKFLOW.get(req["status"], (None, {}))
     if actor == "accountant":
-        return ACCOUNTANT_BY_FORM.get(req.get("payment_form"))
+        return ACCOUNTANT_BY_CHANNEL.get(channel_of(req))
     return actor
 
 
@@ -175,7 +194,7 @@ def apply_action(req, action, roles, user, comment=""):
 
 def stage_names(req):
     """Назви етапів для смуги маршруту; етап бухгалтера — за формою оплати."""
-    accountant = ROLES.get(ACCOUNTANT_BY_FORM.get(req.get("payment_form")), "Бухгалтер")
+    accountant = ROLES.get(ACCOUNTANT_BY_CHANNEL.get(channel_of(req)), "Бухгалтер")
     return [(code, accountant if code == "accountant" else name) for code, name in STAGES]
 
 

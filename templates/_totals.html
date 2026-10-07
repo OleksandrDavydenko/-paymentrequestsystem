@@ -9,7 +9,7 @@
     {% if t.by_form | length > 1 %}
     <ul class="total-breakdown">
       {% for f, amount in t.by_form.items() %}
-      <li><span>{{ PAYMENT_FORMS[f] }}</span><span>{{ amount | money }}</span></li>
+      <li><span>{{ CHANNELS[f] }}</span><span>{{ amount | money }}</span></li>
       {% endfor %}
     </ul>
     {% endif %}

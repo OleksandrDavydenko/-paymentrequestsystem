@@ -14,7 +14,7 @@
       <select name="form" onchange="this.form.submit()" aria-label="Форма оплати">
         <option value="">Усі форми оплати</option>
         {% for f in visible_forms %}
-        <option value="{{ f }}" {{ 'selected' if f == form_filter }}>{{ PAYMENT_FORMS[f] }}</option>
+        <option value="{{ f }}" {{ 'selected' if f == form_filter }}>{{ CHANNELS[f] }}</option>
         {% endfor %}
       </select>
       {% endif %}
@@ -99,7 +99,7 @@
         <td data-label="Організація">{{ ORGANIZATIONS[r.organization_id] }}</td>
         <td data-label="Контрагент">{{ COUNTERPARTIES[r.counterparty_id] }}</td>
         <td data-label="Вид витрат">{{ EXPENSE_TYPES[r.expense_type_id] }}</td>
-        <td data-label="Форма оплати">{{ PAYMENT_FORMS[r.payment_form] }}</td>
+        <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
         <td data-label="Автор">{{ r.author_name }}</td>
       </tr>

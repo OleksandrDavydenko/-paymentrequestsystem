@@ -62,6 +62,8 @@ def inject_refs():
         "EXPENSE_TYPES": db.EXPENSE_TYPES,
         "CURRENCIES": db.CURRENCIES,
         "PAYMENT_FORMS": db.PAYMENT_FORMS,
+        "CHANNELS": wf.CHANNELS,
+        "channel_of": wf.channel_of,
         "STATUSES": db.STATUSES,
     }
 
@@ -298,7 +300,7 @@ def request_card(request_id=None, *, context):
             "author_email": user["email"],
             "author_name": user["name"],
             "status": "draft",
-            "payment_form": "bank_resident",
+            "payment_form": "bank",
             "currency": "UAH",
             "lines": [],
             "history": [],
@@ -341,7 +343,8 @@ def request_card(request_id=None, *, context):
         req=req,
         errors=errors,
         invoices=db.INVOICES,
-        nonresident_counterparties=sorted(db.NONRESIDENT_COUNTERPARTIES),
+        nonresident_orgs=sorted(wf.NONRESIDENT_ORGANIZATIONS),
+        channel_roles={c: wf.ROLES[r] for c, r in wf.ACCOUNTANT_BY_CHANNEL.items()},
         editable=wf.can_edit(req, roles, user["email"]),
         can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
         actions=[a for a in available if a != "submit"],
@@ -411,7 +414,8 @@ def currency_totals(rows, today):
                                               "overdue_count": 0, "by_form": {}})
         t["amount"] += r["amount"]
         t["count"] += 1
-        t["by_form"][r["payment_form"]] = t["by_form"].get(r["payment_form"], Decimal(0)) + r["amount"]
+        ch = wf.channel_of(r)
+        t["by_form"][ch] = t["by_form"].get(ch, Decimal(0)) + r["amount"]
         if r["status"] == "to_pay" and r["pay_date"] < today:
             t["overdue"] += r["amount"]
             t["overdue_count"] += 1
@@ -456,11 +460,11 @@ def to_pay(*, context):
     roles = g.roles
     today = date.today()
     all_rows = db.list_to_pay(roles)
-    form_filter = request.args.get("form") if request.args.get("form") in wf.PAYMENT_FORMS else ""
+    form_filter = request.args.get("form") if request.args.get("form") in wf.CHANNELS else ""
     refs = ref_filters(request.args)
     period, d_from, d_to = _date_filter(request.args, today)
     rows = [r for r in apply_ref_filters(all_rows, refs)
-            if (not form_filter or r["payment_form"] == form_filter)
+            if (not form_filter or wf.channel_of(r) == form_filter)
             and _in_period(r["pay_date"], d_from, d_to)]
 
     return render_template(
@@ -477,7 +481,7 @@ def to_pay(*, context):
         d_to=d_to,
         presets=date_presets(today),
         # Фільтр за формою оплати має сенс, якщо видно більше однієї форми
-        visible_forms=[f for f in wf.PAYMENT_FORMS if any(r["payment_form"] == f for r in all_rows)],
+        visible_forms=[f for f in wf.CHANNELS if any(wf.channel_of(r) == f for r in all_rows)],
         payable={r["id"] for r in rows if wf.acting_role(r, roles, g.user["email"])},
     )
 
@@ -489,7 +493,7 @@ def admin_requests(*, context):
     today = date.today()
     args = request.args
     status = args.get("status") if args.get("status") in wf.STATUSES else ""
-    form_filter = args.get("form") if args.get("form") in wf.PAYMENT_FORMS else ""
+    form_filter = args.get("form") if args.get("form") in wf.CHANNELS else ""
     refs = ref_filters(args)
     date_field = "pay" if args.get("date_field") == "pay" else "created"
     period, d_from, d_to = _date_filter(args, today)
@@ -498,7 +502,7 @@ def admin_requests(*, context):
     def matches(r):
         if status and r["status"] != status:
             return False
-        if form_filter and r["payment_form"] != form_filter:
+        if form_filter and wf.channel_of(r) != form_filter:
             return False
         value = r["pay_date"] if date_field == "pay" else r["created_at"].date()
         if not _in_period(value, d_from, d_to):
