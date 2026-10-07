@@ -28,11 +28,22 @@
       {% endif %}
     </nav>
     {% if user_name %}
-    <span class="user">
-      {{ user_name }}
-      {% if roles %}<span class="user-roles">({% for code, label in ROLES.items() if code in roles %}{{ label }}{{ ', ' if not loop.last }}{% endfor %})</span>{% endif %}
-      · <a href="{{ url_for('identity.logout') }}">Вийти</a>
-    </span>
+    <details class="user-menu">
+      <summary title="{{ user_name }}">
+        <span class="avatar">{{ (user_name.split()|map('first')|join(''))[:2]|upper }}</span>
+        <span class="user-name">{{ user_name }}</span>
+      </summary>
+      <div class="user-dropdown">
+        <div class="ud-name">{{ user_name }}</div>
+        {% if roles %}
+        <div class="ud-label">Ролі</div>
+        <ul class="ud-roles">
+          {% for code, label in ROLES.items() if code in roles %}<li>{{ label }}</li>{% endfor %}
+        </ul>
+        {% endif %}
+        <a class="btn btn-sm" href="{{ url_for('identity.logout') }}">Вийти</a>
+      </div>
+    </details>
     {% endif %}
   </header>
   <main>
@@ -43,5 +54,11 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  <script>
+    // Закрити меню користувача кліком поза ним
+    document.addEventListener('click', e => {
+      document.querySelectorAll('details.user-menu[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
+    });
+  </script>
 </body>
 </html>
