@@ -1,14 +1,16 @@
 import os
 import re
 import uuid
+from functools import wraps
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
 from dotenv import load_dotenv
-from flask import Flask, abort, flash, redirect, render_template, request, send_file, session, url_for
+from flask import Flask, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 from werkzeug.middleware.proxy_fix import ProxyFix
 import identity.flask
 
+import graph
 import mock_data as db
 import workflow as wf
 
@@ -136,40 +138,86 @@ def parse_request_form(form):
     return data, errors
 
 
-# ---------------------------------------------------------------- користувач і роль
+# ---------------------------------------------------------------- користувач і ролі
 
-# Мок-режим: роль вибирається вручну в шапці. Пізніше — App Roles з токена Entra ID.
-ROLE_SWITCHER = os.environ.get("ROLE_SWITCHER", "1") == "1"
-
-# Які статуси бачить у черзі кожна роль погоджувача
-QUEUE_STATUSES = {
-    "head": {"head"},
-    "accountant": {"accountant", "to_pay"},
-    "cfo": {"cfo"},
+# Ролі = членство в групах безпеки Entra ID (ID груп приходять у токені, claim "groups").
+GROUPS = {
+    "admin": os.environ.get("GROUP_ADMIN", ""),
+    "initiator": os.environ.get("GROUP_INITIATOR", ""),
+    "accountant": os.environ.get("GROUP_ACCOUNTANT", ""),
+    "cfo": os.environ.get("GROUP_CFO", ""),
 }
+# Страховка від блокування: ці люди завжди адміністратори
+ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "od@ftpua.com").split(",") if e.strip()}
+OVERAGE_SCOPES = ["https://graph.microsoft.com/GroupMember.Read.All"]
 
 
-def _user(context):
-    user = context["user"]
-    email = user.get("preferred_username", "")
-    return {"email": email, "name": user.get("name") or email}
+def _token_groups(claims):
+    """ID груп користувача з токена; якщо груп забагато (overage) — перевірка через Graph."""
+    if "groups" in claims:
+        return set(claims["groups"])
+    overage = "groups" in (claims.get("_claim_names") or {}) or claims.get("hasgroups")
+    if not overage:
+        return set()
+    cache_key = f"overage_groups:{claims.get('oid')}"
+    if cache_key not in session:
+        wanted = [gid for gid in GROUPS.values() if gid]
+        result = auth._auth.get_token_for_user(OVERAGE_SCOPES)
+        try:
+            found = graph.check_member_groups(result["access_token"], wanted) if "access_token" in result else set()
+        except graph.GraphError:
+            app.logger.exception("Overage group check failed")
+            found = set()
+        session[cache_key] = sorted(found)
+    return set(session[cache_key])
 
 
-def current_role():
-    role = session.get("role", "initiator") if ROLE_SWITCHER else "initiator"
-    return role if role in wf.ROLES else "initiator"
+def resolve_roles(claims):
+    groups = _token_groups(claims)
+    roles = {role for role, gid in GROUPS.items() if gid and gid in groups}
+    if claims.get("preferred_username", "").lower() in ADMIN_EMAILS:
+        roles.add("admin")
+    return roles
+
+
+def requires(*needed):
+    """Після @auth.login_required: заповнює g.user / g.roles і перевіряє доступ.
+    Без жодної ролі (або без потрібної) — сторінка «Немає доступу»."""
+    def deco(view):
+        @wraps(view)
+        def wrapper(*args, context, **kwargs):
+            claims = context["user"]
+            email = claims.get("preferred_username", "")
+            g.user = {"email": email, "name": claims.get("name") or email, "oid": claims.get("oid")}
+            g.roles = resolve_roles(claims)
+            if not g.roles or (needed and not g.roles & set(needed)):
+                return render_template("no_access.html", user_name=g.user["name"], missing=needed), 403
+            return view(*args, context=context, **kwargs)
+        return wrapper
+    return deco
 
 
 @app.context_processor
-def inject_role():
-    role = current_role()
-    queue = db.list_for_stage(QUEUE_STATUSES[role]) if role in QUEUE_STATUSES else []
-    return {"role": role, "ROLES": wf.ROLES, "ROLE_SWITCHER": ROLE_SWITCHER, "queue_count": len(queue)}
+def inject_roles():
+    roles = getattr(g, "roles", set())
+    return {
+        "roles": roles,
+        "ROLES": wf.ROLES,
+        "queue_count": len(db.list_for_stage(wf.queue_statuses(roles))) if roles & wf.APPROVER_ROLES else 0,
+    }
 
 
-def _load_visible(request_id, user, role):
+def _home():
+    if "initiator" not in g.roles and g.roles & wf.APPROVER_ROLES:
+        return url_for("approvals")
+    if g.roles == {"admin"}:
+        return url_for("admin_users")
+    return url_for("requests_list")
+
+
+def _load_visible(request_id):
     req = db.get_request(request_id)
-    if not req or not wf.can_view(req, role, user["email"]):
+    if not req or not wf.can_view(req, g.roles, g.user["email"]):
         abort(404)
     return req
 
@@ -177,50 +225,43 @@ def _load_visible(request_id, user, role):
 # ---------------------------------------------------------------- маршрути
 
 @app.route("/")
-def index():
-    return redirect(url_for("requests_list"))
-
-
-@app.route("/role", methods=["POST"])
 @auth.login_required
-def set_role(*, context):
-    role = request.form.get("role")
-    if ROLE_SWITCHER and role in wf.ROLES:
-        session["role"] = role
-    return redirect(url_for("approvals") if role in QUEUE_STATUSES else url_for("requests_list"))
+@requires()
+def index(*, context):
+    return redirect(_home())
 
 
 @app.route("/requests")
 @auth.login_required
+@requires("initiator")
 def requests_list(*, context):
-    user = _user(context)
     status = request.args.get("status") if request.args.get("status") in db.STATUSES else ""
     return render_template(
         "requests_list.html",
-        user_name=user["name"],
-        requests=db.list_requests(user["email"], status or None),
+        user_name=g.user["name"],
+        requests=db.list_requests(g.user["email"], status or None),
         status_filter=status,
     )
 
 
 @app.route("/approvals")
 @auth.login_required
+@requires(*wf.APPROVER_ROLES)
 def approvals(*, context):
-    user = _user(context)
-    rows = db.list_for_stage(QUEUE_STATUSES.get(current_role(), set()))
-    return render_template("approvals.html", user_name=user["name"], requests=rows)
+    rows = db.list_for_stage(wf.queue_statuses(g.roles))
+    return render_template("approvals.html", user_name=g.user["name"], requests=rows)
 
 
 @app.route("/requests/new", methods=["GET", "POST"])
 @app.route("/requests/<int:request_id>", methods=["GET", "POST"])
 @auth.login_required
+@requires("initiator", *wf.APPROVER_ROLES)
 def request_card(request_id=None, *, context):
-    user = _user(context)
-    role = current_role()
+    user, roles = g.user, g.roles
     if request_id is None:
-        if role != "initiator":
-            flash("Створювати заявки може роль «Ініціатор»", "error")
-            return redirect(url_for("requests_list"))
+        if "initiator" not in roles:
+            flash("Створювати заявки може лише роль «Ініціатор»", "error")
+            return redirect(_home())
         existing = {
             "id": None,
             "number": db.next_number(),
@@ -235,12 +276,12 @@ def request_card(request_id=None, *, context):
             "attachments": [],
         }
     else:
-        existing = _load_visible(request_id, user, role)
+        existing = _load_visible(request_id)
 
     errors = {}
     req = existing
     if request.method == "POST":
-        if not wf.can_edit(existing, role, user["email"]):
+        if not wf.can_edit(existing, roles, user["email"]):
             flash("Заявку в цьому статусі редагувати не можна", "error")
             return redirect(url_for("request_card", request_id=request_id))
         data, errors = parse_request_form(request.form)
@@ -251,9 +292,9 @@ def request_card(request_id=None, *, context):
             action = request.form.get("action")
             if req["id"] is None:
                 req["created_at"] = datetime.now()
-                wf.add_history(req, "create", user, role, to_status="draft")
+                wf.add_history(req, "create", user, "initiator", to_status="draft")
             if action == "submit":
-                wf.apply_action(req, "submit", role, user)
+                wf.apply_action(req, "submit", roles, user)
             new_id = db.save_request(req)
             number = db.get_request(new_id)["number"]
             if action == "submit":
@@ -264,41 +305,153 @@ def request_card(request_id=None, *, context):
                 return redirect(url_for("requests_list"))
             return redirect(url_for("request_card", request_id=new_id))
 
-    available = wf.available_actions(req, role, user["email"])
+    available = wf.available_actions(req, roles, user["email"])
     return render_template(
         "request_form.html",
         user_name=user["name"],
         req=req,
         errors=errors,
         invoices=db.INVOICES,
-        editable=wf.can_edit(req, role, user["email"]),
-        can_attach=req["id"] is not None and wf.can_attach(req, role, user["email"]),
+        editable=wf.can_edit(req, roles, user["email"]),
+        can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
         actions=[a for a in available if a != "submit"],
+        acting_role=wf.acting_role(req, roles, user["email"]),
         can_submit="submit" in available,
         stages=wf.stage_states(req),
         ACTIONS=wf.ACTIONS,
         CLOSED_STATUSES=wf.CLOSED_STATUSES,
         draft_comment=session.pop("draft_comment", ""),
         current_email=user["email"],
+        back_url=url_for("requests_list") if wf.is_author(req, user["email"]) and "initiator" in roles
+        else _home(),
     )
 
 
 @app.route("/requests/<int:request_id>/action", methods=["POST"])
 @auth.login_required
+@requires("initiator", *wf.APPROVER_ROLES)
 def request_action(request_id, *, context):
-    user = _user(context)
-    role = current_role()
-    req = _load_visible(request_id, user, role)
+    req = _load_visible(request_id)
     action = request.form.get("action")
     try:
-        wf.apply_action(req, action, role, user, request.form.get("comment"))
+        wf.apply_action(req, action, g.roles, g.user, request.form.get("comment"))
     except wf.WorkflowError as e:
         flash(str(e), "error")
         session["draft_comment"] = request.form.get("comment", "")
         return redirect(url_for("request_card", request_id=request_id))
     db.save_request(req)
     flash(f"Заявка № {req['number']}: {wf.ACTIONS[action][1].lower()}", "success")
-    return redirect(url_for("approvals") if role in QUEUE_STATUSES else url_for("requests_list"))
+    return redirect(url_for("approvals"))
+
+
+# ---------------------------------------------------------------- адміністрування
+
+ADMIN_ROLE_ORDER = ["admin", "initiator", "accountant", "cfo"]
+
+
+def _azure_group_url(group_id):
+    return f"https://portal.azure.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Members/groupId/{group_id}"
+
+
+def _configured_groups():
+    return {role: gid for role, gid in GROUPS.items() if gid}
+
+
+@app.route("/admin/users")
+@auth.login_required(scopes=graph.ADMIN_SCOPES)
+@requires("admin")
+def admin_users(*, context):
+    token = context["access_token"]
+    groups = _configured_groups()
+    users, error = {}, None
+    try:
+        for role, gid in groups.items():
+            for u in graph.group_members(token, gid):
+                users.setdefault(u["id"], {**u, "roles": set()})["roles"].add(role)
+    except graph.GraphError as e:
+        error = str(e)
+    return render_template(
+        "admin_users.html",
+        user_name=g.user["name"],
+        users=sorted(users.values(), key=lambda u: u["name"].lower()),
+        role_order=ADMIN_ROLE_ORDER,
+        groups=groups,
+        missing_groups=[r for r in ADMIN_ROLE_ORDER if r not in groups],
+        group_url=_azure_group_url,
+        error=error,
+        me_oid=g.user["oid"],
+    )
+
+
+@app.route("/admin/users/search")
+@auth.login_required(scopes=graph.ADMIN_SCOPES)
+@requires("admin")
+def admin_users_search(*, context):
+    try:
+        return {"users": graph.search_users(context["access_token"], request.args.get("q", ""))}
+    except graph.GraphError as e:
+        return {"error": str(e)}, 502
+
+
+def _apply_role_changes(token, user_id, wanted, current):
+    """Додати/видалити людину в групах так, щоб її ролі стали = wanted. Повертає (додано, знято)."""
+    groups = _configured_groups()
+    if user_id == g.user["oid"] and "admin" in current and "admin" not in wanted:
+        raise graph.GraphError("Не можна зняти роль Адміністратора із самого себе")
+    added, removed = [], []
+    for role in ADMIN_ROLE_ORDER:
+        if role not in groups:
+            continue
+        if role in wanted and role not in current:
+            graph.add_member(token, groups[role], user_id)
+            added.append(wf.ROLES[role])
+        elif role in current and role not in wanted:
+            graph.remove_member(token, groups[role], user_id)
+            removed.append(wf.ROLES[role])
+    return added, removed
+
+
+@app.route("/admin/users/save", methods=["POST"])
+@auth.login_required(scopes=graph.ADMIN_SCOPES)
+@requires("admin")
+def admin_users_save(*, context):
+    user_id = request.form.get("user_id", "")
+    name = request.form.get("name", "")
+    wanted = {r for r in request.form.getlist("roles") if r in wf.ROLES}
+    current = {r for r in request.form.get("current", "").split(",") if r in wf.ROLES}
+    try:
+        added, removed = _apply_role_changes(context["access_token"], user_id, wanted, current)
+    except graph.GraphError as e:
+        flash(str(e), "error")
+        return redirect(url_for("admin_users"))
+    if added or removed:
+        parts = ([f"додано: {', '.join(added)}"] if added else []) + ([f"знято: {', '.join(removed)}"] if removed else [])
+        flash(f"{name}: {'; '.join(parts)}. Зміни вже в Azure; користувачу треба вийти й увійти знову.", "success")
+        if not wanted:
+            flash(f"{name} більше не має доступу до системи.", "success")
+    else:
+        flash("Змін немає", "success")
+    return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/add", methods=["POST"])
+@auth.login_required(scopes=graph.ADMIN_SCOPES)
+@requires("admin")
+def admin_users_add(*, context):
+    user_id = request.form.get("user_id", "")
+    name = request.form.get("name", "")
+    wanted = {r for r in request.form.getlist("roles") if r in wf.ROLES}
+    if not user_id:
+        flash("Оберіть співробітника зі списку пошуку", "error")
+    elif not wanted:
+        flash("Оберіть хоча б одну роль", "error")
+    else:
+        try:
+            added, _ = _apply_role_changes(context["access_token"], user_id, wanted, set())
+            flash(f"{name}: додано ролі {', '.join(added)}. Зміни вже в Azure.", "success")
+        except graph.GraphError as e:
+            flash(str(e), "error")
+    return redirect(url_for("admin_users"))
 
 
 # ---------------------------------------------------------------- документи
@@ -315,7 +468,7 @@ INLINE_EXT = {"pdf", "jpg", "jpeg", "png"}  # відкриваються в бр
 @app.errorhandler(413)
 def too_large(_e):
     flash("Файли завеликі: максимум 10 МБ на файл і 25 МБ за раз", "error")
-    return redirect(request.referrer or url_for("requests_list"))
+    return redirect(request.referrer or "/")
 
 
 def _ext(filename):
@@ -324,11 +477,11 @@ def _ext(filename):
 
 @app.route("/requests/<int:request_id>/files", methods=["POST"])
 @auth.login_required
+@requires("initiator", *wf.APPROVER_ROLES)
 def upload_files(request_id, *, context):
-    user = _user(context)
-    role = current_role()
-    req = _load_visible(request_id, user, role)
-    if not wf.can_attach(req, role, user["email"]):
+    user, roles = g.user, g.roles
+    req = _load_visible(request_id)
+    if not wf.can_attach(req, roles, user["email"]):
         abort(403)
     files = [f for f in request.files.getlist("files") if f and f.filename]
     if not files:
@@ -337,6 +490,7 @@ def upload_files(request_id, *, context):
 
     os.makedirs(UPLOAD_DIR, exist_ok=True)
     added = []
+    role = wf.history_role(req, roles, user["email"])
     for f in files:
         ext = _ext(f.filename)
         f.stream.seek(0, os.SEEK_END)
@@ -365,10 +519,10 @@ def upload_files(request_id, *, context):
 
 @app.route("/files/<file_id>")
 @auth.login_required
+@requires("initiator", *wf.APPROVER_ROLES)
 def download_file(file_id, *, context):
-    user = _user(context)
     req, att = db.find_attachment(file_id)
-    if not req or not wf.can_view(req, current_role(), user["email"]):
+    if not req or not wf.can_view(req, g.roles, g.user["email"]):
         abort(404)
     path = os.path.join(UPLOAD_DIR, f"{att['id']}.{att['ext']}")
     if not os.path.exists(path):
@@ -378,16 +532,16 @@ def download_file(file_id, *, context):
 
 @app.route("/files/<file_id>/delete", methods=["POST"])
 @auth.login_required
+@requires("initiator", *wf.APPROVER_ROLES)
 def delete_file(file_id, *, context):
-    user = _user(context)
-    role = current_role()
+    user, roles = g.user, g.roles
     req, att = db.find_attachment(file_id)
-    if not req or not wf.can_view(req, role, user["email"]):
+    if not req or not wf.can_view(req, roles, user["email"]):
         abort(404)
     if att["user_email"].lower() != user["email"].lower() or req["status"] in wf.CLOSED_STATUSES:
         abort(403)
     req["attachments"] = [a for a in req["attachments"] if a["id"] != file_id]
-    wf.add_history(req, "file_delete", user, role, comment=att["name"])
+    wf.add_history(req, "file_delete", user, wf.history_role(req, roles, user["email"]), comment=att["name"])
     db.save_request(req)
     try:
         os.remove(os.path.join(UPLOAD_DIR, f"{att['id']}.{att['ext']}"))

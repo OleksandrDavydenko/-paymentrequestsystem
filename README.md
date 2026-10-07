@@ -34,3 +34,23 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 Кожен push у `main` деплоїться через GitHub Actions (`.github/workflows/deploy.yml`).
 Потрібен секрет репозиторію `AZURE_WEBAPP_PUBLISH_PROFILE` — вміст publish profile з App Service
 (App Service → Configuration → SCM Basic Auth Publishing = On → Overview → Download publish profile).
+
+## Ролі та групи
+Ролі = членство в групах безпеки Microsoft Entra ID. Адмінка (`/admin/users`) змінює членство через Microsoft Graph
+від імені адміністратора, що увійшов.
+
+| Роль | Група | Змінна App Service |
+|---|---|---|
+| Адміністратор | PRS Адміністратори | `GROUP_ADMIN` |
+| Ініціатор | PRS Ініціатори | `GROUP_INITIATOR` |
+| Бухгалтер | PRS Бухгалтери | `GROUP_ACCOUNTANT` |
+| Фіндиректор | PRS Фіндиректори | `GROUP_CFO` |
+
+`ADMIN_EMAILS` (за замовчуванням `od@ftpua.com`) — завжди адміністратори, навіть без групи.
+
+Налаштування в Entra ID:
+- App registration → Token configuration → Add groups claim → Security groups (ID token: Group ID)
+- API permissions → Microsoft Graph (Delegated): `User.ReadBasic.All`, `GroupMember.ReadWrite.All`,
+  `GroupMember.Read.All` → Grant admin consent
+
+Маршрут погодження: Ініціатор → Бухгалтер → Фіндиректор → Оплата (бухгалтер).

@@ -1,18 +1,20 @@
-"""Процес погодження заявки: ролі, етапи, дозволені дії та історія."""
+"""Процес погодження заявки: ролі, етапи, дозволені дії та історія.
+
+Права перевіряються за МНОЖИНОЮ ролей користувача (ролей може бути кілька).
+"""
 from datetime import datetime
 
 ROLES = {
+    "admin": "Адміністратор",
     "initiator": "Ініціатор",
-    "head": "Керівник відділу",
     "accountant": "Бухгалтер",
     "cfo": "Фіндиректор",
 }
-APPROVER_ROLES = {"head", "accountant", "cfo"}
+APPROVER_ROLES = {"accountant", "cfo"}
 
 # код -> (назва, css-клас бейджа)
 STATUSES = {
     "draft": ("Чернетка", "grey"),
-    "head": ("Погодження керівника", "amber"),
     "accountant": ("Перевірка бухгалтера", "amber"),
     "cfo": ("Погодження фіндиректора", "amber"),
     "to_pay": ("До оплати", "green"),
@@ -25,11 +27,16 @@ CLOSED_STATUSES = {"paid", "rejected"}
 
 # Смуга маршруту в картці: (статус етапу, назва)
 STAGES = [
-    ("head", "Керівник відділу"),
     ("accountant", "Бухгалтер"),
     ("cfo", "Фіндиректор"),
     ("to_pay", "Оплата"),
 ]
+
+# Які статуси бачить у черзі «На погодження» кожна роль
+QUEUE_STATUSES = {
+    "accountant": {"accountant", "to_pay"},
+    "cfo": {"cfo"},
+}
 
 # код дії -> (назва кнопки, запис в історії, css-клас, коментар обов'язковий)
 ACTIONS = {
@@ -45,9 +52,8 @@ ACTIONS = {
 
 # статус -> (хто діє: "author" або роль, {дія: новий статус})
 WORKFLOW = {
-    "draft": ("author", {"submit": "head"}),
-    "rework": ("author", {"submit": "head"}),
-    "head": ("head", {"approve": "accountant", "rework": "rework", "reject": "rejected"}),
+    "draft": ("author", {"submit": "accountant"}),
+    "rework": ("author", {"submit": "accountant"}),
     "accountant": ("accountant", {"approve": "cfo", "rework": "rework", "reject": "rejected"}),
     "cfo": ("cfo", {"approve": "to_pay", "rework": "rework", "reject": "rejected"}),
     "to_pay": ("accountant", {"pay": "paid"}),
@@ -62,29 +68,34 @@ def is_author(req, user_email):
     return req.get("author_email", "").lower() == (user_email or "").lower()
 
 
-def is_current_actor(req, role, user_email):
+def acting_role(req, roles, user_email):
+    """Роль, якою користувач може діяти на поточному етапі, або None."""
     actor, _ = WORKFLOW.get(req["status"], (None, {}))
     if actor == "author":
-        return role == "initiator" and is_author(req, user_email)
-    return actor is not None and actor == role
+        return "initiator" if "initiator" in roles and is_author(req, user_email) else None
+    return actor if actor in roles else None
 
 
-def can_view(req, role, user_email):
-    return is_author(req, user_email) or role in APPROVER_ROLES
+def queue_statuses(roles):
+    return set().union(*(QUEUE_STATUSES[r] for r in roles if r in QUEUE_STATUSES))
 
 
-def can_edit(req, role, user_email):
-    return role == "initiator" and is_author(req, user_email) and req["status"] in EDITABLE_STATUSES
+def can_view(req, roles, user_email):
+    return is_author(req, user_email) or bool(roles & APPROVER_ROLES)
 
 
-def can_attach(req, role, user_email):
+def can_edit(req, roles, user_email):
+    return "initiator" in roles and is_author(req, user_email) and req["status"] in EDITABLE_STATUSES
+
+
+def can_attach(req, roles, user_email):
     if req["status"] in CLOSED_STATUSES:
         return False
-    return (role == "initiator" and is_author(req, user_email)) or is_current_actor(req, role, user_email)
+    return ("initiator" in roles and is_author(req, user_email)) or acting_role(req, roles, user_email) is not None
 
 
-def available_actions(req, role, user_email):
-    if not is_current_actor(req, role, user_email):
+def available_actions(req, roles, user_email):
+    if acting_role(req, roles, user_email) is None:
         return []
     return list(WORKFLOW[req["status"]][1])
 
@@ -102,10 +113,21 @@ def add_history(req, action, user, role, comment="", from_status=None, to_status
     })
 
 
-def apply_action(req, action, role, user, comment=""):
+def history_role(req, roles, user_email):
+    """Роль для запису в історію, коли дія не є кроком процесу (напр. додано файл)."""
+    role = acting_role(req, roles, user_email)
+    if role:
+        return role
+    if "initiator" in roles and is_author(req, user_email):
+        return "initiator"
+    return next((r for r in ("accountant", "cfo", "initiator", "admin") if r in roles), "initiator")
+
+
+def apply_action(req, action, roles, user, comment=""):
     """Виконати дію процесу над заявкою (змінює req). Кидає WorkflowError."""
     comment = (comment or "").strip()
-    if action not in available_actions(req, role, user["email"]):
+    role = acting_role(req, roles, user["email"])
+    if role is None or action not in WORKFLOW[req["status"]][1]:
         raise WorkflowError("Ця дія недоступна для вашої ролі на поточному етапі")
     if ACTIONS[action][3] and not comment:
         raise WorkflowError("Вкажіть коментар — що саме потрібно виправити або чому заявку відхилено")

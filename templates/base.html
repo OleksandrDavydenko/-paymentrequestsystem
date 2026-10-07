@@ -10,27 +10,24 @@
   <header>
     <a class="brand" href="/">Система заявок на оплату</a>
     <nav>
-      {% if user_name %}
+      {% if 'initiator' in roles %}
       <a href="{{ url_for('requests_list') }}" class="{{ 'active' if request.endpoint == 'requests_list' }}">Мої заявки</a>
-      {% if role != 'initiator' %}
+      {% endif %}
+      {% if 'accountant' in roles or 'cfo' in roles %}
       <a href="{{ url_for('approvals') }}" class="{{ 'active' if request.endpoint == 'approvals' }}">
         На погодження{% if queue_count %} <span class="count">{{ queue_count }}</span>{% endif %}
       </a>
       {% endif %}
+      {% if 'admin' in roles %}
+      <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin_') }}">Адміністрування</a>
       {% endif %}
     </nav>
     {% if user_name %}
-      {% if ROLE_SWITCHER %}
-      <form method="post" action="{{ url_for('set_role') }}" class="role-switch" title="Тестовий режим: роль вибирається вручну">
-        <label for="role-select">Роль:</label>
-        <select id="role-select" name="role" onchange="this.form.submit()">
-          {% for code, label in ROLES.items() %}
-          <option value="{{ code }}" {{ 'selected' if code == role }}>{{ label }}</option>
-          {% endfor %}
-        </select>
-      </form>
-      {% endif %}
-    <span class="user">{{ user_name }} · <a href="{{ url_for('identity.logout') }}">Вийти</a></span>
+    <span class="user">
+      {{ user_name }}
+      {% if roles %}<span class="user-roles">({% for code, label in ROLES.items() if code in roles %}{{ label }}{{ ', ' if not loop.last }}{% endfor %})</span>{% endif %}
+      · <a href="{{ url_for('identity.logout') }}">Вийти</a>
+    </span>
     {% endif %}
   </header>
   <main>

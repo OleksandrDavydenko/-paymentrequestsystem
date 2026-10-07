@@ -158,3 +158,19 @@ header .count { background: #fff; color: var(--primary); border-radius: 999px; p
 .tl-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .tl-comment { margin-top: 6px; background: #f6f8fa; border-radius: 6px; padding: 8px 12px; white-space: pre-wrap; }
 @media (max-width: 760px) { .route li { font-size: 11px; } }
+
+/* ---------- Адміністрування ---------- */
+header .user-roles { opacity: .8; font-size: 12px; }
+.admin-users .role-col { text-align: center; width: 120px; }
+.admin-users .role-col a { text-decoration: none; font-size: 12px; }
+.admin-users input[type=checkbox] { width: 18px; height: 18px; cursor: pointer; }
+code { background: #0000000d; padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.search-results { list-style: none; margin: 4px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 6px; max-height: 240px; overflow: auto; }
+.search-results:empty { display: none; }
+.search-results li { padding: 8px 10px; cursor: pointer; border-bottom: 1px solid #eaeef2; }
+.search-results li:hover { background: #f0f6fc; }
+.search-results li.err { color: var(--danger); cursor: default; }
+.picked { margin-top: 8px; padding: 8px 10px; background: #e6f4ea; color: #1e6b34; border-radius: 6px; }
+.role-checks { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 6px; }
+.role-checks label { display: inline-flex; align-items: center; gap: 6px; }
+button:disabled { opacity: .5; cursor: not-allowed; }

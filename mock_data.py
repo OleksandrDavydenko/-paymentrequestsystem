@@ -66,7 +66,6 @@ INVOICES = [
 
 _ME = ("od@ftpua.com", "Oleksandr Davydenko")
 _OTHER = ("i.petrenko@ftpua.com", "Ірина Петренко")
-_HEAD = ("m.shevchenko@ftpua.com", "Михайло Шевченко")
 _ACC = ("o.bondar@ftpua.com", "Олена Бондар")
 _CFO = ("a.melnyk@ftpua.com", "Андрій Мельник")
 
@@ -78,7 +77,6 @@ def _route(day, *steps):
 
 
 _SUBMIT = (_ME, "initiator", "submit", "")
-_HEAD_OK = (_HEAD, "head", "approve", "")
 _ACC_OK = (_ACC, "accountant", "approve", "Документи в порядку")
 _CFO_OK = (_CFO, "cfo", "approve", "")
 
@@ -129,32 +127,32 @@ _REQUESTS = {
     r["id"]: r
     for r in [
         _req(1, _ME, "2026-09-05", 1, 1, 1, "bank", "UAH", "12450.00",
-             _route(1, _SUBMIT, _HEAD_OK, _ACC_OK, _CFO_OK, (_ACC, "accountant", "pay", "Платіжне доручення №1245")),
+             _route(1, _SUBMIT, _ACC_OK, _CFO_OK, (_ACC, "accountant", "pay", "Платіжне доручення №1245")),
              "Доставка документів у серпні",
              [("НП-104512", "12450.00", "UAH", "Договір №15/2025 від 10.01.2025")]),
         _req(2, _OTHER, "2026-09-30", 2, 1, 2, "bank", "UAH", "4820.00",
              _route(22, _SUBMIT)),
         _req(3, _ME, "2026-09-26", 3, 2, 4, "bank", "UAH", "23999.99",
-             _route(10, _SUBMIT, _HEAD_OK, _ACC_OK, (_CFO, "cfo", "approve", "Оплатити до кінця місяця"))),
+             _route(10, _SUBMIT, _ACC_OK, (_CFO, "cfo", "approve", "Оплатити до кінця місяця"))),
         _req(4, _ME, "2026-09-26", 4, 1, 1, "bank", "USD", "2230.00",
-             _route(15, _SUBMIT, _HEAD_OK), "",
+             _route(15, _SUBMIT), "",
              [("UC-0915", "1250.00", "USD", "Договір інспекції №UC-12"),
               ("UC-0920", "980.00", "USD", "Договір інспекції №UC-12")]),
         _req(5, _OTHER, "2026-09-29", 5, 2, 1, "bank", "EUR", "5150.00",
-             _route(18, _SUBMIT, _HEAD_OK, _ACC_OK),
+             _route(18, _SUBMIT, _ACC_OK),
              "", [("MSK-7781455", "5150.00", "EUR", "Booking 245889010")]),
         _req(6, _ME, "2026-09-22", 6, 3, 4, "cash", "UAH", "3150.00",
-             _route(20, _SUBMIT, (_HEAD, "head", "reject", "Закупівля не узгоджена, немає видаткової накладної"))),
+             _route(20, _SUBMIT, (_ACC, "accountant", "reject", "Закупівля не узгоджена, немає видаткової накладної"))),
         _req(7, _ME, "2026-09-30", 5, 1, 5, "bank", "EUR", "3400.00", [],
              "", [("MSK-7781203", "3400.00", "EUR", "Booking 245887123")]),
         _req(8, _OTHER, "2026-09-29", 3, 3, 6, "cash", "UAH", "1800.00", []),
         _req(9, _ME, "2026-10-02", 1, 1, 1, "bank", "UAH", "8300.50",
-             _route(16, _SUBMIT, _HEAD_OK,
+             _route(16, _SUBMIT,
                     (_ACC, "accountant", "rework", "Додайте, будь ласка, договір з контрагентом та рахунок у PDF")),
              "Доставка вантажів, вересень",
              [("НП-104788", "8300.50", "UAH", "Договір №15/2025 від 10.01.2025")]),
         _req(10, _OTHER, "2026-10-01", 6, 2, 4, "bank", "UAH", "2640.00",
-             _route(21, _SUBMIT, _HEAD_OK), "Папір, картриджі"),
+             _route(21, _SUBMIT), "Папір, картриджі"),
         _req(11, _OTHER, "2026-10-05", 4, 1, 1, "bank", "USD", "980.00",
              _route(23, _SUBMIT)),
     ]

@@ -5,7 +5,7 @@
 {% block content %}
 <div class="card">
   <div class="toolbar">
-    <h1 style="margin:0">На погодження — {{ ROLES[role] }}</h1>
+    <h1 style="margin:0">На погодження{% for code, label in ROLES.items() if code in roles and code in ('accountant', 'cfo') %}{{ ' — ' if loop.first else ', ' }}{{ label }}{% endfor %}</h1>
   </div>
 
   <div class="table-wrap">

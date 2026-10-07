@@ -1,0 +1,138 @@
+{% extends "base.html" %}
+
+{% block title %}Адміністрування — користувачі{% endblock %}
+
+{% block content %}
+<div class="card">
+  <div class="toolbar">
+    <h1 style="margin:0">Користувачі та ролі</h1>
+    <span class="spacer"></span>
+    <button type="button" class="btn btn-primary" onclick="document.getElementById('add-dialog').showModal()"
+            {{ 'disabled' if not groups }}>+ Додати користувача</button>
+  </div>
+  <p class="muted">
+    Ролі — це групи безпеки в Microsoft Entra ID. Зміни тут одразу записуються в Azure,
+    а зміни в Azure одразу видно тут. Щоб нові ролі запрацювали, користувачу треба вийти й увійти знову.
+  </p>
+
+  {% if missing_groups %}
+  <div class="flash error">
+    Не налаштовано групи для ролей:
+    {% for r in missing_groups %}<strong>{{ ROLES[r] }}</strong>{{ ', ' if not loop.last }}{% endfor %}.
+    Створіть групи в Entra ID і додайте їх Object ID у змінні App Service
+    (<code>GROUP_ADMIN</code>, <code>GROUP_INITIATOR</code>, <code>GROUP_ACCOUNTANT</code>, <code>GROUP_CFO</code>).
+  </div>
+  {% endif %}
+  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+
+  <div class="table-wrap">
+  <table class="admin-users">
+    <thead>
+      <tr>
+        <th>Користувач</th>
+        {% for r in role_order %}
+        <th class="role-col">
+          {{ ROLES[r] }}
+          {% if groups[r] %}<a href="{{ group_url(groups[r]) }}" target="_blank" title="Група в Azure">↗</a>{% endif %}
+        </th>
+        {% endfor %}
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>
+          <strong>{{ u.name }}</strong>{% if u.id == me_oid %} <span class="muted">(ви)</span>{% endif %}
+          <div class="muted">{{ u.email }}</div>
+        </td>
+        {% for r in role_order %}
+        <td class="role-col">
+          <input type="checkbox" form="f-{{ u.id }}" name="roles" value="{{ r }}"
+                 {{ 'checked' if r in u.roles }}
+                 {{ 'disabled' if not groups[r] or (r == 'admin' and u.id == me_oid) }}
+                 aria-label="{{ ROLES[r] }} — {{ u.name }}">
+          {% if r == 'admin' and u.id == me_oid and r in u.roles %}<input type="hidden" form="f-{{ u.id }}" name="roles" value="admin">{% endif %}
+        </td>
+        {% endfor %}
+        <td class="num">
+          <form method="post" action="{{ url_for('admin_users_save') }}" id="f-{{ u.id }}">
+            <input type="hidden" name="user_id" value="{{ u.id }}">
+            <input type="hidden" name="name" value="{{ u.name }}">
+            <input type="hidden" name="current" value="{{ u.roles | join(',') }}">
+            <button type="submit" class="btn btn-sm">Зберегти</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="{{ role_order | length + 2 }}" class="empty">
+        Поки що жоден співробітник не має ролі. Натисніть «+ Додати користувача».
+      </td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+<dialog id="add-dialog">
+  <form method="post" action="{{ url_for('admin_users_add') }}">
+    <div class="dlg-head">Додати користувача</div>
+    <div class="dlg-body">
+      <label class="muted" for="user-search">Співробітник (ім'я або email)</label>
+      <input type="text" id="user-search" autocomplete="off" placeholder="Почніть вводити…">
+      <ul id="search-results" class="search-results"></ul>
+      <div id="picked" class="picked" hidden></div>
+      <input type="hidden" name="user_id" id="picked-id">
+      <input type="hidden" name="name" id="picked-name">
+
+      <div class="muted" style="margin-top:16px">Ролі</div>
+      <div class="role-checks">
+        {% for r in role_order %}
+        <label><input type="checkbox" name="roles" value="{{ r }}" {{ 'disabled' if not groups[r] }}
+                      {{ 'checked' if r == 'initiator' }}> {{ ROLES[r] }}</label>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="dlg-foot">
+      <button type="submit" class="btn btn-primary" id="add-submit" disabled>Додати</button>
+      <button type="button" class="btn" onclick="this.closest('dialog').close()">Скасувати</button>
+    </div>
+  </form>
+</dialog>
+
+<script>
+const input = document.getElementById('user-search');
+const results = document.getElementById('search-results');
+const picked = document.getElementById('picked');
+let timer;
+
+input.addEventListener('input', () => {
+  clearTimeout(timer);
+  const q = input.value.trim();
+  if (q.length < 2) { results.innerHTML = ''; return; }
+  timer = setTimeout(async () => {
+    const resp = await fetch('{{ url_for("admin_users_search") }}?q=' + encodeURIComponent(q));
+    const data = await resp.json();
+    results.innerHTML = '';
+    if (data.error) { results.innerHTML = '<li class="err"></li>'; results.firstChild.textContent = data.error; return; }
+    if (!data.users.length) { results.innerHTML = '<li class="muted">Нікого не знайдено</li>'; return; }
+    data.users.forEach(u => {
+      const li = document.createElement('li');
+      li.innerHTML = '<strong></strong> <span class="muted"></span>';
+      li.children[0].textContent = u.name;
+      li.children[1].textContent = u.email;
+      li.onclick = () => {
+        document.getElementById('picked-id').value = u.id;
+        document.getElementById('picked-name').value = u.name;
+        picked.textContent = '✓ ' + u.name + ' — ' + u.email;
+        picked.hidden = false;
+        results.innerHTML = '';
+        input.value = '';
+        document.getElementById('add-submit').disabled = false;
+      };
+      results.appendChild(li);
+    });
+  }, 300);
+});
+</script>
+{% endblock %}

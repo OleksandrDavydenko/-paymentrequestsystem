@@ -165,13 +165,13 @@
       <button type="submit" name="action" value="ok" class="btn">OK</button>
       <button type="submit" name="action" value="save" class="btn">Записати</button>
     {% endif %}
-    <a href="{{ url_for('approvals') if role != 'initiator' else url_for('requests_list') }}" class="btn">Закрити</a>
+    <a href="{{ back_url }}" class="btn">Закрити</a>
   </div>
 </form>
 
 {% if actions %}
 <form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision">
-  <h2>Рішення — {{ ROLES[role] }}</h2>
+  <h2>Рішення — {{ ROLES[acting_role] }}</h2>
   <textarea name="comment" placeholder="Коментар (обов'язковий, якщо повертаєте або відхиляєте — напр. «Додайте договір та рахунок у PDF»)">{{ draft_comment }}</textarea>
   <div class="decision-buttons">
     {% for a in actions %}
