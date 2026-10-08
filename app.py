@@ -11,6 +11,7 @@ from werkzeug.middleware.proxy_fix import ProxyFix
 import identity.flask
 
 import expense_items
+import app_settings
 import graph
 import user_budget
 import mock_data as db
@@ -360,7 +361,7 @@ def request_card(request_id=None, *, context):
                 req["created_at"] = datetime.now()
                 wf.add_history(req, "create", user, "initiator", to_status="draft")
             if action == "submit":
-                wf.apply_action(req, "submit", roles, user)
+                wf.apply_action(req, "submit", roles, user, mode=app_settings.get("approval_mode"))
             new_id = db.save_request(req)
             number = db.get_request(new_id)["number"]
             if action == "submit":
@@ -392,6 +393,10 @@ def request_card(request_id=None, *, context):
         CLOSED_STATUSES=wf.CLOSED_STATUSES,
         draft_comment=session.pop("draft_comment", ""),
         admin_comment=session.pop("admin_comment", ""),
+        comment_draft=session.pop("comment_draft", ""),
+        parallel=req.get("route_mode") == "parallel",
+        approvals=req.get("approvals") or {},
+        pending_roles=wf.pending_roles(req) if req["status"] == "approval" else [],
         current_email=user["email"],
         back_url=url_for("requests_list") if wf.is_author(req, user["email"]) and "initiator" in roles
         else _home(),
@@ -489,6 +494,37 @@ def _date_filter(args, today):
 
 def _in_period(value, d_from, d_to):
     return (not d_from or value >= d_from) and (not d_to or value <= d_to)
+
+
+@app.route("/requests/<int:request_id>/comment", methods=["POST"])
+@auth.login_required
+@requires("initiator", "admin", *wf.APPROVER_ROLES)
+def request_comment(request_id, *, context):
+    req = _load_visible(request_id)
+    try:
+        wf.add_comment(req, g.user, wf.history_role(req, g.roles, g.user["email"]), request.form.get("comment"))
+    except wf.WorkflowError as e:
+        flash(str(e), "error")
+        session["comment_draft"] = request.form.get("comment", "")
+        return redirect(url_for("request_card", request_id=request_id) + "#comment")
+    db.save_request(req)
+    flash("Коментар додано", "success")
+    return redirect(url_for("request_card", request_id=request_id) + "#history")
+
+
+@app.route("/admin/settings", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_settings(*, context):
+    mode = request.form.get("approval_mode")
+    if mode not in wf.APPROVAL_MODES:
+        flash("Невідомий режим погодження", "error")
+    elif mode != app_settings.get("approval_mode"):
+        app_settings.set("approval_mode", mode, g.user["email"])
+        flash(f"Режим погодження: {wf.APPROVAL_MODES[mode]}. Діє для нових відправлень.", "success")
+    else:
+        flash("Змін немає", "success")
+    return redirect(url_for("admin_users") + "#process-settings")
 
 
 @app.route("/requests/<int:request_id>/admin-status", methods=["POST"])
@@ -662,6 +698,8 @@ def admin_users(*, context):
         error=error,
         me_oid=g.user["oid"],
         expense_status=expense_items.status(),
+        approval_mode=app_settings.info("approval_mode"),
+        APPROVAL_MODES=wf.APPROVAL_MODES,
         budgets={uid: user_budget.get(uid) for uid in users},
         budget_summary=user_budget.summary,
         budget_departments=expense_items.get_departments(),

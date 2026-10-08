@@ -168,6 +168,28 @@ _REQUESTS = {
 }
 
 
+
+def _parallel(req, day, approved_by=()):
+    """Мокова заявка в паралельному режимі: відправлена, частина погоджувачів уже погодила."""
+    author = (req["author_email"], req["author_name"])
+    at = datetime.fromisoformat(f"2026-10-{day:02d}T09:30:00")
+    req["route_mode"], req["approvals"], req["status"] = "parallel", {}, "approval"
+    req["history"].append({"at": at, "user_name": author[1], "user_email": author[0], "role": "initiator",
+                           "action": "submit", "from_status": "draft", "to_status": "approval", "comment": ""})
+    for user, role in approved_by:
+        role = workflow.ACCOUNTANT_BY_CHANNEL[workflow.channel_of(req)] if role == "accountant" else role
+        req["approvals"][role] = {"at": at, "user_name": user[1]}
+        req["history"].append({"at": at, "user_name": user[1], "user_email": user[0], "role": role,
+                               "action": "approve", "from_status": "approval", "to_status": "approval",
+                               "comment": ""})
+    _REQUESTS[req["id"]] = req
+
+
+_parallel(_req(17, _OTHER, "2026-10-16", 2, 1, 2, "bank", "UAH", "3920.00", [], "Зв'язок, листопад"), 6,
+          approved_by=[(_ACC, "accountant")])
+_parallel(_req(18, _ME, "2026-10-15", 6, 3, 4, "cash", "UAH", "1450.00", [], "Канцтовари"), 7)
+
+
 def list_requests(author_email, status=None):
     rows = [
         r for r in _REQUESTS.values()

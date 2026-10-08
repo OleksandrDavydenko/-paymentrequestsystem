@@ -84,6 +84,27 @@
   </div>
 </div>
 
+<form method="post" action="{{ url_for('admin_settings') }}" class="card process-settings" id="process-settings">
+  <div class="toolbar">
+    <h2 style="margin:0">Налаштування процесу</h2>
+  </div>
+  <div class="budget-section-title">Порядок погодження заявок</div>
+  {% for code, label in APPROVAL_MODES.items() %}
+  <label class="mode-option {{ 'active' if approval_mode.value == code }}">
+    <input type="radio" name="approval_mode" value="{{ code }}" {{ 'checked' if approval_mode.value == code }}>
+    <span>
+      <strong>{{ label.split(':')[0] }}</strong>
+      <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
+      <span class="mode-hint">{{ 'Фіндиректор отримує заявку лише після погодження бухгалтера.' if code == 'sequential'
+        else 'Заявка одразу приходить обом. До оплати — коли погодили і бухгалтер, і фіндиректор.' }}</span>
+    </span>
+  </label>
+  {% endfor %}
+  <p class="muted">Зміна діє на нові та повторно відправлені заявки; ті, що вже на погодженні, проходять своїм маршрутом.
+    {% if approval_mode.updated_by %}Востаннє змінено: {{ approval_mode.updated_by }}, {{ approval_mode.updated_at.replace('T', ' ') }}.{% endif %}</p>
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+</form>
+
 {% set es = expense_status %}
 <div class="card expense-status" id="expense-items">
   <div class="toolbar">

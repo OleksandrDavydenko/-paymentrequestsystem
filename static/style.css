@@ -499,3 +499,17 @@ details.admin-status form > .btn { align-self: flex-start; }
 .budget-total { margin-top: 14px; padding: 10px 12px; border-radius: 6px; background: #e6f4ea; color: #1e6b34; font-weight: 600; font-size: 13px; }
 .budget-total.empty { background: #fdecea; color: var(--danger); }
 @media (max-width: 760px) { .budget-deps { margin-left: 0; } }
+
+/* ---------- Паралельне погодження, коментарі, налаштування процесу ---------- */
+.route-note { margin-top: 10px; font-size: 13px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.route-parallel li.par span { position: relative; }
+.route-parallel li.par::before { outline: 2px dashed #0f6cbd55; outline-offset: 2px; }
+.badge.slate { background: #e7ecf3; color: #3d4b5c; }
+.timeline li.slate::before { background: #6e7d91; }
+.comment-form textarea { min-height: 64px; }
+.comment-actions { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+.process-settings { margin-top: 16px; }
+.mode-option { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; margin: 6px 0; cursor: pointer; }
+.mode-option.active, .mode-option:has(input:checked) { border-color: var(--primary); background: #f0f6fc; }
+.mode-option input { margin-top: 3px; }
+.mode-hint { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }

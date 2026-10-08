@@ -56,6 +56,7 @@ APPROVER_ROLES = ACCOUNTANT_ROLES | {"cfo"}
 # код -> (назва, css-клас бейджа)
 STATUSES = {
     "draft": ("Чернетка", "grey"),
+    "approval": ("На погодженні", "amber"),  # паралельний режим: бухгалтер і фіндиректор одночасно
     "accountant": ("Перевірка бухгалтера", "amber"),
     "cfo": ("Погодження фіндиректора", "amber"),
     "to_pay": ("До оплати", "green"),
@@ -84,7 +85,15 @@ ACTIONS = {
     "file_add": (None, "Додано документ", "grey", False),
     "file_delete": (None, "Видалено документ", "grey", False),
     "admin_status": (None, "Статус змінено адміністратором", "purple", True),
+    "comment": (None, "Коментар", "slate", True),
 }
+
+# Режими погодження (налаштовуються в адмінці, запам'ятовуються в заявці при відправці)
+APPROVAL_MODES = {
+    "sequential": "Послідовно: Бухгалтер → Фіндиректор → Оплата",
+    "parallel": "Паралельно: бухгалтер і фіндиректор одночасно → Оплата",
+}
+MAX_COMMENT = 2000
 
 # статус -> (хто діє: "author", "accountant" (за формою оплати) або роль, {дія: новий статус})
 WORKFLOW = {
@@ -92,6 +101,8 @@ WORKFLOW = {
     "rework": ("author", {"submit": "accountant"}),
     "accountant": ("accountant", {"approve": "cfo", "rework": "rework", "reject": "rejected"}),
     "cfo": ("cfo", {"approve": "to_pay", "rework": "rework", "reject": "rejected"}),
+    # Паралельно: «approve» веде до to_pay лише коли погодили всі (див. apply_action)
+    "approval": ("parallel", {"approve": "to_pay", "rework": "rework", "reject": "rejected"}),
     "to_pay": ("accountant", {"pay": "paid"}),
 }
 
@@ -112,8 +123,21 @@ def stage_actor(req):
     return actor
 
 
+def parallel_roles(req):
+    """Хто погоджує в паралельному режимі: бухгалтер каналу оплати і фіндиректор."""
+    return [r for r in (ACCOUNTANT_BY_CHANNEL.get(channel_of(req)), "cfo") if r]
+
+
+def pending_roles(req):
+    """Паралельні погоджувачі, які ще не погодили заявку."""
+    done = req.get("approvals") or {}
+    return [r for r in parallel_roles(req) if r not in done]
+
+
 def acting_role(req, roles, user_email):
     """Роль, якою користувач може діяти на поточному етапі, або None."""
+    if req["status"] == "approval":
+        return next((r for r in pending_roles(req) if r in roles), None)
     actor = stage_actor(req)
     if actor == "author":
         return "initiator" if "initiator" in roles and is_author(req, user_email) else None
@@ -123,6 +147,8 @@ def acting_role(req, roles, user_email):
 def in_queue(req, roles):
     """Чи чекає заявка на рішення однієї з ролей погоджувача (для «На погодження»).
     Етап «До оплати» сюди не входить — він у окремому розділі."""
+    if req["status"] == "approval":
+        return any(r in roles for r in pending_roles(req))
     actor = stage_actor(req)
     return req["status"] != "to_pay" and actor in APPROVER_ROLES and actor in roles
 
@@ -169,7 +195,22 @@ def admin_set_status(req, new_status, user, comment):
         raise WorkflowError("Вкажіть причину зміни статусу — вона буде видна в історії заявки")
     old = req["status"]
     req["status"] = new_status
+    req["approvals"] = {}
+    if new_status == "approval":
+        req["route_mode"] = "parallel"
+    elif new_status in ("accountant", "cfo"):
+        req["route_mode"] = "sequential"
     add_history(req, "admin_status", user, "admin", comment, old, new_status)
+
+
+def add_comment(req, user, role, text):
+    """Коментар без зміни статусу. Кидає WorkflowError для порожнього / задовгого тексту."""
+    text = (text or "").strip()
+    if not text:
+        raise WorkflowError("Напишіть текст коментаря")
+    if len(text) > MAX_COMMENT:
+        raise WorkflowError(f"Коментар задовгий (максимум {MAX_COMMENT} символів)")
+    add_history(req, "comment", user, role, text, req["status"], req["status"])
 
 
 def can_view(req, roles, user_email):
@@ -216,8 +257,12 @@ def history_role(req, roles, user_email):
     return next((r for r in (*sorted(ACCOUNTANT_ROLES), "cfo", "initiator", "admin") if r in roles), "initiator")
 
 
-def apply_action(req, action, roles, user, comment=""):
-    """Виконати дію процесу над заявкою (змінює req). Кидає WorkflowError."""
+def apply_action(req, action, roles, user, comment="", mode="sequential"):
+    """Виконати дію процесу над заявкою (змінює req). Кидає WorkflowError.
+
+    mode — режим погодження з налаштувань; враховується лише при відправці (submit)
+    і запам'ятовується в заявці, щоб зміна налаштувань не ламала заявки в процесі.
+    """
     comment = (comment or "").strip()
     role = acting_role(req, roles, user["email"])
     if role is None or action not in WORKFLOW[req["status"]][1]:
@@ -225,8 +270,18 @@ def apply_action(req, action, roles, user, comment=""):
     if ACTIONS[action][3] and not comment:
         raise WorkflowError("Вкажіть коментар — що саме потрібно виправити або чому заявку відхилено")
     old = req["status"]
-    req["status"] = WORKFLOW[old][1][action]
-    add_history(req, action, user, role, comment, old, req["status"])
+    new = WORKFLOW[old][1][action]
+    if action == "submit":
+        req["route_mode"] = "parallel" if mode == "parallel" else "sequential"
+        req["approvals"] = {}
+        new = "approval" if req["route_mode"] == "parallel" else "accountant"
+    elif old == "approval" and action == "approve":
+        req.setdefault("approvals", {})[role] = {"at": datetime.now(), "user_name": user["name"]}
+        new = "approval" if pending_roles(req) else "to_pay"
+    elif action in ("rework", "reject"):
+        req["approvals"] = {}
+    req["status"] = new
+    add_history(req, action, user, role, comment, old, new)
 
 
 def stage_names(req):
@@ -235,11 +290,25 @@ def stage_names(req):
     return [(code, accountant if code == "accountant" else name) for code, name in STAGES]
 
 
+def _role_stage(role):
+    return "cfo" if role == "cfo" else "accountant" if role in ACCOUNTANT_ROLES else None
+
+
 def stage_states(req):
     """Стан кожного етапу для смуги маршруту: done / current / returned / todo / rejected."""
     stages = stage_names(req)
     order = [code for code, _ in stages]
     status = req["status"]
+    if status == "approval":  # паралельно: кожен погоджувач окремо
+        done = {_role_stage(r) for r in (req.get("approvals") or {})}
+        return [(name, "done" if code in done else "current" if code in ("accountant", "cfo") else "todo")
+                for code, name in stages]
+    last = next((h for h in reversed(req.get("history", []))
+                 if h["to_status"] == status and h["from_status"] == "approval"), None)
+    if status in ("rework", "rejected") and last:
+        stage = _role_stage(last["role"])
+        mark = "returned" if status == "rework" else "rejected"
+        return [(name, mark if code == stage else "todo") for code, name in stages]
     if status == "paid":
         return [(name, "done") for _, name in stages]
     if status in order:

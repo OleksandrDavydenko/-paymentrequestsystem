@@ -26,12 +26,21 @@
   </div>
 
   {% if req.id %}
-  <ol class="route">
+  <ol class="route {{ 'route-parallel' if parallel }}">
     <li class="done"><span>Ініціатор</span></li>
     {% for name, state in stages %}
-    <li class="{{ state }}"><span>{{ name }}</span></li>
+    <li class="{{ state }} {{ 'par' if parallel and loop.index0 < 2 }}"><span>{{ name }}</span></li>
     {% endfor %}
   </ol>
+  {% if parallel %}
+  <div class="route-note">
+    ⇉ Паралельне погодження: бухгалтер і фіндиректор погоджують одночасно.
+    {% if req.status == 'approval' %}
+      {% for role, a in approvals.items() %}<span class="badge green">✓ {{ ROLES[role] }} — {{ a.user_name }}</span>{% endfor %}
+      {% for role in pending_roles %}<span class="badge amber">очікує: {{ ROLES[role] }}</span>{% endfor %}
+    {% endif %}
+  </div>
+  {% endif %}
   {% endif %}
 
   {% if req.status in ('rework', 'rejected') and last and last.action in ('rework', 'reject') %}
@@ -234,8 +243,20 @@
   {% endif %}
 </div>
 
+{% if req.id %}
+<form method="post" action="{{ url_for('request_comment', request_id=req.id) }}" class="card comment-form" id="comment">
+  <h2 class="card-title">Коментар</h2>
+  <textarea name="comment" maxlength="2000" required
+            placeholder="Питання чи уточнення щодо заявки — статус не зміниться, коментар побачать усі учасники">{{ comment_draft }}</textarea>
+  <div class="comment-actions">
+    <span class="muted">Видно автору, погоджувачам і адміністратору</span>
+    <button type="submit" class="btn btn-primary btn-sm">Надіслати</button>
+  </div>
+</form>
+{% endif %}
+
 {% if req.history %}
-<div class="card">
+<div class="card" id="history">
   <h2 class="card-title">Історія погодження</h2>
   <ul class="timeline">
     {% for h in req.history | reverse %}
@@ -244,7 +265,7 @@
         <span class="badge {{ ACTIONS[h.action][2] }}">{{ ACTIONS[h.action][1] }}</span>
         <strong>{{ h.user_name }}</strong>
         <span class="muted">{{ ROLES[h.role] }} · {{ h.at | dt }}</span>
-        {% if h.to_status and h.from_status %}<span class="muted">→ {{ STATUSES[h.to_status][0] }}</span>{% endif %}
+        {% if h.to_status and h.from_status and h.to_status != h.from_status %}<span class="muted">→ {{ STATUSES[h.to_status][0] }}</span>{% endif %}
       </div>
       {% if h.comment %}<div class="tl-comment">{{ h.comment }}</div>{% endif %}
     </li>
