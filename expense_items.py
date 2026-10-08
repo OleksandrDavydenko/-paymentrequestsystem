@@ -93,6 +93,28 @@ def _get_token():
     return result["access_token"]
 
 
+def _explain_error(resp):
+    """Зрозуміле повідомлення про помилку Power BI для адмінки."""
+    code, detail = "", resp.text[:300]
+    try:
+        err = resp.json().get("error", {})
+        code = err.get("code") or ""
+        details = (err.get("pbi.error") or {}).get("details") or []
+        detail = next((d["detail"]["value"] for d in details if d.get("detail", {}).get("value")), None) \
+            or err.get("message") or detail
+    except (ValueError, AttributeError, KeyError, TypeError):
+        pass
+    hints = {
+        401: "Power BI не прийняв токен додатку: перевірте налаштування «Субʼєкти-служби можуть викликати API» "
+             "і що додаток входить у вказану там групу безпеки (застосування — до 15 хв).",
+        403: "Немає дозволу: перевірте налаштування «Execute Queries REST API» і роль додатку в робочій області.",
+        404: "Додаток не бачить семантичну модель. Дайте Payment Request System роль «Учасник» (Contributor) "
+             "у робочій області або право Build на модель; також перевірте PBI_GROUP_ID і PBI_DATASET_ID.",
+    }
+    hint = hints.get(resp.status_code, "")
+    return f"Power BI {resp.status_code} {code}: {detail} {hint}".strip()
+
+
 def _query_rows():
     group_id = os.environ["PBI_GROUP_ID"]
     dataset_id = os.environ["PBI_DATASET_ID"]
@@ -104,11 +126,7 @@ def _query_rows():
         timeout=120,
     )
     if not resp.ok:
-        hint = ""
-        if resp.status_code in (401, 403):
-            hint = (" Перевірте, що в Power BI увімкнено доступ service principal до API та Execute Queries, "
-                    "а додаток доданий у workspace.")
-        raise RuntimeError(f"Power BI повернув {resp.status_code}: {resp.text[:300]}.{hint}")
+        raise RuntimeError(_explain_error(resp))
     tables = (resp.json().get("results") or [{}])[0].get("tables") or []
     rows = (tables[0].get("rows") if tables else None) or []
     # DAX повертає колонки як "Table[Column]"
