@@ -6,7 +6,8 @@
 import json
 import os
 import threading
-from datetime import datetime
+
+import clock
 
 DEFAULTS = {
     "approval_mode": "sequential",
@@ -56,7 +57,7 @@ def info(key):
 def set(key, value, updated_by):
     with _lock:
         _load()[key] = {"value": value, "updated_by": updated_by,
-                        "updated_at": datetime.now().isoformat(timespec="seconds")}
+                        "updated_at": clock.now().isoformat(timespec="seconds")}
         path = _path()
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"

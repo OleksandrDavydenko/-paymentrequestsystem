@@ -90,10 +90,10 @@
   </div>
   <div class="budget-section-title">Порядок погодження заявок</div>
   {% for code, label in APPROVAL_MODES.items() %}
-  <label class="mode-option {{ 'active' if approval_mode.value == code }}">
+  <label class="mode-option">
     <input type="radio" name="approval_mode" value="{{ code }}" {{ 'checked' if approval_mode.value == code }}>
     <span>
-      <strong>{{ label.split(':')[0] }}</strong>
+      <strong>{{ label.split(':')[0] }}</strong>{% if approval_mode.value == code %}<span class="mode-saved">діє зараз</span>{% endif %}
       <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
       <span class="mode-hint">{{ 'Фіндиректор отримує заявку лише після погодження бухгалтера.' if code == 'sequential'
         else 'Заявка одразу приходить обом. До оплати — коли погодили і бухгалтер, і фіндиректор.' }}</span>

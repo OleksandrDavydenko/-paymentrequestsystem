@@ -13,10 +13,11 @@ import os
 import re
 import threading
 import time
-from datetime import datetime
 
 import msal
 import requests
+
+import clock
 
 logger = logging.getLogger(__name__)
 
@@ -243,7 +244,7 @@ def refresh():
             items = extract_items(_query_rows())
             if not items:
                 raise RuntimeError("Power BI повернув порожній довідник (або всі рядки визначено як групи)")
-            updated = datetime.now().isoformat(timespec="seconds")
+            updated = clock.now().isoformat(timespec="seconds")
             _state.update(items=items, loaded_at=time.time(), source="powerbi", updated=updated, error=None)
             _save_copy(items, updated)
             return True

@@ -12,7 +12,8 @@
 import json
 import os
 import threading
-from datetime import datetime
+
+import clock
 
 _lock = threading.Lock()
 _data = None
@@ -71,7 +72,7 @@ def save_settings(oid, email, name, direct, all_departments, departments, update
             "direct": bool(direct),
             "all_departments": bool(all_departments),
             "departments": [] if all_departments else sorted({d for d in departments if d}, key=str.lower),
-            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "updated_at": clock.now().isoformat(timespec="seconds"),
             "updated_by": updated_by,
         }
         _save()

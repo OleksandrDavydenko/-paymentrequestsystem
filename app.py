@@ -2,7 +2,7 @@ import os
 import re
 import uuid
 from functools import wraps
-from datetime import date, datetime, timedelta
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from dotenv import load_dotenv
@@ -12,6 +12,7 @@ import identity.flask
 
 import expense_items
 import app_settings
+import clock
 import graph
 import user_budget
 import mock_data as db
@@ -329,7 +330,7 @@ def request_card(request_id=None, *, context):
         existing = {
             "id": None,
             "number": db.next_number(),
-            "created_at": datetime.now(),
+            "created_at": clock.now(),
             "author_email": user["email"],
             "author_name": user["name"],
             "status": "draft",
@@ -358,7 +359,7 @@ def request_card(request_id=None, *, context):
                 line.pop("amount_raw", None)
             action = request.form.get("action")
             if req["id"] is None:
-                req["created_at"] = datetime.now()
+                req["created_at"] = clock.now()
                 wf.add_history(req, "create", user, "initiator", to_status="draft")
             if action == "submit":
                 wf.apply_action(req, "submit", roles, user, mode=app_settings.get("approval_mode"))
@@ -551,7 +552,7 @@ def admin_change_status(request_id, *, context):
 @requires(*wf.ACCOUNTANT_ROLES, "cfo")
 def to_pay(*, context):
     roles = g.roles
-    today = date.today()
+    today = clock.today()
     view = "paid" if request.args.get("view") == "paid" else "to_pay"
     all_rows = db.list_paid(roles) if view == "paid" else db.list_to_pay(roles)
     form_filter = request.args.get("form") if request.args.get("form") in wf.CHANNELS else ""
@@ -592,7 +593,7 @@ def to_pay(*, context):
 @auth.login_required
 @requires("admin")
 def admin_requests(*, context):
-    today = date.today()
+    today = clock.today()
     args = request.args
     status = args.get("status") if args.get("status") in wf.STATUSES else ""
     form_filter = args.get("form") if args.get("form") in wf.CHANNELS else ""
@@ -867,7 +868,7 @@ def upload_files(request_id, *, context):
         f.save(os.path.join(UPLOAD_DIR, f"{file_id}.{ext}"))
         name = os.path.basename(f.filename.replace("\\", "/"))
         req["attachments"].append({
-            "id": file_id, "name": name, "ext": ext, "size": size, "at": datetime.now(),
+            "id": file_id, "name": name, "ext": ext, "size": size, "at": clock.now(),
             "user_name": user["name"], "user_email": user["email"],
         })
         wf.add_history(req, "file_add", user, role, comment=name)

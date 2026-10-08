@@ -2,7 +2,8 @@
 
 Права перевіряються за МНОЖИНОЮ ролей користувача (ролей може бути кілька).
 """
-from datetime import datetime
+
+import clock
 
 ROLES = {
     "admin": "Адміністратор",
@@ -236,7 +237,7 @@ def available_actions(req, roles, user_email):
 
 def add_history(req, action, user, role, comment="", from_status=None, to_status=None):
     req.setdefault("history", []).append({
-        "at": datetime.now(),
+        "at": clock.now(),
         "user_name": user["name"],
         "user_email": user["email"],
         "role": role,
@@ -276,7 +277,7 @@ def apply_action(req, action, roles, user, comment="", mode="sequential"):
         req["approvals"] = {}
         new = "approval" if req["route_mode"] == "parallel" else "accountant"
     elif old == "approval" and action == "approve":
-        req.setdefault("approvals", {})[role] = {"at": datetime.now(), "user_name": user["name"]}
+        req.setdefault("approvals", {})[role] = {"at": clock.now(), "user_name": user["name"]}
         new = "approval" if pending_roles(req) else "to_pay"
     elif action in ("rework", "reject"):
         req["approvals"] = {}
