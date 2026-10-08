@@ -408,3 +408,59 @@ details.admin-status form > .btn { align-self: flex-start; }
   .admin-status-row select { min-width: 0; }
   details.admin-status form > .btn { align-self: stretch; justify-content: center; }
 }
+
+/* ---------- Вибір статті витрат ---------- */
+.exp-picker { position: relative; display: flex; gap: 6px; min-width: 0; }
+.exp-input-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
+.exp-input-wrap input { width: 100%; padding-right: 96px; text-overflow: ellipsis; }
+.exp-picker.has-value .exp-input-wrap input { font-weight: 600; }
+.exp-picker.unmatched .exp-input-wrap input { border-color: #d97706; }
+.exp-picker.invalid .exp-input-wrap input { border-color: var(--danger); box-shadow: 0 0 0 3px #c628281a; }
+.exp-code-chip { position: absolute; right: 30px; background: #ddeeff; color: var(--primary-dark); font-size: 12px;
+  font-weight: 700; padding: 1px 8px; border-radius: 999px; pointer-events: none; font-variant-numeric: tabular-nums; }
+.exp-clear { position: absolute; right: 6px; border: none; background: none; color: var(--muted); cursor: pointer;
+  font-size: 13px; padding: 2px 4px; border-radius: 4px; }
+.exp-clear:hover { color: var(--danger); background: #fdecea; }
+.exp-open { white-space: nowrap; flex-shrink: 0; }
+.exp-suggest { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; list-style: none; margin: 0; padding: 4px;
+  background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.14);
+  max-height: 320px; overflow: auto; }
+.exp-option { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 7px 10px; border-radius: 6px; cursor: pointer; }
+.exp-option:hover, .exp-option.active { background: #f0f6fc; }
+.exp-option.active { outline: 1px solid #0f6cbd55; }
+.exp-name { min-width: 0; }
+.exp-code { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.exp-suggest mark, .exp-table mark, .exp-recent mark { background: #fff2b3; color: inherit; border-radius: 2px; padding: 0 1px; }
+.exp-empty { color: var(--muted); padding: 12px 10px; font-size: 13px; text-align: center; }
+
+.exp-dialog { width: min(760px, 96vw); }
+.exp-dialog .dlg-head { display: flex; align-items: center; justify-content: space-between; }
+.exp-dialog-close { border: none; background: none; font-size: 16px; color: var(--muted); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.exp-dialog-close:hover { background: #f3f4f6; color: var(--text); }
+.exp-dialog-search { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #eaeef2; }
+.exp-dialog-search input { flex: 1; font-size: 15px; padding: 9px 12px; }
+.exp-dialog-body { padding: 0; max-height: min(60vh, 560px); }
+.exp-section-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px; }
+.exp-recent { padding: 12px 20px; border-bottom: 1px solid #eaeef2; background: #fafbfc; }
+.exp-recent-list { display: flex; flex-wrap: wrap; gap: 6px; }
+.exp-recent-chip { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 4px 12px; font: inherit;
+  font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
+.exp-recent-chip:hover { border-color: var(--primary); background: #f0f6fc; }
+.exp-row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding: 9px 20px; cursor: pointer; border-bottom: 1px solid #f1f3f5; }
+.exp-row .exp-code { font-size: 13px; color: var(--text); font-weight: 600; }
+.exp-row:hover, .exp-row.active { background: #f0f6fc; }
+.exp-row.selected { background: #e8f1fb; box-shadow: inset 3px 0 0 var(--primary); }
+.exp-dialog-foot { justify-content: space-between; align-items: center; }
+@media (max-width: 760px) {
+  .exp-open { padding: 6px 10px; }
+  .exp-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; display: none; flex-direction: column; }
+  .exp-dialog[open] { display: flex; }
+  .exp-dialog-body { flex: 1; max-height: none; }
+  .exp-keys { display: none; }
+  .exp-row { grid-template-columns: 80px 1fr; padding: 11px 16px; }
+  .exp-dialog-search { padding: 10px 16px; }
+}
+.expense-status { margin-top: 16px; }
+.status-grid { display: grid; grid-template-columns: max-content 1fr; gap: 6px 20px; margin: 12px 0 0; font-size: 14px; }
+.status-grid dt { color: var(--muted); }
+.status-grid dd { margin: 0; font-weight: 600; }

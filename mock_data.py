@@ -33,15 +33,8 @@ COUNTERPARTIES = {
     6: "ТОВ «Офісний Світ»",
 }
 
-EXPENSE_TYPES = {
-    1: "Транспортні послуги",
-    2: "Зв'язок та інтернет",
-    3: "Оренда приміщень",
-    4: "Канцтовари та офісні витрати",
-    5: "Митні платежі",
-    6: "Ремонт та обслуговування",
-    7: "Програмне забезпечення",
-}
+# Статті витрат — з Power BI (див. expense_items.py). Для мокових заявок — коди мокового довідника.
+_EXP = {1: "01.001", 2: "02.001", 3: "03.001", 4: "04.001", 5: "01.004", 6: "05.001", 7: "02.004"}
 
 CURRENCIES = ["UAH", "USD", "EUR"]
 
@@ -93,7 +86,7 @@ def _req(id_, author, pay_date, cp, org, exp, form, cur, amount, steps, note="",
         "pay_date": date.fromisoformat(pay_date),
         "counterparty_id": cp,
         "organization_id": org,
-        "expense_type_id": exp,
+        "expense_code": _EXP[exp],
         "payment_form": form,
         "currency": cur,
         "amount": Decimal(amount),

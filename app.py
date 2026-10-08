@@ -10,6 +10,7 @@ from flask import Flask, abort, flash, g, redirect, render_template, request, se
 from werkzeug.middleware.proxy_fix import ProxyFix
 import identity.flask
 
+import expense_items
 import graph
 import mock_data as db
 import workflow as wf
@@ -59,7 +60,10 @@ def inject_refs():
     return {
         "ORGANIZATIONS": db.ORGANIZATIONS,
         "COUNTERPARTIES": db.COUNTERPARTIES,
-        "EXPENSE_TYPES": db.EXPENSE_TYPES,
+        "expense_name": expense_label,
+        # Фільтр «Стаття витрат»: лише статті, що трапляються в заявках
+        "exp_options": lambda: sorted({r["expense_code"] for r in db.list_all() if r.get("expense_code")},
+                                      key=lambda c: expense_label(c).lower()),
         "CURRENCIES": db.CURRENCIES,
         "PAYMENT_FORMS": db.PAYMENT_FORMS,
         "CHANNELS": wf.CHANNELS,
@@ -87,13 +91,21 @@ def _parse_ref(raw, ref):
     return key if key in ref else None
 
 
-def parse_request_form(form):
+def expense_label(code):
+    """«Назва (код)» для статті витрат; невідомий код показуємо як є."""
+    if not code:
+        return ""
+    name = expense_items.get_name(code)
+    return f"{name} ({code})" if name else code
+
+
+def parse_request_form(form, current=None):
     """Повертає (дані заявки, словник помилок). Автор/дата/номер не з форми."""
     errors = {}
     data = {
         "counterparty_id": _parse_ref(form.get("counterparty_id"), db.COUNTERPARTIES),
         "organization_id": _parse_ref(form.get("organization_id"), db.ORGANIZATIONS),
-        "expense_type_id": _parse_ref(form.get("expense_type_id"), db.EXPENSE_TYPES),
+        "expense_code": (form.get("expense_code") or "").strip() or None,
         "payment_form": form.get("payment_form") if form.get("payment_form") in db.PAYMENT_FORMS else None,
         "currency": form.get("currency") if form.get("currency") in db.CURRENCIES else None,
         "note": (form.get("note") or "").strip(),
@@ -109,13 +121,16 @@ def parse_request_form(form):
     required = {
         "counterparty_id": "Оберіть контрагента",
         "organization_id": "Оберіть організацію",
-        "expense_type_id": "Оберіть вид витрат",
+        "expense_code": "Оберіть статтю витрат зі списку",
         "payment_form": "Оберіть форму оплати",
         "currency": "Оберіть валюту",
     }
     for field, message in required.items():
         if data[field] is None:
             errors[field] = message
+    if data["expense_code"] and data["expense_code"] != (current or {}).get("expense_code") \
+            and expense_items.get_name(data["expense_code"]) is None:
+        errors["expense_code"] = "Такої статті немає в довіднику — оберіть зі списку"
     if data["amount"] is None or data["amount"] <= 0:
         errors["amount"] = "Сума має бути більшою за 0"
         data["amount_raw"] = form.get("amount", "")
@@ -236,13 +251,15 @@ def _load_visible(request_id):
 REF_FILTERS = {  # параметр запиту -> (поле заявки, довідник)
     "org": ("organization_id", db.ORGANIZATIONS),
     "cp": ("counterparty_id", db.COUNTERPARTIES),
-    "exp": ("expense_type_id", db.EXPENSE_TYPES),
+    "exp": ("expense_code", None),  # код статті витрат (рядок)
 }
 
 
 def ref_filters(args):
-    """Вибрані значення фільтрів довідників: {"org": 1, "cp": None, ...}."""
-    return {key: _parse_ref(args.get(key), ref) for key, (_, ref) in REF_FILTERS.items()}
+    """Вибрані значення фільтрів довідників: {"org": 1, "cp": None, "exp": "01.001"}."""
+    selected = {key: _parse_ref(args.get(key), ref) for key, (_, ref) in REF_FILTERS.items() if ref is not None}
+    selected["exp"] = (args.get("exp") or "").strip() or None
+    return selected
 
 
 def apply_ref_filters(rows, selected):
@@ -324,7 +341,7 @@ def request_card(request_id=None, *, context):
         if not wf.can_edit(existing, roles, user["email"]):
             flash("Заявку в цьому статусі редагувати не можна", "error")
             return redirect(url_for("request_card", request_id=request_id))
-        data, errors = parse_request_form(request.form)
+        data, errors = parse_request_form(request.form, existing)
         req = {**existing, **data}
         if not errors:
             for line in req["lines"]:
@@ -352,6 +369,7 @@ def request_card(request_id=None, *, context):
         req=req,
         errors=errors,
         invoices=db.INVOICES,
+        expense_items=expense_items.get_items(),
         nonresident_orgs=sorted(wf.NONRESIDENT_ORGANIZATIONS),
         channel_roles={c: wf.ROLES[r] for c, r in wf.ACCOUNTANT_BY_CHANNEL.items()},
         editable=wf.can_edit(req, roles, user["email"]),
@@ -633,7 +651,20 @@ def admin_users(*, context):
         group_url=_azure_group_url,
         error=error,
         me_oid=g.user["oid"],
+        expense_status=expense_items.status(),
     )
+
+
+@app.route("/admin/expense-items/refresh", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_expense_refresh(*, context):
+    if expense_items.refresh():
+        st = expense_items.status()
+        flash(f"Довідник статей витрат оновлено: {st['count']} статей", "success")
+    else:
+        flash("Не вдалося оновити довідник: " + (expense_items.status()["error"] or "невідома помилка"), "error")
+    return redirect(url_for("admin_users") + "#expense-items")
 
 
 @app.route("/admin/users/search")

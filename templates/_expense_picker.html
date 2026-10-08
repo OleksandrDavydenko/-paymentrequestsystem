@@ -1,0 +1,49 @@
+{# Вибір статті витрат: поле з підказками + модальне вікно довідника.
+   Очікує req, errors, editable, expense_items (список {code, name}). #}
+<div class="field">
+  <label for="expense-input">Стаття витрат</label>
+  {% if editable %}
+  <div class="exp-picker {{ 'invalid' if errors.expense_code }}" id="exp-picker">
+    <input type="hidden" name="expense_code" id="expense_code" value="{{ req.expense_code or '' }}">
+    <div class="exp-input-wrap">
+      <input type="text" id="expense-input" autocomplete="off" spellcheck="false"
+             placeholder="Код або назва статті…" role="combobox" aria-autocomplete="list"
+             aria-expanded="false" aria-controls="exp-suggest">
+      <span class="exp-code-chip" id="exp-chip" hidden></span>
+      <button type="button" class="exp-clear" id="exp-clear" title="Очистити" aria-label="Очистити" hidden>✕</button>
+    </div>
+    <button type="button" class="btn exp-open" id="exp-open" title="Відкрити довідник статей витрат">☰ Довідник</button>
+    <ul class="exp-suggest" id="exp-suggest" role="listbox" hidden></ul>
+  </div>
+  {% else %}
+  <input type="text" value="{{ expense_name(req.expense_code) }}" readonly>
+  {% endif %}
+  {% if errors.expense_code %}<span class="err">{{ errors.expense_code }}</span>{% endif %}
+</div>
+
+{% if editable %}
+<dialog id="exp-dialog" class="exp-dialog" aria-labelledby="exp-dialog-title">
+  <div class="dlg-head">
+    <span id="exp-dialog-title">Статті витрат</span>
+    <button type="button" class="exp-dialog-close" id="exp-dialog-close" aria-label="Закрити">✕</button>
+  </div>
+  <div class="exp-dialog-search">
+    <input type="search" id="exp-dialog-input" autocomplete="off" spellcheck="false"
+           placeholder="Пошук за кодом або назвою…" aria-controls="exp-dialog-list">
+    <span class="muted" id="exp-dialog-count"></span>
+  </div>
+  <div class="dlg-body exp-dialog-body">
+    <div class="exp-recent" id="exp-recent" hidden>
+      <div class="exp-section-title">Нещодавні</div>
+      <div class="exp-recent-list" id="exp-recent-list"></div>
+    </div>
+    <div class="exp-table" role="listbox" id="exp-dialog-list" aria-label="Статті витрат"></div>
+  </div>
+  <div class="dlg-foot exp-dialog-foot">
+    <span class="muted exp-keys">↑↓ — вибір · Enter — підтвердити · Esc — закрити</span>
+    <button type="button" class="btn" id="exp-dialog-cancel">Скасувати</button>
+  </div>
+</dialog>
+<script type="application/json" id="expense-items-data">{{ expense_items | tojson }}</script>
+<script src="{{ url_for('static', filename='expense-picker.js') }}"></script>
+{% endif %}

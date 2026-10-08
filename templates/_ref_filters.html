@@ -12,10 +12,10 @@
   <option value="{{ key }}" {{ 'selected' if key == refs.cp }}>{{ label }}</option>
   {% endfor %}
 </select>
-<select name="exp" onchange="this.form.submit()" aria-label="Вид витрат" class="{{ 'is-active' if refs.exp }}">
-  <option value="">Усі види витрат</option>
-  {% for key, label in EXPENSE_TYPES.items() %}
-  <option value="{{ key }}" {{ 'selected' if key == refs.exp }}>{{ label }}</option>
+<select name="exp" onchange="this.form.submit()" aria-label="Стаття витрат" class="{{ 'is-active' if refs.exp }}">
+  <option value="">Усі статті витрат</option>
+  {% for code in exp_options() %}
+  <option value="{{ code }}" {{ 'selected' if code == refs.exp }}>{{ expense_name(code) }}</option>
   {% endfor %}
 </select>
 {% if request.args | reject('equalto', 'view') | list | length %}

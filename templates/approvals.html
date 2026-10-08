@@ -28,7 +28,7 @@
         <th>Дата оплати</th>
         <th>Організація</th>
         <th>Контрагент</th>
-        <th>Вид витрат</th>
+        <th>Стаття витрат</th>
         <th class="num">Сума</th>
         <th>Форма оплати</th>
         <th>{{ "Поточний статус" if view == "processed" else "Етап" }}</th>
@@ -44,7 +44,7 @@
         <td data-label="Дата оплати" data-sort="{{ r.pay_date.isoformat() }}">{{ r.pay_date | d }}</td>
         <td data-label="Організація">{{ ORGANIZATIONS[r.organization_id] }}</td>
         <td data-label="Контрагент">{{ COUNTERPARTIES[r.counterparty_id] }}</td>
-        <td data-label="Вид витрат">{{ EXPENSE_TYPES[r.expense_type_id] }}</td>
+        <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}">{{ r.amount | money }} {{ r.currency }}</td>
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
         <td data-label="{{ 'Поточний статус' if view == 'processed' else 'Етап' }}"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>

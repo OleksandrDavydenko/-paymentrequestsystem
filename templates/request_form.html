@@ -77,11 +77,7 @@
       {{ err('organization_id') }}
     </div>
 
-    <div class="field">
-      <label for="expense_type_id">Вид витрат</label>
-      {{ select_ref('expense_type_id', EXPENSE_TYPES, req.expense_type_id, '— оберіть вид витрат —') }}
-      {{ err('expense_type_id') }}
-    </div>
+    {% include "_expense_picker.html" %}
     <div class="field">
       <label>Форма оплати</label>
       <div class="radio-group">

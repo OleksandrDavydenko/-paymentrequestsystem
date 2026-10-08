@@ -74,6 +74,28 @@
   </div>
 </div>
 
+{% set es = expense_status %}
+<div class="card expense-status" id="expense-items">
+  <div class="toolbar">
+    <h2 style="margin:0">Довідник статей витрат</h2>
+    <span class="spacer"></span>
+    <form method="post" action="{{ url_for('admin_expense_refresh') }}">
+      <button type="submit" class="btn btn-sm">⟳ Оновити зараз</button>
+    </form>
+  </div>
+  <dl class="status-grid">
+    <dt>Джерело</dt>
+    <dd>{{ {'powerbi': 'Power BI', 'copy': 'Збережена копія (Power BI зараз недоступний)',
+             'mock': 'Мокові дані — Power BI не налаштований', 'empty': 'Немає даних'}[es.source] | default(es.source) }}</dd>
+    <dt>Статей (лише елементи)</dt><dd>{{ es.count }}</dd>
+    <dt>Оновлено</dt><dd>{{ es.updated.replace('T', ' ') if es.updated else '—' }}</dd>
+  </dl>
+  {% if es.error %}<div class="flash error">Остання помилка: {{ es.error }}</div>{% endif %}
+  {% if not es.configured %}
+  <p class="muted">Щоб брати статті з Power BI, задайте в App Service змінні <code>PBI_GROUP_ID</code> і <code>PBI_DATASET_ID</code>.</p>
+  {% endif %}
+</div>
+
 <dialog id="add-dialog">
   <form method="post" action="{{ url_for('admin_users_add') }}">
     <div class="dlg-head">Додати користувача</div>

@@ -62,3 +62,33 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 - Безготівка + організація-нерезидент (напр. Litbia) → бухгалтер нерезидентів.
 
 Список організацій-нерезидентів — `NONRESIDENT_ORGANIZATIONS` у `mock_data.py` (пізніше — з 1С).
+
+## Довідник статей витрат (Power BI)
+Статті беруться з семантичної моделі Power BI, таблиця `Expense_Item` (`expense_items.py`).
+Доступ — від імені додатку (service principal) з тими самими `CLIENT_ID` / `CLIENT_SECRET` / `TENANT_ID`.
+Користувачу показуються лише елементи: групи (за `Тип_вузла` або наявністю дочірніх рядків) приховано.
+
+| Змінна | Значення |
+|---|---|
+| `PBI_GROUP_ID` | ID workspace Power BI |
+| `PBI_DATASET_ID` | ID семантичної моделі |
+| `PBI_TABLE` | `Expense_Item` (за замовчуванням) |
+| `PBI_CACHE_MINUTES` | як часто перечитувати довідник, за замовчуванням 60 |
+
+Налаштування Power BI (одноразово):
+- Admin portal → Tenant settings → «Service principals can use Fabric APIs» → Enabled
+  (можна обмежити групою безпеки, до якої додано додаток);
+- Admin portal → Tenant settings → «Dataset Execute Queries REST API» → Enabled;
+- Workspace → Manage access → додати `Payment Request System` (Viewer; якщо не вистачить — Contributor).
+
+Без `PBI_GROUP_ID`/`PBI_DATASET_ID` працюють мокові статті. Остання вдала копія довідника
+зберігається у `/home/data/expense_items.json`. Стан і кнопка «Оновити зараз» — в «Адмініструванні».
+
+## Секрети
+- Секрети (`CLIENT_SECRET`, `FLASK_SECRET_KEY`, publish profile) — **лише** в App Service → Environment variables,
+  у секретах GitHub і в локальному `.env`. У коді немає значень за замовчуванням для секретів.
+- `.env`, `*.PublishSettings`, `data/`, `*.csv` — у `.gitignore`. Скрипти з паролями в репозиторій не додаються.
+- Паролі користувачів системі не потрібні: доступ до Power BI й Graph — через реєстрацію додатку.
+- Якщо секрет потрапив у коміт, чат чи пошту — одразу замініть його (App registration → Certificates & secrets →
+  New client secret, оновити `CLIENT_SECRET` в App Service і `.env`, видалити старий). Видалення з історії git
+  не допомагає, якщо репозиторій уже був публічним.
