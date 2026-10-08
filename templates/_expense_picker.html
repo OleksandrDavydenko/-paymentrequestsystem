@@ -2,7 +2,12 @@
    Очікує req, errors, editable, expense_items (список {code, name}). #}
 <div class="field">
   <label for="expense-input">Стаття витрат</label>
-  {% if editable %}
+  {% if editable and not expense_items and not req.expense_code %}
+  <div class="exp-no-budget">
+    Вам ще не призначено статті бюджету. Зверніться до адміністратора системи.
+    <input type="hidden" name="expense_code" value="">
+  </div>
+  {% elif editable %}
   <div class="exp-picker {{ 'invalid' if errors.expense_code }}" id="exp-picker">
     <input type="hidden" name="expense_code" id="expense_code" value="{{ req.expense_code or '' }}">
     <div class="exp-input-wrap">
@@ -21,7 +26,7 @@
   {% if errors.expense_code %}<span class="err">{{ errors.expense_code }}</span>{% endif %}
 </div>
 
-{% if editable %}
+{% if editable and (expense_items or req.expense_code) %}
 <dialog id="exp-dialog" class="exp-dialog" aria-labelledby="exp-dialog-title">
   <div class="dlg-head">
     <span id="exp-dialog-title">Статті витрат</span>
@@ -31,6 +36,11 @@
     <input type="search" id="exp-dialog-input" autocomplete="off" spellcheck="false"
            placeholder="Пошук за кодом або назвою…" aria-controls="exp-dialog-list">
     <span class="muted" id="exp-dialog-count"></span>
+  </div>
+  <div class="exp-kind-filter" role="radiogroup" aria-label="Тип статті">
+    <button type="button" class="chip active" data-kind="">Усі</button>
+    <button type="button" class="chip" data-kind="direct">Прямі</button>
+    <button type="button" class="chip" data-kind="allocated">З розподілом</button>
   </div>
   <div class="dlg-body exp-dialog-body">
     <div class="exp-recent" id="exp-recent" hidden>

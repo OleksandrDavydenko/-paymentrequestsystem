@@ -36,6 +36,7 @@
           {% if groups[r] %}<a href="{{ group_url(groups[r]) }}" target="_blank" title="Група в Azure">↗</a>{% endif %}
         </th>
         {% endfor %}
+        <th data-nosort>Статті бюджету</th>
         <th data-nosort></th>
       </tr>
     </thead>
@@ -55,6 +56,15 @@
           {% if r == 'admin' and u.id == me_oid and r in u.roles %}<input type="hidden" form="f-{{ u.id }}" name="roles" value="admin">{% endif %}
         </td>
         {% endfor %}
+        {% set b = budgets[u.id] %}
+        <td class="budget-col">
+          <div class="budget-chips">
+            {% for text, kind in budget_summary(b) %}<span class="bchip bchip-{{ kind }}">{{ text }}</span>{% else %}<span class="bchip bchip-none">Не налаштовано</span>{% endfor %}
+          </div>
+          <button type="button" class="btn-link budget-edit" data-user="{{ {'id': u.id, 'name': u.name, 'email': u.email,
+                  'direct': b.direct if b else False, 'all': b.all_departments if b else False,
+                  'deps': b.departments if b else []} | tojson | forceescape }}">Налаштувати</button>
+        </td>
         <td class="num">
           <form method="post" action="{{ url_for('admin_users_save') }}" id="f-{{ u.id }}">
             <input type="hidden" name="user_id" value="{{ u.id }}">
@@ -65,7 +75,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ role_order | length + 2 }}" class="empty">
+      <tr><td colspan="{{ role_order | length + 3 }}" class="empty">
         Поки що жоден співробітник не має ролі. Натисніть «+ Додати користувача».
       </td></tr>
       {% endfor %}
@@ -87,7 +97,7 @@
     <dt>Джерело</dt>
     <dd>{{ {'powerbi': 'Power BI', 'copy': 'Збережена копія (Power BI зараз недоступний)',
              'mock': 'Мокові дані — Power BI не налаштований', 'empty': 'Немає даних'}[es.source] | default(es.source) }}</dd>
-    <dt>Статей (лише елементи)</dt><dd>{{ es.count }}</dd>
+    <dt>Статей (лише елементи)</dt><dd>{{ es.count }} <span class="muted">· прямих {{ es.direct }} · з розподілом {{ es.allocated }} · відділів {{ es.departments }}</span></dd>
     <dt>Оновлено</dt><dd>{{ es.updated.replace('T', ' ') if es.updated else '—' }}</dd>
   </dl>
   {% if es.error %}<div class="flash error">Остання помилка: {{ es.error }}</div>{% endif %}
@@ -95,6 +105,47 @@
   <p class="muted">Щоб брати статті з Power BI, задайте в App Service змінні <code>PBI_GROUP_ID</code> і <code>PBI_DATASET_ID</code>.</p>
   {% endif %}
 </div>
+
+<dialog id="budget-dialog" class="budget-dialog" aria-labelledby="budget-title">
+  <form method="post" action="{{ url_for('admin_users_budget') }}">
+    <input type="hidden" name="user_id">
+    <input type="hidden" name="name">
+    <input type="hidden" name="email">
+    <div class="dlg-head"><span id="budget-title">Статті бюджету</span></div>
+    <div class="dlg-body">
+      <p class="muted" style="margin-top:0">Користувач зможе вибирати в заявках лише ці статті витрат.</p>
+      <label class="budget-option">
+        <input type="checkbox" name="direct" value="1">
+        <span><strong>Прямі статті</strong> <span class="muted">— без відділу ({{ expense_status.direct }})</span></span>
+      </label>
+      <div class="budget-section-title">Статті з розподілом</div>
+      <label class="budget-option"><input type="radio" name="mode" value="none"> Без статей з розподілом</label>
+      <label class="budget-option"><input type="radio" name="mode" value="all"> <span><strong>Усі відділи</strong> <span class="muted">({{ expense_status.allocated }})</span></span></label>
+      <label class="budget-option"><input type="radio" name="mode" value="selected"> Вибрані відділи</label>
+      <div class="budget-deps" id="budget-deps">
+        <div class="budget-deps-tools">
+          <input type="search" id="budget-dep-search" placeholder="Пошук відділу…" autocomplete="off">
+          <button type="button" class="btn btn-sm" id="budget-all">Вибрати всі</button>
+          <button type="button" class="btn btn-sm" id="budget-none">Зняти всі</button>
+        </div>
+        <div class="budget-dep-list" id="budget-dep-list">
+          {% for dep, count in budget_departments %}
+          <label class="budget-dep"><input type="checkbox" name="departments" value="{{ dep }}"> <span>{{ dep }}</span> <span class="muted">{{ count }}</span></label>
+          {% else %}
+          <div class="muted">У довіднику немає статей з відділами</div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="budget-total" id="budget-total"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="submit" class="btn btn-primary">Зберегти</button>
+      <button type="button" class="btn" onclick="this.closest('dialog').close()">Скасувати</button>
+    </div>
+  </form>
+</dialog>
+<script type="application/json" id="budget-items">{{ budget_items | tojson }}</script>
+<script src="{{ url_for('static', filename='admin-budget.js') }}"></script>
 
 <dialog id="add-dialog">
   <form method="post" action="{{ url_for('admin_users_add') }}">

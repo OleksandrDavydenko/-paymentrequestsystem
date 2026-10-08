@@ -446,7 +446,7 @@ details.admin-status form > .btn { align-self: flex-start; }
 .exp-recent-chip { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 4px 12px; font: inherit;
   font-size: 13px; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 .exp-recent-chip:hover { border-color: var(--primary); background: #f0f6fc; }
-.exp-row { display: grid; grid-template-columns: 110px 1fr; gap: 12px; padding: 9px 20px; cursor: pointer; border-bottom: 1px solid #f1f3f5; }
+.exp-row { display: grid; grid-template-columns: 110px 1fr auto; align-items: center; gap: 12px; padding: 9px 20px; cursor: pointer; border-bottom: 1px solid #f1f3f5; }
 .exp-row .exp-code { font-size: 13px; color: var(--text); font-weight: 600; }
 .exp-row:hover, .exp-row.active { background: #f0f6fc; }
 .exp-row.selected { background: #e8f1fb; box-shadow: inset 3px 0 0 var(--primary); }
@@ -457,10 +457,45 @@ details.admin-status form > .btn { align-self: flex-start; }
   .exp-dialog[open] { display: flex; }
   .exp-dialog-body { flex: 1; max-height: none; }
   .exp-keys { display: none; }
-  .exp-row { grid-template-columns: 80px 1fr; padding: 11px 16px; }
+  .exp-row { grid-template-columns: 70px 1fr; padding: 11px 16px; }
+  .exp-row .exp-kind { grid-column: 2; justify-self: start; }
   .exp-dialog-search { padding: 10px 16px; }
 }
 .expense-status { margin-top: 16px; }
 .status-grid { display: grid; grid-template-columns: max-content 1fr; gap: 6px 20px; margin: 12px 0 0; font-size: 14px; }
 .status-grid dt { color: var(--muted); }
 .status-grid dd { margin: 0; font-weight: 600; }
+.exp-meta { display: inline-flex; align-items: center; gap: 8px; flex-shrink: 0; }
+.exp-kind { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.exp-kind-direct { background: #eaeef2; color: #57606a; }
+.exp-kind-allocated { background: #ddeeff; color: #0c5aa0; }
+.exp-kind-filter { display: flex; gap: 6px; padding: 8px 20px; border-bottom: 1px solid #eaeef2; }
+.exp-kind-filter .chip { font: inherit; font-size: 13px; cursor: pointer; }
+.exp-no-budget { padding: 8px 12px; border-radius: 6px; background: #fff4e5; color: #8a4b00; border: 1px solid #f3d19c; font-size: 13px; }
+@media (max-width: 760px) { .exp-kind-filter { padding: 8px 16px; } }
+
+/* ---------- Статті бюджету (адмінка) ---------- */
+.budget-col { min-width: 180px; }
+.budget-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 2px; }
+.bchip { font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px; white-space: nowrap; }
+.bchip-direct { background: #eaeef2; color: #57606a; }
+.bchip-all { background: #dcf5e3; color: #1e6b34; }
+.bchip-dep { background: #ddeeff; color: #0c5aa0; }
+.bchip-none { background: #fde2e1; color: #b3261e; }
+.budget-edit { color: var(--primary); font-size: 13px; padding: 0; }
+.budget-dialog { width: min(560px, 96vw); }
+.budget-option { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; }
+.budget-option input { width: 16px; height: 16px; }
+.budget-section-title { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; margin: 14px 0 4px; }
+.budget-deps { margin: 4px 0 0 24px; border: 1px solid #eaeef2; border-radius: 8px; padding: 10px; transition: opacity .15s; }
+.budget-deps.disabled { opacity: .55; }
+.budget-deps-tools { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.budget-deps-tools input { flex: 1; min-width: 140px; }
+.budget-dep-list { max-height: 240px; overflow: auto; display: flex; flex-direction: column; }
+.budget-dep { display: flex; align-items: center; gap: 8px; padding: 5px 4px; border-radius: 6px; cursor: pointer; }
+.budget-dep:hover { background: #f6f8fa; }
+.budget-dep .muted { margin-left: auto; }
+.budget-dep.missing span:nth-of-type(1) { text-decoration: line-through; color: var(--muted); }
+.budget-total { margin-top: 14px; padding: 10px 12px; border-radius: 6px; background: #e6f4ea; color: #1e6b34; font-weight: 600; font-size: 13px; }
+.budget-total.empty { background: #fdecea; color: var(--danger); }
+@media (max-width: 760px) { .budget-deps { margin-left: 0; } }

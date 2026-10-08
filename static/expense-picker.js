@@ -7,6 +7,9 @@
   const RECENT_KEY = 'expense-recent';
   const MAX_SUGGEST = 10;
   const MAX_LIST = 500;
+  const KIND = { direct: 'Пряма', allocated: 'З розподілом' };
+  const kindBadge = i => `<span class="exp-kind exp-kind-${i.kind}">${KIND[i.kind] || ''}</span>`;
+  let kindFilter = '';
 
   const picker = document.getElementById('exp-picker');
   const hidden = document.getElementById('expense_code');
@@ -113,7 +116,7 @@
       li.role = 'option';
       li.className = 'exp-option' + (idx === active ? ' active' : '');
       li.innerHTML = `<span class="exp-name">${highlight(item.name, input.value)}</span>`
-        + `<span class="exp-code">${highlight(item.code, input.value)}</span>`;
+        + `<span class="exp-meta">${kindBadge(item)}<span class="exp-code">${highlight(item.code, input.value)}</span></span>`;
       li.addEventListener('mousedown', e => { e.preventDefault(); select(item); });
       suggest.appendChild(li);
     });
@@ -170,6 +173,7 @@
       b.type = 'button';
       b.className = 'exp-recent-chip';
       b.innerHTML = `<span class="exp-code">${escapeHtml(item.code)}</span> ${escapeHtml(item.name)}`;
+      b.title = KIND[item.kind] || '';
       b.addEventListener('click', () => choose(item));
       recentList.appendChild(b);
     });
@@ -177,9 +181,9 @@
 
   function renderDialog() {
     const q = dInput.value;
-    const all = search(q, Infinity);
+    const all = search(q, Infinity).filter(i => !kindFilter || i.kind === kindFilter);
     dRows = all.slice(0, MAX_LIST);
-    dCount.textContent = q.trim() ? `Знайдено ${all.length} з ${ITEMS.length}` : `Усього ${ITEMS.length}`;
+    dCount.textContent = (q.trim() || kindFilter) ? `Знайдено ${all.length} з ${ITEMS.length}` : `Усього ${ITEMS.length}`;
     dList.innerHTML = '';
     if (!dRows.length) {
       dList.innerHTML = '<div class="exp-empty">Нічого не знайдено</div>';
@@ -189,7 +193,7 @@
       row.role = 'option';
       row.className = 'exp-row' + (item.code === hidden.value ? ' selected' : '') + (idx === dActive ? ' active' : '');
       row.dataset.idx = idx;
-      row.innerHTML = `<span class="exp-code">${highlight(item.code, q)}</span><span class="exp-name">${highlight(item.name, q)}</span>`;
+      row.innerHTML = `<span class="exp-code">${highlight(item.code, q)}</span><span class="exp-name">${highlight(item.name, q)}</span>${kindBadge(item)}`;
       row.addEventListener('click', () => choose(item));
       dList.appendChild(row);
     });
@@ -224,6 +228,11 @@
     if (sel) sel.scrollIntoView({ block: 'center' });
   });
   dInput.addEventListener('input', () => { dActive = -1; renderDialog(); dList.scrollTop = 0; });
+  dialog.querySelectorAll('.exp-kind-filter .chip').forEach(btn => btn.addEventListener('click', () => {
+    kindFilter = btn.dataset.kind;
+    dialog.querySelectorAll('.exp-kind-filter .chip').forEach(b => b.classList.toggle('active', b === btn));
+    dActive = -1; renderDialog(); dInput.focus();
+  }));
   dInput.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setDialogActive(Math.min(dActive + 1, dRows.length - 1)); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); setDialogActive(Math.max(dActive - 1, 0)); }

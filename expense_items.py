@@ -67,6 +67,21 @@ MOCK_ITEMS = [
     ("10.002", "Представницькі витрати"),
     ("10.003", "Благодійність"),
 ]
+# Відділи мокових статей (за кодом статті або групою «01»). Немає — стаття пряма.
+MOCK_DEPARTMENTS = {
+    "01": ["Логістика"],
+    "01.005": ["Логістика", "БАА"],
+    "01.006": ["Логістика", "БАА"],
+    "02": ["ІТ"],
+    "02.001": ["ІТ", "Адміністрація", "БАА"],
+    "04": ["Адміністрація", "БАА"],
+    "05": ["Адміністрація"],
+    "05.003": ["Логістика"],
+    "05.004": ["Логістика", "Продажі"],
+    "06": ["Продажі", "Логістика"],
+    "07": ["Адміністрація"],
+    "10": ["Продажі"],
+}
 
 
 def _cache_file():
@@ -133,27 +148,55 @@ def _query_rows():
     return [{(k.split("[", 1)[1][:-1] if k.endswith("]") and "[" in k else k): v for k, v in r.items()} for r in rows]
 
 
+def _department(value):
+    value = str(value or "").strip()
+    return "" if value.lower() in ("", "none", "null", "nan") else value
+
+
 def extract_items(rows):
-    """Лише елементи: без груп (за Тип_вузла або за наявністю дочірніх рядків)."""
+    """Лише елементи: без груп (за Тип_вузла або за наявністю дочірніх рядків).
+
+    Один код може трапитись у кількох рядках з різними відділами (стаття з розподілом) —
+    відділи об'єднуються. Стаття без жодного відділу — «пряма».
+    """
     parents = {str(r.get("Батько")).strip() for r in rows if r.get("Батько") not in (None, "")}
-    items, seen = [], set()
+    by_code = {}
     for r in rows:
         code = str(r.get("Код") or "").strip()
         name = str(r.get("Назва") or "").strip()
         node_type = str(r.get("Тип_вузла") or "").lower()
-        if not code or not name or code in seen:
+        if not code or not name:
             continue
         if any(h in node_type for h in GROUP_HINTS) or code in parents or name in parents:
             continue
-        seen.add(code)
-        items.append({"code": code, "name": name})
-    return sorted(items, key=lambda i: _natural_key(i["code"]))
+        item = by_code.setdefault(code, {"code": code, "name": name, "departments": []})
+        dep = _department(r.get("Відділ"))
+        if dep and dep not in item["departments"]:
+            item["departments"].append(dep)
+    items = sorted(by_code.values(), key=lambda i: _natural_key(i["code"]))
+    for i in items:
+        i["departments"].sort(key=str.lower)
+        i["kind"] = "allocated" if i["departments"] else "direct"
+    return items
+
+
+KIND_LABELS = {"direct": "Пряма", "allocated": "З розподілом"}
+
+
+def _mock_items():
+    rows = []
+    for code, name in MOCK_ITEMS:
+        deps = MOCK_DEPARTMENTS.get(code) or MOCK_DEPARTMENTS.get(code.split(".")[0], [])
+        for dep in deps or [None]:
+            rows.append({"Код": code, "Назва": name, "Відділ": dep, "Тип_вузла": "Елемент", "Батько": None})
+    return extract_items(rows)
 
 
 # ---------------------------------------------------------------- кеш
 
-_lock = threading.Lock()
-_state = {"items": None, "loaded_at": 0.0, "source": None, "updated": None, "error": None}
+_lock = threading.Lock()      # саме завантаження довідника
+_bg_lock = threading.Lock()   # лише прапорець «оновлюється у фоні» — ніколи не чекає Power BI
+_state = {"items": None, "loaded_at": 0.0, "source": None, "updated": None, "error": None, "refreshing": False}
 
 
 def _configured():
@@ -181,17 +224,20 @@ def _load_copy():
     try:
         with open(_cache_file(), encoding="utf-8") as f:
             data = json.load(f)
-        return data.get("items") or None, data.get("updated")
+        items = data.get("items") or None
+        for i in items or []:  # копії старого формату (без відділів)
+            i.setdefault("departments", [])
+            i.setdefault("kind", "allocated" if i["departments"] else "direct")
+        return items, data.get("updated")
     except (OSError, ValueError):
         return None, None
 
 
 def refresh():
-    """Завантажити довідник із Power BI зараз. Повертає True, якщо вдалося."""
+    """Завантажити довідник із Power BI зараз (синхронно). Повертає True, якщо вдалося."""
     with _lock:
         if not _configured():
-            _state.update(items=[{"code": c, "name": n} for c, n in MOCK_ITEMS], loaded_at=time.time(),
-                          source="mock", updated=None, error=None)
+            _state.update(items=_mock_items(), loaded_at=time.time(), source="mock", updated=None, error=None)
             return True
         try:
             items = extract_items(_query_rows())
@@ -211,26 +257,65 @@ def refresh():
             return False
 
 
+def _refresh_in_background():
+    """Запустити оновлення у фоні (не більше одного одночасно)."""
+    with _bg_lock:
+        if _state["refreshing"]:
+            return
+        _state["refreshing"] = True
+
+    def run():
+        try:
+            refresh()
+        finally:
+            _state["refreshing"] = False
+
+    threading.Thread(target=run, name="expense-items-refresh", daemon=True).start()
+
+
 def get_items():
-    if _state["items"] is None or time.time() - _state["loaded_at"] > _ttl():
-        refresh()
+    """Поточний довідник. Застарілий кеш віддається одразу, а оновлення йде у фоні."""
+    if _state["items"] is None:
+        items, updated = _load_copy() if _configured() else (None, None)
+        if items:
+            # Після перезапуску: одразу віддаємо збережену копію, свіжі дані — у фоні
+            _state.update(items=items, loaded_at=0.0, source="copy", updated=updated)
+            _refresh_in_background()
+        else:
+            refresh()  # немає ні пам'яті, ні копії — доводиться чекати
+    elif time.time() - _state["loaded_at"] > _ttl():
+        _refresh_in_background()
     return _state["items"] or []
 
 
 def get_map():
-    return {i["code"]: i["name"] for i in get_items()}
+    return {i["code"]: i for i in get_items()}
 
 
 def get_name(code):
-    return get_map().get(code)
+    item = get_map().get(code)
+    return item["name"] if item else None
+
+
+def get_departments():
+    """Усі відділи довідника: [(відділ, кількість статей)], за алфавітом."""
+    counts = {}
+    for i in get_items():
+        for d in i["departments"]:
+            counts[d] = counts.get(d, 0) + 1
+    return sorted(counts.items(), key=lambda kv: kv[0].lower())
 
 
 def status():
-    get_items()
+    items = get_items()
     return {
         "source": _state["source"],
         "updated": _state["updated"],
-        "count": len(_state["items"] or []),
+        "count": len(items),
+        "direct": sum(1 for i in items if i["kind"] == "direct"),
+        "allocated": sum(1 for i in items if i["kind"] == "allocated"),
+        "departments": len(get_departments()),
         "error": _state["error"],
         "configured": _configured(),
+        "refreshing": _state["refreshing"],
     }

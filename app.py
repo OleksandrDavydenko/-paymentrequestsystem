@@ -12,6 +12,7 @@ import identity.flask
 
 import expense_items
 import graph
+import user_budget
 import mock_data as db
 import workflow as wf
 
@@ -99,7 +100,7 @@ def expense_label(code):
     return f"{name} ({code})" if name else code
 
 
-def parse_request_form(form, current=None):
+def parse_request_form(form, current=None, allowed_codes=None):
     """Повертає (дані заявки, словник помилок). Автор/дата/номер не з форми."""
     errors = {}
     data = {
@@ -128,9 +129,14 @@ def parse_request_form(form, current=None):
     for field, message in required.items():
         if data[field] is None:
             errors[field] = message
-    if data["expense_code"] and data["expense_code"] != (current or {}).get("expense_code") \
-            and expense_items.get_name(data["expense_code"]) is None:
-        errors["expense_code"] = "Такої статті немає в довіднику — оберіть зі списку"
+    if data["expense_code"] and data["expense_code"] != (current or {}).get("expense_code"):
+        # Стаття має бути в довіднику і в бюджеті автора (стара стаття цієї ж заявки — приймається)
+        if expense_items.get_name(data["expense_code"]) is None:
+            errors["expense_code"] = "Такої статті немає в довіднику — оберіть зі списку"
+        elif allowed_codes is not None and data["expense_code"] not in allowed_codes:
+            errors["expense_code"] = "Ця стаття не входить у ваш бюджет — оберіть зі списку"
+    if allowed_codes is not None and not allowed_codes and not data["expense_code"]:
+        errors["expense_code"] = "Вам ще не призначено статті бюджету. Зверніться до адміністратора"
     if data["amount"] is None or data["amount"] <= 0:
         errors["amount"] = "Сума має бути більшою за 0"
         data["amount_raw"] = form.get("amount", "")
@@ -335,13 +341,16 @@ def request_card(request_id=None, *, context):
     else:
         existing = _load_visible(request_id)
 
+    # Статті, які може вибрати автор (редагує заявку лише автор, тож беремо поточного користувача)
+    budget_items = user_budget.allowed_items(user_budget.get(user["oid"]), expense_items.get_items())
+
     errors = {}
     req = existing
     if request.method == "POST":
         if not wf.can_edit(existing, roles, user["email"]):
             flash("Заявку в цьому статусі редагувати не можна", "error")
             return redirect(url_for("request_card", request_id=request_id))
-        data, errors = parse_request_form(request.form, existing)
+        data, errors = parse_request_form(request.form, existing, {i["code"] for i in budget_items})
         req = {**existing, **data}
         if not errors:
             for line in req["lines"]:
@@ -369,7 +378,8 @@ def request_card(request_id=None, *, context):
         req=req,
         errors=errors,
         invoices=db.INVOICES,
-        expense_items=expense_items.get_items(),
+        expense_items=budget_items,
+        KIND_LABELS=expense_items.KIND_LABELS,
         nonresident_orgs=sorted(wf.NONRESIDENT_ORGANIZATIONS),
         channel_roles={c: wf.ROLES[r] for c, r in wf.ACCOUNTANT_BY_CHANNEL.items()},
         editable=wf.can_edit(req, roles, user["email"]),
@@ -652,6 +662,10 @@ def admin_users(*, context):
         error=error,
         me_oid=g.user["oid"],
         expense_status=expense_items.status(),
+        budgets={uid: user_budget.get(uid) for uid in users},
+        budget_summary=user_budget.summary,
+        budget_departments=expense_items.get_departments(),
+        budget_items=[{"k": i["kind"], "d": i["departments"]} for i in expense_items.get_items()],
     )
 
 
@@ -665,6 +679,31 @@ def admin_expense_refresh(*, context):
     else:
         flash("Не вдалося оновити довідник: " + (expense_items.status()["error"] or "невідома помилка"), "error")
     return redirect(url_for("admin_users") + "#expense-items")
+
+
+@app.route("/admin/users/budget", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_users_budget(*, context):
+    user_id = request.form.get("user_id", "").strip()
+    if not user_id:
+        abort(400)
+    mode = request.form.get("mode")
+    known = {d for d, _ in expense_items.get_departments()}
+    previous = set((user_budget.get(user_id) or {}).get("departments") or [])
+    # Відділи, яких уже немає в довіднику, лишаються, лише якщо адмін їх не зняв
+    departments = [d for d in request.form.getlist("departments") if d in known or d in previous] \
+        if mode == "selected" else []
+    saved = user_budget.save_settings(
+        user_id, request.form.get("email", ""), request.form.get("name", ""),
+        direct=request.form.get("direct") == "1",
+        all_departments=mode == "all",
+        departments=departments,
+        updated_by=g.user["email"],
+    )
+    items = user_budget.allowed_items(saved, expense_items.get_items())
+    flash(f"{saved['name']}: статті бюджету збережено — доступно {len(items)} статей", "success")
+    return redirect(url_for("admin_users") + "#admin-users")
 
 
 @app.route("/admin/users/search")
