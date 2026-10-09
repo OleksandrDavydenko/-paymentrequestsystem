@@ -40,7 +40,8 @@
           {% if groups[r] %}<a href="{{ group_url(groups[r]) }}" target="_blank" title="Група в Azure">↗</a>{% endif %}
         </th>
         {% endfor %}
-        <th data-nosort>Відділ і статті бюджету</th>
+        <th data-nosort>Відділ</th>
+        <th data-nosort>Статті бюджету</th>
         <th data-nosort></th>
       </tr>
     </thead>
@@ -62,7 +63,7 @@
         </td>
         {% endfor %}
         {% set b = budgets[u.id] %}
-        <td class="budget-col">
+        <td class="dept-col">
           {% set dep = user_departments[u.id] %}
           <select form="f-{{ u.id }}" name="department" class="dept-select" aria-label="Відділ — {{ u.name }}">
             <option value="">— не вказано —</option>
@@ -81,8 +82,9 @@
             <button type="button" class="btn-link head-edit" data-user="{{ {'id': u.id, 'name': u.name, 'email': u.email, 'deps': heads} | tojson | forceescape }}">Налаштувати</button>
           </div>
           {% endif %}
+        </td>
+        <td class="budget-col">
           <div class="budget-chips">
-            <span class="muted">Статті:</span>
             {% for text, kind in budget_summary(b) %}<span class="bchip bchip-{{ kind }}">{{ text }}</span>{% else %}<span class="bchip bchip-none">Не налаштовано</span>{% endfor %}
           </div>
           <button type="button" class="btn-link budget-edit" data-user="{{ {'id': u.id, 'name': u.name, 'email': u.email,
@@ -100,7 +102,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ role_order | length + 3 }}" class="empty">
+      <tr><td colspan="{{ role_order | length + 4 }}" class="empty">
         Поки що жоден співробітник не має ролі. Натисніть «+ Додати користувача».
       </td></tr>
       {% endfor %}
