@@ -64,6 +64,7 @@ def inject_refs():
         "ORGANIZATIONS": db.ORGANIZATIONS,
         "COUNTERPARTIES": db.COUNTERPARTIES,
         "expense_name": expense_label,
+        "expense_title": expense_items.get_name,
         # Фільтр «Стаття витрат»: лише статті, що трапляються в заявках
         "exp_options": lambda: sorted({r["expense_code"] for r in db.list_all() if r.get("expense_code")},
                                       key=lambda c: expense_label(c).lower()),
@@ -95,11 +96,11 @@ def _parse_ref(raw, ref):
 
 
 def expense_label(code):
-    """«Назва (код)» для статті витрат; код, якого немає в довіднику, позначаємо явно."""
+    """«Код — Назва» для статті витрат; код, якого немає в довіднику, позначаємо явно."""
     if not code:
         return ""
     name = expense_items.get_name(code)
-    return f"{name} ({code})" if name else f"{code} — немає в довіднику"
+    return f"{code} — {name}" if name else f"{code} — немає в довіднику"
 
 
 def parse_request_form(form, current=None, allowed_codes=None):

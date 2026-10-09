@@ -517,3 +517,8 @@ details.admin-status form > .btn { align-self: flex-start; }
 .mode-option input { margin-top: 3px; }
 .mode-hint { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
 input.exp-missing { color: #8a4b00; background: #fff8ec; border-color: #f3d19c; }
+.exp-readonly { display: flex; align-items: center; gap: 8px; min-height: 34px; padding: 6px 8px; border: 1px solid var(--border);
+  border-radius: 6px; background: #f6f8fa; min-width: 0; }
+.exp-readonly .exp-code-chip { position: static; pointer-events: auto; flex-shrink: 0; }
+.exp-readonly-name { min-width: 0; overflow-wrap: anywhere; }
+.exp-readonly.exp-missing { background: #fff8ec; border-color: #f3d19c; color: #8a4b00; }
