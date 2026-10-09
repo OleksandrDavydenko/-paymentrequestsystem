@@ -16,8 +16,12 @@
              aria-expanded="false" aria-controls="exp-suggest">
       <span class="exp-code-chip" id="exp-chip" hidden></span>
       <button type="button" class="exp-clear" id="exp-clear" title="Очистити" aria-label="Очистити" hidden>✕</button>
+      <button type="button" class="exp-open" id="exp-open" title="Відкрити довідник статей витрат"
+              aria-label="Відкрити довідник статей витрат">
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor"
+             stroke-width="1.7" stroke-linecap="round"><path d="M3 5h2M3 10h2M3 15h2M8 5h9M8 10h9M8 15h9"/></svg>
+      </button>
     </div>
-    <button type="button" class="btn exp-open" id="exp-open" title="Відкрити довідник статей витрат">☰ Довідник</button>
     <ul class="exp-suggest" id="exp-suggest" role="listbox" hidden></ul>
   </div>
   {% else %}

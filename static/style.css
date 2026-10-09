@@ -410,18 +410,11 @@ details.admin-status form > .btn { align-self: flex-start; }
 }
 
 /* ---------- Вибір статті витрат ---------- */
-.exp-picker { position: relative; display: flex; gap: 6px; min-width: 0; }
-.exp-input-wrap { position: relative; flex: 1; min-width: 0; display: flex; align-items: center; }
-.exp-input-wrap input { width: 100%; padding-right: 96px; text-overflow: ellipsis; }
-.exp-picker.has-value .exp-input-wrap input { font-weight: 600; }
-.exp-picker.unmatched .exp-input-wrap input { border-color: #d97706; }
-.exp-picker.invalid .exp-input-wrap input { border-color: var(--danger); box-shadow: 0 0 0 3px #c628281a; }
 .exp-code-chip { position: absolute; right: 30px; background: #ddeeff; color: var(--primary-dark); font-size: 12px;
   font-weight: 700; padding: 1px 8px; border-radius: 999px; pointer-events: none; font-variant-numeric: tabular-nums; }
 .exp-clear { position: absolute; right: 6px; border: none; background: none; color: var(--muted); cursor: pointer;
   font-size: 13px; padding: 2px 4px; border-radius: 4px; }
 .exp-clear:hover { color: var(--danger); background: #fdecea; }
-.exp-open { white-space: nowrap; flex-shrink: 0; }
 .exp-suggest { position: absolute; z-index: 30; top: calc(100% + 4px); left: 0; right: 0; list-style: none; margin: 0; padding: 4px;
   background: #fff; border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0,0,0,.14);
   max-height: 320px; overflow: auto; }
@@ -452,7 +445,6 @@ details.admin-status form > .btn { align-self: flex-start; }
 .exp-row.selected { background: #e8f1fb; box-shadow: inset 3px 0 0 var(--primary); }
 .exp-dialog-foot { justify-content: space-between; align-items: center; }
 @media (max-width: 760px) {
-  .exp-open { padding: 6px 10px; }
   .exp-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; display: none; flex-direction: column; }
   .exp-dialog[open] { display: flex; }
   .exp-dialog-body { flex: 1; max-height: none; }
@@ -522,3 +514,21 @@ input.exp-missing { color: #8a4b00; background: #fff8ec; border-color: #f3d19c; 
 .exp-readonly .exp-code-chip { position: static; pointer-events: auto; flex-shrink: 0; }
 .exp-readonly-name { min-width: 0; overflow-wrap: anywhere; }
 .exp-readonly.exp-missing { background: #fff8ec; border-color: #f3d19c; color: #8a4b00; }
+
+/* Поле вибору статті: один блок — [назва … | код | ✕ | ☰] */
+.exp-picker { position: relative; min-width: 0; }
+.exp-input-wrap { display: flex; align-items: center; gap: 6px; min-width: 0; background: #fff;
+  border: 1px solid var(--border); border-radius: 6px; padding-left: 0; transition: border-color .15s, box-shadow .15s; }
+.exp-input-wrap:focus-within { border-color: var(--primary); box-shadow: 0 0 0 3px #0f6cbd22; }
+.exp-input-wrap input { flex: 1; min-width: 0; border: none; background: transparent; padding: 6px 8px;
+  text-overflow: ellipsis; outline: none; box-shadow: none; }
+.exp-picker.has-value .exp-input-wrap input { font-weight: 600; }
+.exp-picker.unmatched .exp-input-wrap { border-color: #d97706; }
+.exp-picker.invalid .exp-input-wrap { border-color: var(--danger); box-shadow: 0 0 0 3px #c628281a; }
+.exp-input-wrap .exp-code-chip { position: static; flex-shrink: 0; }
+.exp-input-wrap .exp-clear { position: static; flex-shrink: 0; }
+.exp-open { flex-shrink: 0; align-self: stretch; display: inline-flex; align-items: center; justify-content: center;
+  width: 38px; border: none; border-left: 1px solid var(--border); background: #f6f8fa; color: var(--muted);
+  border-radius: 0 5px 5px 0; cursor: pointer; }
+.exp-open:hover { background: #e8f1fb; color: var(--primary); }
+.exp-open:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
