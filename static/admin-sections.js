@@ -28,7 +28,9 @@
     setOpen(sec, open, false);
     bar.addEventListener('click', e => {
       // Кнопки й форми в заголовку («+ Додати користувача», «Оновити зараз») розділ не згортають
-      if (e.target.closest('button, a, input, select, form')) return;
+      // (лише ті, що всередині заголовка: сам розділ теж може бути формою, як «Налаштування процесу»)
+      const control = e.target.closest('button, a, input, select, form');
+      if (control && bar.contains(control)) return;
       setOpen(sec, sec.classList.contains('collapsed'), true);
     });
     title.addEventListener('keydown', e => {
