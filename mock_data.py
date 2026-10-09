@@ -206,12 +206,31 @@ def _at_head(req, day):
 _at_head(_req(19, _OTHER, "2026-10-20", 1, 1, 1, "bank", "UAH", "7600.00", [], "Перевезення, жовтень"), 8)
 
 
+# Учасники (спостерігачі) для демонстрації
+def _participant(req_id, person, added_by):
+    _REQUESTS[req_id].setdefault("participants", []).append(
+        {"email": person[0], "name": person[1], "added_by": added_by[1],
+         "added_at": _REQUESTS[req_id]["created_at"]})
+
+
+_participant(2, _ME, _OTHER)
+_participant(4, _OTHER, _ME)
+
+
 def list_requests(author_email, status=None):
     rows = [
         r for r in _REQUESTS.values()
         if r["author_email"].lower() == author_email.lower()
         and (not status or r["status"] == status)
     ]
+    return sorted(rows, key=lambda r: r["created_at"], reverse=True)
+
+
+def list_participating(email):
+    """Заявки, до яких користувача додано учасником; нові — першими."""
+    email = (email or "").lower()
+    rows = [r for r in _REQUESTS.values()
+            if any(p["email"].lower() == email for p in r.get("participants") or [])]
     return sorted(rows, key=lambda r: r["created_at"], reverse=True)
 
 

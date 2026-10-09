@@ -11,6 +11,7 @@ import time
 from flask import render_template, url_for
 
 import app_settings
+import departments
 import mailer
 import org_structure
 import secret_box
@@ -38,6 +39,8 @@ SUBJECTS = {
     "comment": "новий коментар",
     "task_pay": "чекає оплати",
     "task_new": "чекає вашого рішення",
+    "participant_add": "вас додано учасником",
+    "dept_new": "нова заявка відділу",
 }
 
 # Склад груп ролей: role -> [{"email", "name"}]. Встановлюється з app.py (через Graph, з кешем).
@@ -105,19 +108,19 @@ def _send(to, subject, template_args):
     mailer.enqueue(smtp_config(), address, subject, html)
 
 
-def notify(event, req, actor, comment=""):
+def notify(event, req, actor, comment="", target=None):
     """Надіслати листи після події event ("submit", "approve", "rework", "reject", "pay",
-    "admin_status", "comment"). Помилки не ламають дію користувача."""
+    "admin_status", "comment", "participant_add" — target: пошта доданого). Помилки не ламають дію."""
     if not enabled():
         return []
     try:
-        return _notify(event, req, actor, comment)
+        return _notify(event, req, actor, comment, target)
     except Exception:
         logger.exception("Помилка підготовки сповіщень")
         return []
 
 
-def _notify(event, req, actor, comment):
+def _notify(event, req, actor, comment, target=None):
     actor_email = (actor.get("email") or "").lower()
     last = (req.get("history") or [{}])[-1]
     status_changed = last.get("from_status") != last.get("to_status")
@@ -128,9 +131,15 @@ def _notify(event, req, actor, comment):
         if email and email != actor_email and email not in recipients and user_prefs.wants(email, pref):
             recipients[email] = (pref, reason, subject)
 
-    # 1. Автор заявки
+    # 0. Доданий учасник — лише він
+    if event == "participant_add":
+        add(target, "participant_added", "вас додали учасником цієї заявки", SUBJECTS["participant_add"])
+
+    # 1. Автор заявки і учасники (отримують ті самі події, що й автор)
     if event in AUTHOR_EVENTS:
         add(req["author_email"], AUTHOR_EVENTS[event], "ви автор цієї заявки", SUBJECTS[event])
+        for p in req.get("participants") or []:
+            add(p["email"], AUTHOR_EVENTS[event], "ви учасник цієї заявки", SUBJECTS[event])
 
     # 2. Ті, хто тепер має діяти (нова заявка в їхній черзі чи «До оплати»)
     if event != "comment" and status_changed:
@@ -141,6 +150,12 @@ def _notify(event, req, actor, comment):
                 else cached_role_members(role)
             for m in members:
                 add(m["email"], "task_new", f"ви — {wf.ROLES.get(role, role).lower()}", SUBJECTS[kind])
+
+    # 2б. Нова заявка відділу — керівнику і тим, хто бачить заявки відділу (якщо ввімкнули)
+    if event == "submit" and req.get("department"):
+        dep_name = departments.get_name(req["department"])
+        for w in org_structure.watchers_of(req["department"]):
+            add(w["email"], "dept_new", f"ви бачите заявки відділу «{dep_name}»", SUBJECTS["dept_new"])
 
     # 3. Коментар — учасникам-погоджувачам, які вже ухвалювали рішення
     if event == "comment":

@@ -56,7 +56,7 @@
   </label>
 
   <fieldset class="notif-events" id="notif-events" {{ 'disabled' if not prefs.enabled }}>
-    {% for group, title in [('author', 'Мої заявки'), ('approver', 'Погодження та оплата')] %}
+    {% for group, title in [('author', 'Мої заявки та заявки, де я учасник'), ('approver', 'Погодження та оплата'), ('department', 'Заявки відділу')] %}
     {% set items = events | selectattr('2', 'equalto', group) | list %}
     {% if items %}
     <div class="budget-section-title">{{ title }}</div>

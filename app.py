@@ -186,8 +186,9 @@ GROUPS = {
     "acc_resident": os.environ.get("GROUP_ACC_RESIDENT") or os.environ.get("GROUP_ACCOUNTANT", ""),
     "acc_nonresident": os.environ.get("GROUP_ACC_NONRESIDENT", ""),
     "cfo": os.environ.get("GROUP_CFO", ""),
-    "dept_head": os.environ.get("GROUP_DEPT_HEAD", ""),
 }
+# Керівник відділу і «бачить заявки відділу» — не групи Azure, а призначення в розділі «Відділи»
+# (org_structure); ролі dept_head / dept_viewer додаються під час входу.
 # Страховка від блокування: ці люди завжди адміністратори
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "od@ftpua.com").split(",") if e.strip()}
 OVERAGE_SCOPES = ["https://graph.microsoft.com/GroupMember.Read.All"]
@@ -230,9 +231,17 @@ def requires(*needed):
             claims = context["user"]
             email = claims.get("preferred_username", "")
             g.user = {"email": email, "name": claims.get("name") or email, "oid": claims.get("oid")}
-            user_directory.remember([{"id": g.user["oid"], "email": email, "name": g.user["name"]}])
             roles = resolve_roles(claims)
-            g.roles = wf.RoleSet(roles, org_structure.head_departments(g.user["oid"]) if "dept_head" in roles else ())
+            # Керівник відділу / «бачить заявки відділу» — з розділу «Відділи», не з груп Azure
+            heads = org_structure.head_departments(g.user["oid"])
+            views = org_structure.viewer_departments(g.user["oid"])
+            if heads:
+                roles.add("dept_head")
+            if views:
+                roles.add("dept_viewer")
+            user_directory.remember([{"id": g.user["oid"], "email": email, "name": g.user["name"]}],
+                                    active=bool(roles))
+            g.roles = wf.RoleSet(roles, heads, views)
             if not g.roles or (needed and not g.roles & set(needed)):
                 return render_template("no_access.html", user_name=g.user["name"], missing=needed), 403
             return view(*args, context=context, **kwargs)
@@ -273,7 +282,8 @@ def inject_roles():
         "ROLES": wf.ROLES,
         "ROLE_SHORT": wf.ROLE_SHORT,
         "is_approver": bool(_deciding_roles(roles)),
-        "is_dept_head": "dept_head" in roles,
+        "sees_departments": bool(roles & {"dept_head", "dept_viewer"}),
+        "participating_count": len(db.list_participating(g.user["email"])) if getattr(g, "user", None) else 0,
         "queue_count": len(db.list_queue(roles)) if roles & wf.APPROVER_ROLES else 0,
         "can_see_payments": wf.can_see_payments(roles),
         "payments_count": len(db.list_to_pay(roles)) if wf.can_see_payments(roles) else 0,
@@ -291,7 +301,7 @@ def _deciding_roles(roles):
 def _home():
     if "initiator" not in g.roles and _deciding_roles(g.roles):
         return url_for("approvals")
-    if "initiator" not in g.roles and "dept_head" in g.roles:
+    if "initiator" not in g.roles and g.roles & {"dept_head", "dept_viewer"}:
         return url_for("department_requests")
     if g.roles == {"admin"}:
         return url_for("admin_requests")
@@ -339,16 +349,26 @@ def index(*, context):
 
 @app.route("/requests")
 @auth.login_required
-@requires("initiator")
+@requires()
 def requests_list(*, context):
     status = request.args.get("status") if request.args.get("status") in db.STATUSES else ""
     refs = ref_filters(request.args)
+    participating = db.list_participating(g.user["email"])
+    view = "participant" if request.args.get("view") == "participant" or "initiator" not in g.roles else "mine"
+    if view == "participant" and not participating and "initiator" not in g.roles:
+        return redirect(_home())
+    if view == "participant":
+        source = [r for r in participating if not status or r["status"] == status]
+    else:
+        source = db.list_requests(g.user["email"], status or None)
     return render_template(
         "requests_list.html",
         user_name=g.user["name"],
-        requests=apply_ref_filters(db.list_requests(g.user["email"], status or None), refs),
+        requests=apply_ref_filters(source, refs),
         status_filter=status,
         refs=refs,
+        view=view,
+        participating_total=len(participating),
         show_dep_filter=False,
     )
 
@@ -374,7 +394,7 @@ def approvals(*, context):
 @app.route("/requests/new", methods=["GET", "POST"])
 @app.route("/requests/<int:request_id>", methods=["GET", "POST"])
 @auth.login_required
-@requires("initiator", "admin", *wf.APPROVER_ROLES)
+@requires()
 def request_card(request_id=None, *, context):
     user, roles = g.user, g.roles
     if request_id is None:
@@ -455,6 +475,8 @@ def request_card(request_id=None, *, context):
         comment_draft=session.pop("comment_draft", ""),
         parallel=req.get("route_mode") == "parallel",
         head_names=", ".join(h["name"] or h["email"] for h in org_structure.heads_of(req.get("department"))),
+        participants=req.get("participants") or [],
+        can_manage_participants=req["id"] is not None and wf.can_manage_participants(req, roles, user["email"]),
         approvals=req.get("approvals") or {},
         pending_roles=wf.pending_roles(req) if req["status"] == "approval" else [],
         current_email=user["email"],
@@ -470,6 +492,45 @@ def _route_settings(req):
         "head_mode": app_settings.get("dept_head_mode"),
         "heads": [h["email"] for h in org_structure.heads_of(req.get("department")) if h["email"]],
     }
+
+
+@app.route("/users/search")
+@auth.login_required
+@requires()
+def users_search(*, context):
+    """Підказки для вибору учасника заявки: користувачі системи (з роллю)."""
+    me = g.user["email"].lower()
+    return {"users": [{"email": u["email"], "name": u["name"]}
+                      for u in user_directory.search(request.args.get("q", "")) if u["email"].lower() != me]}
+
+
+@app.route("/requests/<int:request_id>/participants", methods=["POST"])
+@auth.login_required
+@requires()
+def request_participants(request_id, *, context):
+    req = _load_visible(request_id)
+    back = redirect(url_for("request_card", request_id=request_id) + "#participants")
+    if not wf.can_manage_participants(req, g.roles, g.user["email"]):
+        abort(403)
+    email = (request.form.get("email") or "").strip()
+    role = wf.history_role(req, g.roles, g.user["email"])
+    try:
+        if request.form.get("action") == "remove":
+            name = wf.remove_participant(req, email, g.user, role)
+            db.save_request(req)
+            flash(f"{name} більше не учасник заявки", "success")
+            return back
+        person = user_directory.find_active(email)
+        if not person:
+            raise wf.WorkflowError("Такого користувача немає в системі — оберіть зі списку підказок")
+        wf.add_participant(req, person, g.user, role)
+    except wf.WorkflowError as e:
+        flash(str(e), "error")
+        return back
+    db.save_request(req)
+    notifications.notify("participant_add", req, g.user, target=person["email"])
+    flash(f"{person['name']} — тепер учасник заявки: бачить її, може коментувати й додавати файли", "success")
+    return back
 
 
 @app.route("/requests/<int:request_id>/action", methods=["POST"])
@@ -568,7 +629,7 @@ def _in_period(value, d_from, d_to):
 
 @app.route("/requests/<int:request_id>/comment", methods=["POST"])
 @auth.login_required
-@requires("initiator", "admin", *wf.APPROVER_ROLES)
+@requires()
 def request_comment(request_id, *, context):
     req = _load_visible(request_id)
     try:
@@ -588,11 +649,11 @@ def request_comment(request_id, *, context):
 @requires()
 def notification_settings(*, context):
     email = g.user["email"]
-    groups = []
-    if "initiator" in g.roles:
-        groups.append("author")
-    if g.roles & wf.APPROVER_ROLES:
+    groups = ["author"]  # учасником заявки може стати будь-хто
+    if _deciding_roles(g.roles):
         groups.append("approver")
+    if g.roles & {"dept_head", "dept_viewer"}:
+        groups.append("department")
     events = [(code, label, group) for code, (label, group, _) in user_prefs.EVENTS.items() if group in groups]
     if request.method == "POST":
         enabled = request.form.get("enabled") == "1"
@@ -853,9 +914,9 @@ def admin_requests(*, context):
 
 @app.route("/department")
 @auth.login_required
-@requires("dept_head")
+@requires("dept_head", "dept_viewer")
 def department_requests(*, context):
-    deps = sorted(wf.head_deps(g.roles), key=lambda c: departments.get_name(c).lower())
+    deps = sorted(wf.head_deps(g.roles) | wf.view_deps(g.roles), key=lambda c: departments.get_name(c).lower())
     title = "Заявки відділу" + (": " + ", ".join(departments.get_name(c) for c in deps) if deps else "")
     rows = [r for r in db.list_all() if wf.in_department(r, g.roles)]
     return _requests_overview(rows, title=title, table_id="department-requests", no_departments=not deps,
@@ -939,7 +1000,7 @@ def to_pay_bulk(*, context):
 
 # ---------------------------------------------------------------- адміністрування
 
-ADMIN_ROLE_ORDER = ["admin", "initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo", "dept_head"]
+ADMIN_ROLE_ORDER = ["admin", "initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo"]
 
 
 def _azure_group_url(group_id):
@@ -963,7 +1024,7 @@ def admin_users(*, context):
                 users.setdefault(u["id"], {**u, "roles": set()})["roles"].add(role)
     except graph.GraphError as e:
         error = str(e)
-    user_directory.remember(users.values())  # пошта погоджувачів для листів
+    user_directory.remember(users.values(), active=True)  # пошта погоджувачів для листів, список користувачів
     return render_template(
         "admin_users.html",
         user_name=g.user["name"],
@@ -983,6 +1044,10 @@ def admin_users(*, context):
         departments_status=departments.status(),
         user_departments={uid: org_structure.department_of(uid) for uid in users},
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
+        dept_rows=[{**d, **org_structure.staff(d["code"]), "members": org_structure.members_of(d["code"])}
+                   for d in departments.get_departments()],
+        staff_users=[{"id": u["id"], "name": u["name"], "email": u["email"]}
+                     for u in sorted(users.values(), key=lambda u: u["name"].lower())],
         mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name", "smtp_host",
                                                 "smtp_port", "smtp_security", "smtp_username",
                                                 "allow_custom_email")},
@@ -1096,8 +1161,6 @@ def admin_users_save(*, context):
     except graph.GraphError as e:
         flash(str(e), "error")
         return redirect(url_for("admin_users"))
-    if "dept_head" in current and "dept_head" not in wanted:
-        org_structure.set_head_departments(user_id, email, name, [], g.user["email"])
     dep_changed = _save_department(user_id, email, name)
     if dep_changed:
         admin_department_flash(name, user_id)
@@ -1111,22 +1174,31 @@ def admin_users_save(*, context):
     return redirect(url_for("admin_users"))
 
 
-@app.route("/admin/users/head", methods=["POST"])
+@app.route("/admin/departments/save", methods=["POST"])
 @auth.login_required
 @requires("admin")
-def admin_users_head(*, context):
-    """Відділи, які очолює керівник."""
-    user_id = request.form.get("user_id", "").strip()
-    if not user_id:
+def admin_departments_save(*, context):
+    """Керівник відділу (один) і хто ще бачить заявки відділу."""
+    code = request.form.get("department", "")
+    if code not in departments.get_map():
         abort(400)
-    known = set(departments.get_map())
-    previous = set(org_structure.head_departments(user_id))
-    deps = [d for d in request.form.getlist("departments") if d in known or d in previous]
-    name = request.form.get("name", "")
-    org_structure.set_head_departments(user_id, request.form.get("email", ""), name, deps, g.user["email"])
-    flash(f"{name}: очолює — {', '.join(departments.get_name(d) for d in sorted(deps)) or 'жодного відділу'}",
-          "success")
-    return redirect(url_for("admin_users") + "#admin-users")
+    people = {u["id"]: u for u in user_directory.active_users()}
+    head_id = request.form.get("head") or None
+    if head_id and head_id not in people:
+        flash("Керівника не знайдено серед користувачів системи", "error")
+        return redirect(url_for("admin_users") + "#departments")
+    viewers = [people[v] for v in request.form.getlist("viewers") if v in people]
+    previous = org_structure.head_of(code)
+    org_structure.set_department_staff(code, people.get(head_id), viewers, g.user["email"])
+    head = org_structure.head_of(code)
+    parts = [f"керівник — {head['name'] if head else 'не призначено'}"]
+    if previous and head and previous["id"] != head["id"]:
+        parts.append(f"замість {previous['name']}; заявки, що чекають погодження, перейшли до нового керівника")
+    staff = org_structure.staff(code)
+    if staff["viewers"]:
+        parts.append("бачать заявки: " + ", ".join(v["name"] for v in staff["viewers"]))
+    flash(f"{departments.get_name(code)}: " + "; ".join(parts), "success")
+    return redirect(url_for("admin_users") + "#departments")
 
 
 @app.route("/admin/users/add", methods=["POST"])
@@ -1174,7 +1246,7 @@ def _ext(filename):
 
 @app.route("/requests/<int:request_id>/files", methods=["POST"])
 @auth.login_required
-@requires("initiator", *wf.APPROVER_ROLES)
+@requires()
 def upload_files(request_id, *, context):
     user, roles = g.user, g.roles
     req = _load_visible(request_id)
@@ -1216,7 +1288,7 @@ def upload_files(request_id, *, context):
 
 @app.route("/files/<file_id>")
 @auth.login_required
-@requires("initiator", "admin", *wf.APPROVER_ROLES)
+@requires()
 def download_file(file_id, *, context):
     req, att = db.find_attachment(file_id)
     if not req or not wf.can_view(req, g.roles, g.user["email"]):
@@ -1229,7 +1301,7 @@ def download_file(file_id, *, context):
 
 @app.route("/files/<file_id>/delete", methods=["POST"])
 @auth.login_required
-@requires("initiator", *wf.APPROVER_ROLES)
+@requires()
 def delete_file(file_id, *, context):
     user, roles = g.user, g.roles
     req, att = db.find_attachment(file_id)

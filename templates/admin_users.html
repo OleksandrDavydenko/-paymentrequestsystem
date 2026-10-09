@@ -74,12 +74,11 @@
             <option value="{{ dep }}" selected>{{ dept_name(dep) }}</option>
             {% endif %}
           </select>
-          {% if 'dept_head' in u.roles %}
           {% set heads = head_departments[u.id] %}
-          <div class="head-info">
-            <span class="muted">Очолює:</span>
-            {% for h in heads %}<span class="bchip bchip-dep">{{ dept_name(h) }}</span>{% else %}<span class="bchip bchip-none">не призначено</span>{% endfor %}
-            <button type="button" class="btn-link head-edit" data-user="{{ {'id': u.id, 'name': u.name, 'email': u.email, 'deps': heads} | tojson | forceescape }}">Налаштувати</button>
+          {% if heads %}
+          <div class="head-info" title="Призначається в розділі «Відділи»">
+            <span class="muted">Керівник:</span>
+            {% for h in heads %}<span class="bchip bchip-dep">{{ dept_name(h) }}</span>{% endfor %}
           </div>
           {% endif %}
         </td>
@@ -106,6 +105,59 @@
         Поки що жоден співробітник не має ролі. Натисніть «+ Додати користувача».
       </td></tr>
       {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+
+{% set heads_count = dept_rows | selectattr('head') | list | length %}
+{% set staff_ids = staff_users | map(attribute='id') | list %}
+<div class="card departments" id="departments" data-collapsible>
+  <div class="toolbar">
+    <h2 style="margin:0">Відділи</h2>
+    <span class="sec-summary muted">{{ dept_rows | length }} відділів · керівників призначено {{ heads_count }}</span>
+  </div>
+  <p class="muted" style="margin-top:0">
+    <strong>Керівник</strong> — один на відділ (одна людина може очолювати кілька відділів): бачить усі заявки співробітників
+    відділу{{ ' і погоджує їх першим кроком' if head_mode.value == 'approve' }}.
+    <strong>Бачать заявки</strong> — заступники, менеджери: перегляд і коментарі, без погодження.
+    До якого відділу належить співробітник — задається в таблиці «Користувачі та ролі».
+  </p>
+  {% if head_mode.value != 'approve' %}
+  <div class="route-summary">Керівники зараз лише бачать заявки — погодження керівником вмикається в «Налаштуваннях процесу».</div>
+  {% endif %}
+  <div class="table-wrap">
+  <table class="stack dept-table" id="dept-table">
+    <thead><tr><th>Відділ</th><th>Співробітники</th><th>Керівник</th><th>Бачать заявки</th><th></th></tr></thead>
+    <tbody>
+    {% for d in dept_rows %}
+      <tr>
+        <td data-label="Відділ"><strong>{{ d.name }}</strong></td>
+        <td data-label="Співробітники">
+          {% if d.members %}<span title="{{ d.members | map(attribute='name') | join(', ') }}">{{ d.members | length }}</span>{% else %}<span class="muted">—</span>{% endif %}
+        </td>
+        <td data-label="Керівник">
+          <select form="d-{{ d.code }}" name="head" class="dept-select head-select" aria-label="Керівник — {{ d.name }}">
+            <option value="">— не призначено —</option>
+            {% for u in staff_users %}<option value="{{ u.id }}" {{ 'selected' if d.head and d.head.id == u.id }}>{{ u.name }}</option>{% endfor %}
+            {% if d.head and d.head.id not in staff_ids %}<option value="{{ d.head.id }}" selected>{{ d.head.name }} (немає в групах ролей)</option>{% endif %}
+          </select>
+        </td>
+        <td data-label="Бачать заявки">
+          <div class="budget-chips">
+            {% for v in d.viewers %}<span class="bchip bchip-dep">{{ v.name }}</span><input type="hidden" form="d-{{ d.code }}" name="viewers" value="{{ v.id }}">{% else %}<span class="muted">нікого</span>{% endfor %}
+          </div>
+          <button type="button" class="btn-link viewers-edit"
+                  data-dept="{{ {'code': d.code, 'name': d.name, 'viewers': d.viewers} | tojson | forceescape }}">Налаштувати</button>
+        </td>
+        <td class="num">
+          <form method="post" action="{{ url_for('admin_departments_save') }}" id="d-{{ d.code }}">
+            <input type="hidden" name="department" value="{{ d.code }}">
+            <button type="submit" class="btn btn-sm">Зберегти</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
     </tbody>
   </table>
   </div>
@@ -267,23 +319,24 @@
   {% endif %}
 </div>
 
-<dialog id="head-dialog" class="budget-dialog" aria-labelledby="head-title">
-  <form method="post" action="{{ url_for('admin_users_head') }}">
-    <input type="hidden" name="user_id">
-    <input type="hidden" name="name">
-    <input type="hidden" name="email">
-    <div class="dlg-head"><span id="head-title">Відділи керівника</span></div>
+<dialog id="viewers-dialog" class="budget-dialog" aria-labelledby="viewers-title">
+  <form method="post" action="{{ url_for('admin_departments_save') }}">
+    <input type="hidden" name="department">
+    <input type="hidden" name="head">
+    <div class="dlg-head"><span id="viewers-title">Бачать заявки відділу</span></div>
     <div class="dlg-body">
-      <p class="muted" style="margin-top:0">Керівник бачитиме всі заявки співробітників цих відділів{{ ' і погоджуватиме їх першим кроком' if head_mode.value == 'approve' }}.</p>
+      <p class="muted" style="margin-top:0">Ці люди бачитимуть усі заявки співробітників відділу й зможуть їх коментувати
+        (без погодження). Керівник відділу бачить їх і так.</p>
       <div class="budget-deps">
         <div class="budget-deps-tools">
-          <input type="search" id="head-dep-search" placeholder="Пошук відділу…" autocomplete="off">
-          <button type="button" class="btn btn-sm" id="head-all">Вибрати всі</button>
-          <button type="button" class="btn btn-sm" id="head-none">Зняти всі</button>
+          <input type="search" id="viewers-search" placeholder="Пошук людини…" autocomplete="off">
+          <button type="button" class="btn btn-sm" id="viewers-none">Зняти всіх</button>
         </div>
-        <div class="budget-dep-list" id="head-dep-list">
-          {% for d in departments_list %}
-          <label class="budget-dep"><input type="checkbox" name="departments" value="{{ d.code }}"> <span>{{ d.name }}</span></label>
+        <div class="budget-dep-list" id="viewers-list">
+          {% for u in staff_users %}
+          <label class="budget-dep"><input type="checkbox" name="viewers" value="{{ u.id }}"> <span>{{ u.name }}</span> <span class="muted">{{ u.email }}</span></label>
+          {% else %}
+          <div class="muted">Немає користувачів у групах ролей</div>
           {% endfor %}
         </div>
       </div>

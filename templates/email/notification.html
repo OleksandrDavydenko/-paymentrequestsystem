@@ -10,7 +10,7 @@
           <div style="font-size:13px;color:#57606a;">Заявка № {{ req.number }}</div>
           <div style="font-size:20px;font-weight:700;margin:4px 0 12px;">{{ headline }}</div>
           <div style="font-size:14px;margin-bottom:16px;">
-            {{ actor.name }}{% if event == 'comment' %} залишив(-ла) коментар{% endif %}.
+            {{ actor.name }}{% if event == 'comment' %} залишив(-ла) коментар{% elif event == 'participant_add' %} додав(-ла) вас учасником заявки: ви бачите її, можете коментувати й додавати файли, а листи про її рух надходитимуть вам так само, як автору{% elif event == 'submit' %} відправив(-ла) заявку на погодження{% endif %}.
             Поточний статус: <strong>{{ status }}</strong>.
           </div>
           {% if comment %}

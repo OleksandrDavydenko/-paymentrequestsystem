@@ -20,8 +20,10 @@ EVENTS = {
     "my_paid": ("Мою заявку оплачено", "author", True),
     "my_admin_status": ("Статус моєї заявки змінив адміністратор", "author", True),
     "my_comment": ("Новий коментар до моєї заявки", "author", True),
+    "participant_added": ("Мене додали учасником заявки", "author", True),
     "task_new": ("Нова заявка чекає мого рішення або оплати", "approver", True),
     "comment_participant": ("Коментар до заявки, яку я погоджував", "approver", False),
+    "dept_new": ("Нова заявка у відділі, заявки якого я бачу", "department", False),
 }
 
 CONFIRM_TTL = timedelta(hours=48)   # скільки діє посилання підтвердження іншої пошти

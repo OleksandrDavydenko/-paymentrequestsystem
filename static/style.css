@@ -476,7 +476,7 @@ details.admin-status form > .btn { align-self: flex-start; }
 .bchip-all { background: #dcf5e3; color: #1e6b34; }
 .bchip-dep { background: #ddeeff; color: #0c5aa0; }
 .bchip-none { background: #fde2e1; color: #b3261e; }
-.budget-edit { color: var(--primary); font-size: 13px; padding: 0; }
+.budget-edit, .viewers-edit { color: var(--primary); font-size: 13px; padding: 0; }
 .budget-dialog { width: min(560px, 96vw); }
 .budget-option { display: flex; align-items: center; gap: 8px; padding: 6px 0; cursor: pointer; }
 .budget-option input { width: 16px; height: 16px; }
@@ -602,3 +602,30 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .head-info .btn-link { color: var(--primary); font-size: 12px; padding: 0; }
 .route-summary { margin: 12px 0 4px; padding: 8px 12px; background: #f6f8fa; border-radius: 6px; font-size: 14px; }
 #add-department { width: 100%; }
+
+/* Учасники заявки */
+.participants { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0 4px; }
+.participants-label { cursor: help; }
+.pchip { display: inline-flex; align-items: center; gap: 2px; background: #eef4fb; color: #0c447c; border-radius: 999px;
+  padding: 2px 4px 2px 10px; font-size: 13px; }
+.pchip form { display: inline; margin: 0; }
+.pchip-x { border: none; background: none; color: #0c447c; cursor: pointer; font-size: 11px; padding: 2px 6px; border-radius: 999px; }
+.pchip-x:hover { background: #d6e6f7; }
+.participant-add { position: relative; flex: 1; min-width: 220px; max-width: 340px; margin: 0; }
+.participant-add input[type=search] { width: 100%; padding: 4px 10px; font-size: 13px; border-radius: 999px; }
+.participant-add .search-results { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); background: #fff;
+  box-shadow: 0 6px 18px #0002; }
+.search-results li.active { background: #e8f1fb; }
+
+/* Розділ «Відділи» */
+.dept-table td { vertical-align: top; }
+.dept-table .dept-select { max-width: 240px; }
+
+/* Шапка на середніх екранах: пунктів меню побільшало — ім'я ховаємо, меню переносимо в окремий рядок */
+@media (max-width: 1280px) { .user-name { display: none; } header nav { gap: 16px; } }
+@media (max-width: 1000px) {
+  header { flex-wrap: wrap; padding: 8px 16px 0; gap: 4px 12px; }
+  header .brand { flex: 1; }
+  header nav { order: 3; flex: 0 0 100%; overflow-x: auto; gap: 18px; padding-bottom: 6px; scrollbar-width: none; }
+  header nav::-webkit-scrollbar { display: none; }
+}

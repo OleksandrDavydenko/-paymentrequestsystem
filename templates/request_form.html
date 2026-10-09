@@ -50,6 +50,33 @@
   {% endif %}
   {% endif %}
 
+  {% if req.id and (participants or can_manage_participants) %}
+  <div class="participants" id="participants">
+    <span class="muted participants-label" title="Учасники бачать заявку, можуть коментувати й додавати файли та отримують листи, як автор">Учасники:</span>
+    {% for p in participants %}
+    <span class="pchip" title="{{ p.email }} · додав(-ла) {{ p.added_by }}, {{ p.added_at | dt }}">{{ p.name }}
+      {% if can_manage_participants %}
+      <form method="post" action="{{ url_for('request_participants', request_id=req.id) }}">
+        <input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="{{ p.email }}">
+        <button type="submit" class="pchip-x" aria-label="Прибрати {{ p.name }}" title="Прибрати з учасників">✕</button>
+      </form>
+      {% endif %}
+    </span>
+    {% else %}
+    <span class="muted">поки немає</span>
+    {% endfor %}
+    {% if can_manage_participants %}
+    <form method="post" action="{{ url_for('request_participants', request_id=req.id) }}" class="participant-add" autocomplete="off">
+      <input type="hidden" name="action" value="add">
+      <input type="hidden" name="email" id="participant-email">
+      <input type="search" id="participant-search" placeholder="+ Додати учасника: ім'я або пошта"
+             data-url="{{ url_for('users_search') }}" aria-label="Додати учасника заявки">
+      <ul class="search-results" id="participant-results" hidden></ul>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+
   {% if req.status in ('rework', 'rejected') and last and last.action in ('rework', 'reject') %}
   <div class="callout {{ 'orange' if req.status == 'rework' else 'red' }}">
     <strong>{{ ACTIONS[last.action][1] }}</strong> — {{ last.user_name }} ({{ ROLES[last.role] }}), {{ last.at | dt }}
@@ -406,4 +433,5 @@ if (document.getElementById('add-line')) {
 
 refresh();
 </script>
+{% if can_manage_participants %}<script src="{{ url_for('static', filename='participants.js') }}"></script>{% endif %}
 {% endblock %}

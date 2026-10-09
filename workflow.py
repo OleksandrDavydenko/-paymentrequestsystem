@@ -13,6 +13,9 @@ ROLES = {
     "acc_nonresident": "Бухгалтер (безготівка, нерезидент)",
     "cfo": "Фіндиректор",
     "dept_head": "Керівник відділу",
+    # Ролі з оргструктури та заявки (не групи Azure) — для історії й підписів
+    "dept_viewer": "Перегляд заявок відділу",
+    "participant": "Учасник заявки",
 }
 # Короткі назви для заголовків таблиць
 ROLE_SHORT = {
@@ -25,18 +28,34 @@ ROLE_SHORT = {
 
 
 class RoleSet(frozenset):
-    """Ролі користувача + коди відділів, які він очолює (для ролі «Керівник відділу»).
+    """Ролі користувача + коди відділів, які він очолює і заявки яких бачить.
 
     Поводиться як звичайна множина ролей, тож усі перевірки `"cfo" in roles` працюють як раніше.
     """
-    def __new__(cls, roles=(), head_departments=()):
+    def __new__(cls, roles=(), head_departments=(), view_departments=()):
         obj = super().__new__(cls, roles)
         obj.head_departments = frozenset(head_departments)
+        obj.view_departments = frozenset(view_departments)
         return obj
 
 
 def head_deps(roles):
     return getattr(roles, "head_departments", frozenset())
+
+
+def view_deps(roles):
+    return getattr(roles, "view_departments", frozenset())
+
+
+def sees_department(req, roles):
+    """Чи бачить користувач заявки відділу автора (як керівник або як «бачить заявки відділу»)."""
+    dep = req.get("department")
+    return bool(dep) and dep in (head_deps(roles) | view_deps(roles))
+
+
+def is_participant(req, user_email):
+    email = (user_email or "").lower()
+    return bool(email) and any(p["email"].lower() == email for p in req.get("participants") or [])
 
 
 def heads_department(req, roles):
@@ -112,6 +131,8 @@ ACTIONS = {
     "admin_status": (None, "Статус змінено адміністратором", "purple", True),
     "comment": (None, "Коментар", "slate", True),
     "auto_skip": (None, "Крок пропущено", "grey", False),
+    "participant_add": (None, "Додано учасника", "grey", False),
+    "participant_remove": (None, "Прибрано учасника", "grey", False),
 }
 
 # Режими погодження (налаштовуються в адмінці, запам'ятовуються в заявці при відправці)
@@ -265,15 +286,49 @@ def add_comment(req, user, role, text):
 
 def can_view(req, roles, user_email):
     # Адміністратор бачить усі заявки (лише перегляд — дії визначаються іншими ролями).
-    # Керівник відділу — лише заявки свого відділу (крім чернеток).
-    if is_author(req, user_email) or roles & (ACCOUNTANT_ROLES | {"cfo", "admin"}):
+    # Учасник — заявки, до яких його додали (і чернетки теж).
+    # Керівник і ті, хто бачить заявки відділу, — заявки свого відділу (крім чернеток).
+    if is_author(req, user_email) or is_participant(req, user_email):
+        return True
+    if roles & (ACCOUNTANT_ROLES | {"cfo", "admin"}):
         return True
     return in_department(req, roles)
 
 
 def in_department(req, roles):
-    """Розділ «Заявки відділу»: заявки відділів, які очолює користувач (без чернеток)."""
-    return heads_department(req, roles) and req["status"] != "draft"
+    """Розділ «Заявки відділу»: заявки відділів, які користувач очолює або бачить (без чернеток)."""
+    return sees_department(req, roles) and req["status"] != "draft"
+
+
+def can_manage_participants(req, roles, user_email):
+    """Додавати й прибирати учасників може автор заявки та адміністратор."""
+    return ("initiator" in roles and is_author(req, user_email)) or "admin" in roles
+
+
+def add_participant(req, person, user, role):
+    """Додати учасника {"email", "name"}. Кидає WorkflowError."""
+    email = (person.get("email") or "").strip()
+    if not email:
+        raise WorkflowError("Оберіть користувача зі списку")
+    if is_author(req, email):
+        raise WorkflowError("Це автор заявки — він і так її бачить")
+    if is_participant(req, email):
+        raise WorkflowError(f"{person.get('name') or email} уже є учасником заявки")
+    req.setdefault("participants", []).append({
+        "email": email, "name": person.get("name") or email,
+        "added_by": user["name"], "added_at": clock.now(),
+    })
+    add_history(req, "participant_add", user, role, person.get("name") or email, req["status"], req["status"])
+
+
+def remove_participant(req, email, user, role):
+    """Прибрати учасника за поштою. Повертає його ім'я. Кидає WorkflowError."""
+    found = next((p for p in req.get("participants") or [] if p["email"].lower() == (email or "").lower()), None)
+    if not found:
+        raise WorkflowError("Такого учасника в заявці немає")
+    req["participants"] = [p for p in req["participants"] if p is not found]
+    add_history(req, "participant_remove", user, role, found["name"], req["status"], req["status"])
+    return found["name"]
 
 
 def can_edit(req, roles, user_email):
@@ -283,7 +338,8 @@ def can_edit(req, roles, user_email):
 def can_attach(req, roles, user_email):
     if req["status"] in CLOSED_STATUSES:
         return False
-    return ("initiator" in roles and is_author(req, user_email)) or acting_role(req, roles, user_email) is not None
+    return (("initiator" in roles and is_author(req, user_email)) or is_participant(req, user_email)
+            or acting_role(req, roles, user_email) is not None)
 
 
 def available_actions(req, roles, user_email):
@@ -312,7 +368,13 @@ def history_role(req, roles, user_email):
         return role
     if "initiator" in roles and is_author(req, user_email):
         return "initiator"
-    return next((r for r in (*sorted(ACCOUNTANT_ROLES), "cfo", "dept_head", "initiator", "admin") if r in roles),
+    if is_participant(req, user_email):
+        return "participant"
+    if heads_department(req, roles):
+        return "dept_head"
+    if sees_department(req, roles):
+        return "dept_viewer"
+    return next((r for r in (*sorted(ACCOUNTANT_ROLES), "cfo", "initiator", "admin") if r in roles),
                 "initiator")
 
 
