@@ -19,6 +19,7 @@ import notifications
 import secret_box
 import user_prefs
 import user_budget
+import user_directory
 import mock_data as db
 import workflow as wf
 
@@ -222,6 +223,7 @@ def requires(*needed):
             claims = context["user"]
             email = claims.get("preferred_username", "")
             g.user = {"email": email, "name": claims.get("name") or email, "oid": claims.get("oid")}
+            user_directory.remember([{"id": g.user["oid"], "email": email, "name": g.user["name"]}])
             g.roles = resolve_roles(claims)
             if not g.roles or (needed and not g.roles & set(needed)):
                 return render_template("no_access.html", user_name=g.user["name"], missing=needed), 403
@@ -231,8 +233,25 @@ def requires(*needed):
 
 
 def _role_members(role):
+    """Учасники групи ролі з поштою. Дозвіл додатку дає лише ID — пошту беремо з довідника."""
     gid = GROUPS.get(role)
-    return graph.group_members_app(gid) if gid else []
+    if not gid:
+        return []
+    members, unknown = [], 0
+    for m in graph.group_members_app(gid):
+        if not m.get("email"):
+            m = {**m, **(user_directory.lookup(m["id"]) or {})}
+        if m.get("email"):
+            members.append(m)
+        else:
+            unknown += 1
+    if unknown:
+        mailer.log_problem(
+            f"роль «{wf.ROLES.get(role, role)}»", "Невідома пошта учасників",
+            f"Для {unknown} з учасників групи не вдалося визначити пошту — вони не отримають лист. "
+            "Відкрийте «Адміністрування» (пошта підтягнеться з Azure) або додайте додатку дозвіл "
+            "Microsoft Graph → Application → User.ReadBasic.All з Grant admin consent.")
+    return members
 
 
 notifications.role_members = _role_members
@@ -813,6 +832,7 @@ def admin_users(*, context):
                 users.setdefault(u["id"], {**u, "roles": set()})["roles"].add(role)
     except graph.GraphError as e:
         error = str(e)
+    user_directory.remember(users.values())  # пошта погоджувачів для листів
     return render_template(
         "admin_users.html",
         user_name=g.user["name"],
