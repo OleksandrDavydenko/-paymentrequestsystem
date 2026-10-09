@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+
+{% block title %}{{ person.name }} — картка користувача{% endblock %}
+
+{% block content %}
+<a class="back-link" href="{{ url_for('admin_users') }}">← Користувачі та ролі</a>
+
+<form method="post" id="user-card" class="user-card">
+  <div class="card uc-head">
+    <span class="avatar uc-avatar">{{ (person.name.split()|map('first')|join(''))[:2]|upper }}</span>
+    <div class="uc-who">
+      <h1>{{ person.name }}{% if person.id == me_oid %} <span class="muted">(ви)</span>{% endif %}</h1>
+      <div class="muted">{{ person.email }}</div>
+    </div>
+    <div class="uc-current">
+      {% for r in person.roles | sort %}<span class="bchip bchip-dep">{{ ROLE_SHORT[r] }}</span>{% endfor %}
+      {% for d in head_deps %}<span class="bchip bchip-head">Керівник: {{ dept_name(d) }}</span>{% endfor %}
+    </div>
+  </div>
+  {% if is_new %}
+  <div class="callout uc-new">
+    <strong>Новий користувач — поки без доступу до системи.</strong>
+    Оберіть ролі (пункт 1), за потреби відділ і статті бюджету, і натисніть «Зберегти» внизу.
+  </div>
+  {% endif %}
+  {% if error %}<div class="flash error">Не вдалося прочитати ролі з Azure: {{ error }}</div>{% endif %}
+
+  <section class="card uc-section" id="uc-roles">
+    <div class="uc-title"><span class="uc-num">1</span><h2>Ролі в системі</h2></div>
+    <p class="uc-explain">Що людина робить у системі; можна вибрати кілька ролей. Ролі — це групи безпеки в Microsoft Entra ID:
+      зміни одразу записуються в Azure й починають діяти, коли людина вийде з системи й увійде знову.</p>
+    {% for title, codes in ROLE_GROUPS %}
+    <div class="uc-group-title">{{ title }}</div>
+    <div class="uc-options">
+      {% for r in codes %}
+      {% set locked = r == 'admin' and person.id == me_oid and r in person.roles %}
+      <label class="uc-option {{ 'is-disabled' if not groups[r] }}">
+        <input type="checkbox" name="roles" value="{{ r }}" {{ 'checked' if r in person.roles }} {{ 'disabled' if not groups[r] or locked }}>
+        <span>
+          <strong>{{ ROLES[r] }}</strong>
+          {% if groups[r] %}<a href="{{ group_url(groups[r]) }}" target="_blank" class="uc-azure" title="Група в Azure">↗</a>{% endif %}
+          {% if locked %}<span class="muted"> — свою роль адміністратора зняти не можна</span>{% endif %}
+          <span class="uc-hint">{{ ROLE_HINTS[r] }}</span>
+          {% if not groups[r] %}<span class="uc-hint uc-warn">Група для цієї ролі не налаштована в App Service</span>{% endif %}
+        </span>
+      </label>
+      {% endfor %}
+    </div>
+    {% endfor %}
+  </section>
+
+  <section class="card uc-section" id="uc-department">
+    <div class="uc-title"><span class="uc-num">2</span><h2>Відділ співробітника</h2></div>
+    <p class="uc-explain">До якого відділу належить людина — один відділ. Її заявки бачить керівник цього відділу і ті, кому
+      дозволено бачити заявки відділу{{ ', а керівник погоджує їх першим кроком' if head_mode == 'approve' }}.
+      Це не те саме, що відділи в статтях бюджету (пункт 4).</p>
+    <select name="department" id="uc-dept" class="uc-select">
+      <option value="">— не вказано —</option>
+      {% for d in departments_list %}
+      <option value="{{ d.code }}" {{ 'selected' if d.code == user_department }}>{{ d.name }}</option>
+      {% endfor %}
+      {% if user_department and user_department not in departments_list | map(attribute='code') | list %}
+      <option value="{{ user_department }}" selected>{{ dept_name(user_department) }}</option>
+      {% endif %}
+    </select>
+    <div class="uc-note" id="uc-dept-note"></div>
+  </section>
+
+  <section class="card uc-section" id="uc-org">
+    <div class="uc-title"><span class="uc-num">3</span><h2>Керівництво й перегляд відділів</h2></div>
+    <p class="uc-explain">Чиї заявки людина бачить, окрім своїх.
+      <strong>Очолює</strong> — людина стає керівником відділу: бачить усі заявки його співробітників{{ ' і погоджує їх першим кроком' if head_mode == 'approve' else ' (погодження керівником зараз вимкнено в «Налаштуваннях процесу»)' }}.
+      У відділу один керівник — якщо він уже є, його буде замінено.
+      <strong>Бачить заявки</strong> — заступник чи менеджер: перегляд і коментарі, без погодження.</p>
+    <div class="table-wrap">
+    <table class="uc-deps stack">
+      <thead><tr><th>Відділ</th><th class="c">Очолює</th><th class="c">Бачить заявки</th><th>Зараз керівник</th></tr></thead>
+      <tbody>
+      {% for d in departments_list %}
+      {% set st = dept_staff[d.code] %}
+      {% set cur = st.head %}
+      <tr>
+        <td data-label="Відділ"><strong>{{ d.name }}</strong></td>
+        <td class="c" data-label="Очолює"><input type="checkbox" name="head_deps" value="{{ d.code }}" class="uc-head-box" {{ 'checked' if d.code in head_deps }}
+                             data-current="{{ cur.name if cur and cur.id != person.id else '' }}" aria-label="Очолює: {{ d.name }}"></td>
+        <td class="c" data-label="Бачить заявки"><input type="checkbox" name="view_deps" value="{{ d.code }}" class="uc-view-box" {{ 'checked' if d.code in view_deps }}
+                             aria-label="Бачить заявки: {{ d.name }}"></td>
+        <td class="muted" data-label="Зараз керівник">
+          {% if cur and cur.id == person.id %}ця людина{% elif cur %}{{ cur.name }}{% else %}—{% endif %}
+          <span class="uc-replace" hidden>→ буде замінено</span>
+        </td>
+      </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  <section class="card uc-section" id="uc-budget">
+    <div class="uc-title"><span class="uc-num">4</span><h2>Статті бюджету</h2></div>
+    <p class="uc-explain">Які статті витрат людина може вибирати у своїх заявках. Відділи тут — з довідника статей витрат
+      (Power BI), вони не залежать від відділу співробітника. Без налаштувань людина не зможе вибрати жодної статті.</p>
+    {% set bmode = 'all' if budget.all_departments else ('selected' if budget.departments else 'none') %}
+    <div id="budget-inline">
+      <label class="budget-option">
+        <input type="checkbox" name="direct" value="1" {{ 'checked' if budget.direct }}>
+        <span><strong>Прямі статті</strong> <span class="muted">— без відділу ({{ expense_status.direct }})</span></span>
+      </label>
+      <div class="budget-section-title">Статті з розподілом</div>
+      <label class="budget-option"><input type="radio" name="mode" value="none" {{ 'checked' if bmode == 'none' }}> Без статей з розподілом</label>
+      <label class="budget-option"><input type="radio" name="mode" value="all" {{ 'checked' if bmode == 'all' }}> <span><strong>Усі відділи</strong> <span class="muted">({{ expense_status.allocated }})</span></span></label>
+      <label class="budget-option"><input type="radio" name="mode" value="selected" {{ 'checked' if bmode == 'selected' }}> Вибрані відділи</label>
+      <div class="budget-deps" id="budget-deps">
+        <div class="budget-deps-tools">
+          <input type="search" id="budget-dep-search" placeholder="Пошук відділу…" autocomplete="off">
+          <button type="button" class="btn btn-sm" id="budget-all">Вибрати всі</button>
+          <button type="button" class="btn btn-sm" id="budget-none">Зняти всі</button>
+        </div>
+        <div class="budget-dep-list" id="budget-dep-list">
+          {% set known_exp = budget_departments | map('first') | list %}
+          {% for dep in budget.departments or [] %}{% if dep not in known_exp %}
+          <label class="budget-dep missing"><input type="checkbox" name="departments" value="{{ dep }}" checked> <span>{{ dep }}</span> <span class="muted">немає в довіднику</span></label>
+          {% endif %}{% endfor %}
+          {% for dep, count in budget_departments %}
+          <label class="budget-dep"><input type="checkbox" name="departments" value="{{ dep }}" {{ 'checked' if dep in (budget.departments or []) }}> <span>{{ dep }}</span> <span class="muted">{{ count }}</span></label>
+          {% else %}
+          <div class="muted">У довіднику немає статей з відділами</div>
+          {% endfor %}
+        </div>
+      </div>
+      <div class="budget-total" id="budget-total"></div>
+    </div>
+  </section>
+
+  <section class="card uc-section uc-info">
+    <div class="uc-title"><span class="uc-num">✉</span><h2>Сповіщення</h2></div>
+    <p class="uc-explain" style="margin-bottom:0">Листи надходять на <strong>{{ delivery }}</strong>{{ ' (підтверджена інша адреса)' if delivery != person.email }}.
+      Про які події отримувати листи, людина вибирає сама в меню «✉ Сповіщення на пошту».</p>
+  </section>
+
+  <div class="uc-actions">
+    <button type="submit" class="btn btn-primary">Зберегти</button>
+    <a class="btn" href="{{ url_for('admin_users') }}">Скасувати</a>
+    <span class="muted" id="uc-dirty" hidden>Є незбережені зміни</span>
+  </div>
+</form>
+
+<script type="application/json" id="dept-staff">{{ dept_staff | tojson }}</script>
+<script type="application/json" id="budget-items">{{ budget_items | tojson }}</script>
+<script>window.UC_PERSON_ID = {{ person.id | tojson }};</script>
+<script src="{{ url_for('static', filename='admin-budget.js') }}"></script>
+<script src="{{ url_for('static', filename='user-card.js') }}"></script>
+{% endblock %}

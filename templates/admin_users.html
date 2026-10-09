@@ -14,10 +14,8 @@
     <button type="button" class="btn btn-primary" onclick="document.getElementById('add-dialog').showModal()"
             {{ 'disabled' if not groups }}>+ Додати користувача</button>
   </div>
-  <p class="muted">
-    Ролі — це групи безпеки в Microsoft Entra ID. Зміни тут одразу записуються в Azure,
-    а зміни в Azure одразу видно тут. Щоб нові ролі запрацювали, користувачу треба вийти й увійти знову.
-  </p>
+  <p class="muted" style="margin-top:0">Натисніть на людину, щоб відкрити її картку: там усі налаштування з поясненнями —
+    ролі, відділ, керівництво й перегляд відділів, статті бюджету.</p>
 
   {% if missing_groups %}
   <div class="flash error">
@@ -29,81 +27,46 @@
   {% endif %}
   {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
 
+  {% if users | length > 5 %}
+  <input type="search" id="users-filter" class="users-filter" placeholder="Пошук: ім'я, пошта, роль або відділ" autocomplete="off">
+  {% endif %}
   <div class="table-wrap">
-  <table class="admin-users sortable" id="admin-users">
+  <table class="admin-users stack sortable" id="admin-users">
     <thead>
       <tr>
         <th>Користувач</th>
-        {% for r in role_order %}
-        <th class="role-col" title="{{ ROLES[r] }}" data-nosort>
-          {{ ROLE_SHORT[r] }}
-          {% if groups[r] %}<a href="{{ group_url(groups[r]) }}" target="_blank" title="Група в Azure">↗</a>{% endif %}
-        </th>
-        {% endfor %}
-        <th data-nosort>Відділ</th>
+        <th data-nosort>Ролі</th>
+        <th>Відділ</th>
         <th data-nosort>Статті бюджету</th>
         <th data-nosort></th>
       </tr>
     </thead>
     <tbody>
       {% for u in users %}
-      <tr>
-        <td>
-          <strong>{{ u.name }}</strong>{% if u.id == me_oid %} <span class="muted">(ви)</span>{% endif %}
+      {% set card = url_for('admin_user_card', user_id=u.id) %}
+      {% set dep = user_departments[u.id] %}
+      <tr class="clickable" onclick="location.href='{{ card }}'">
+        <td data-label="Користувач">
+          <a href="{{ card }}"><strong>{{ u.name }}</strong></a>{% if u.id == me_oid %} <span class="muted">(ви)</span>{% endif %}
           <div class="muted">{{ u.email }}</div>
           {% if alt_addresses.get(u.email | lower) %}<div class="muted alt-addr" title="Користувач підтвердив іншу адресу для сповіщень">✉ листи на: {{ alt_addresses[u.email | lower] }}</div>{% endif %}
         </td>
-        {% for r in role_order %}
-        <td class="role-col">
-          <input type="checkbox" form="f-{{ u.id }}" name="roles" value="{{ r }}"
-                 {{ 'checked' if r in u.roles }}
-                 {{ 'disabled' if not groups[r] or (r == 'admin' and u.id == me_oid) }}
-                 aria-label="{{ ROLES[r] }} — {{ u.name }}">
-          {% if r == 'admin' and u.id == me_oid and r in u.roles %}<input type="hidden" form="f-{{ u.id }}" name="roles" value="admin">{% endif %}
-        </td>
-        {% endfor %}
-        {% set b = budgets[u.id] %}
-        <td class="dept-col">
-          {% set dep = user_departments[u.id] %}
-          <select form="f-{{ u.id }}" name="department" class="dept-select" aria-label="Відділ — {{ u.name }}">
-            <option value="">— не вказано —</option>
-            {% for d in departments_list %}
-            <option value="{{ d.code }}" {{ 'selected' if d.code == dep }}>{{ d.name }}</option>
-            {% endfor %}
-            {% if dep and dep not in departments_list | map(attribute='code') | list %}
-            <option value="{{ dep }}" selected>{{ dept_name(dep) }}</option>
-            {% endif %}
-          </select>
-          {% set heads = head_departments[u.id] %}
-          {% if heads %}
-          <div class="head-info" title="Призначається в розділі «Відділи»">
-            <span class="muted">Керівник:</span>
-            {% for h in heads %}<span class="bchip bchip-dep">{{ dept_name(h) }}</span>{% endfor %}
-          </div>
-          {% endif %}
-        </td>
-        <td class="budget-col">
+        <td data-label="Ролі">
           <div class="budget-chips">
-            {% for text, kind in budget_summary(b) %}<span class="bchip bchip-{{ kind }}">{{ text }}</span>{% else %}<span class="bchip bchip-none">Не налаштовано</span>{% endfor %}
+            {% for r in role_order if r in u.roles %}<span class="bchip {{ 'bchip-admin' if r == 'admin' else 'bchip-dep' }}">{{ ROLE_SHORT[r] }}</span>{% endfor %}
+            {% for h in head_departments[u.id] %}<span class="bchip bchip-head">Керівник: {{ dept_name(h) }}</span>{% endfor %}
           </div>
-          <button type="button" class="btn-link budget-edit" data-user="{{ {'id': u.id, 'name': u.name, 'email': u.email,
-                  'direct': b.direct if b else False, 'all': b.all_departments if b else False,
-                  'deps': b.departments if b else []} | tojson | forceescape }}">Налаштувати</button>
         </td>
-        <td class="num">
-          <form method="post" action="{{ url_for('admin_users_save') }}" id="f-{{ u.id }}">
-            <input type="hidden" name="user_id" value="{{ u.id }}">
-            <input type="hidden" name="name" value="{{ u.name }}">
-            <input type="hidden" name="email" value="{{ u.email }}">
-            <input type="hidden" name="current" value="{{ u.roles | join(',') }}">
-            <button type="submit" class="btn btn-sm">Зберегти</button>
-          </form>
+        <td data-label="Відділ" data-sort="{{ dept_name(dep) if dep else 'яяя' }}">{{ dept_name(dep) if dep else '' }}{% if not dep %}<span class="muted">не вказано</span>{% endif %}</td>
+        <td data-label="Статті бюджету">
+          <div class="budget-chips">
+            {% for text, kind in budget_summary(budgets[u.id]) %}<span class="bchip bchip-{{ kind }}">{{ text }}</span>{% else %}<span class="bchip bchip-none">Не налаштовано</span>{% endfor %}
+          </div>
         </td>
+        <td class="num"><a class="btn btn-sm" href="{{ card }}">Відкрити ›</a></td>
       </tr>
       {% else %}
-      <tr><td colspan="{{ role_order | length + 4 }}" class="empty">
-        Поки що жоден співробітник не має ролі. Натисніть «+ Додати користувача».
-      </td></tr>
+      <tr><td colspan="5" class="empty">Поки що жоден співробітник не має ролі. Натисніть «+ Додати користувача».</td></tr>
       {% endfor %}
     </tbody>
   </table>
@@ -348,44 +311,6 @@
   </form>
 </dialog>
 
-<dialog id="budget-dialog" class="budget-dialog" aria-labelledby="budget-title">
-  <form method="post" action="{{ url_for('admin_users_budget') }}">
-    <input type="hidden" name="user_id">
-    <input type="hidden" name="name">
-    <input type="hidden" name="email">
-    <div class="dlg-head"><span id="budget-title">Статті бюджету</span></div>
-    <div class="dlg-body">
-      <p class="muted" style="margin-top:0">Користувач зможе вибирати в заявках лише ці статті витрат.</p>
-      <label class="budget-option">
-        <input type="checkbox" name="direct" value="1">
-        <span><strong>Прямі статті</strong> <span class="muted">— без відділу ({{ expense_status.direct }})</span></span>
-      </label>
-      <div class="budget-section-title">Статті з розподілом</div>
-      <label class="budget-option"><input type="radio" name="mode" value="none"> Без статей з розподілом</label>
-      <label class="budget-option"><input type="radio" name="mode" value="all"> <span><strong>Усі відділи</strong> <span class="muted">({{ expense_status.allocated }})</span></span></label>
-      <label class="budget-option"><input type="radio" name="mode" value="selected"> Вибрані відділи</label>
-      <div class="budget-deps" id="budget-deps">
-        <div class="budget-deps-tools">
-          <input type="search" id="budget-dep-search" placeholder="Пошук відділу…" autocomplete="off">
-          <button type="button" class="btn btn-sm" id="budget-all">Вибрати всі</button>
-          <button type="button" class="btn btn-sm" id="budget-none">Зняти всі</button>
-        </div>
-        <div class="budget-dep-list" id="budget-dep-list">
-          {% for dep, count in budget_departments %}
-          <label class="budget-dep"><input type="checkbox" name="departments" value="{{ dep }}"> <span>{{ dep }}</span> <span class="muted">{{ count }}</span></label>
-          {% else %}
-          <div class="muted">У довіднику немає статей з відділами</div>
-          {% endfor %}
-        </div>
-      </div>
-      <div class="budget-total" id="budget-total"></div>
-    </div>
-    <div class="dlg-foot">
-      <button type="submit" class="btn btn-primary">Зберегти</button>
-      <button type="button" class="btn" onclick="this.closest('dialog').close()">Скасувати</button>
-    </div>
-  </form>
-</dialog>
 <script>
   // Пароль SMTP: показати (розмитим, чітко при наведенні) і скопіювати. Береться окремим запитом.
   (function () {
@@ -426,78 +351,55 @@
     document.getElementById('smtp_security').value = b.dataset.sec;
   }));
 </script>
-<script type="application/json" id="budget-items">{{ budget_items | tojson }}</script>
-<script src="{{ url_for('static', filename='admin-budget.js') }}"></script>
 <script src="{{ url_for('static', filename='admin-sections.js') }}"></script>
 <script src="{{ url_for('static', filename='admin-org.js') }}"></script>
 
 <dialog id="add-dialog">
-  <form method="post" action="{{ url_for('admin_users_add') }}">
-    <div class="dlg-head">Додати користувача</div>
-    <div class="dlg-body">
-      <label class="muted" for="user-search">Співробітник (ім'я або email)</label>
-      <input type="text" id="user-search" autocomplete="off" placeholder="Почніть вводити…">
-      <ul id="search-results" class="search-results"></ul>
-      <div id="picked" class="picked" hidden></div>
-      <input type="hidden" name="user_id" id="picked-id">
-      <input type="hidden" name="name" id="picked-name">
-      <input type="hidden" name="email" id="picked-email">
-
-      <label class="muted" for="add-department" style="display:block;margin-top:16px">Відділ</label>
-      <select name="department" id="add-department">
-        <option value="">— не вказано —</option>
-        {% for d in departments_list %}<option value="{{ d.code }}">{{ d.name }}</option>{% endfor %}
-      </select>
-
-      <div class="muted" style="margin-top:16px">Ролі</div>
-      <div class="role-checks">
-        {% for r in role_order %}
-        <label><input type="checkbox" name="roles" value="{{ r }}" {{ 'disabled' if not groups[r] }}
-                      {{ 'checked' if r == 'initiator' }}> {{ ROLES[r] }}</label>
-        {% endfor %}
-      </div>
-    </div>
-    <div class="dlg-foot">
-      <button type="submit" class="btn btn-primary" id="add-submit" disabled>Додати</button>
-      <button type="button" class="btn" onclick="this.closest('dialog').close()">Скасувати</button>
-    </div>
-  </form>
+  <div class="dlg-head">Додати користувача</div>
+  <div class="dlg-body">
+    <label class="muted" for="user-search">Знайдіть співробітника в Azure (ім'я або пошта) — далі відкриється його картка,
+      де можна вибрати ролі, відділ і статті бюджету.</label>
+    <input type="text" id="user-search" autocomplete="off" placeholder="Почніть вводити…" style="width:100%;margin-top:8px">
+    <ul id="search-results" class="search-results"></ul>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" class="btn" onclick="this.closest('dialog').close()">Скасувати</button>
+  </div>
 </dialog>
 
 <script>
-const input = document.getElementById('user-search');
-const results = document.getElementById('search-results');
-const picked = document.getElementById('picked');
-let timer;
+(function () {
+  const input = document.getElementById('user-search');
+  const results = document.getElementById('search-results');
+  const cardUrl = id => '{{ url_for("admin_user_card", user_id="__ID__") }}'.replace('__ID__', encodeURIComponent(id));
+  let timer;
+  input.addEventListener('input', () => {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2) { results.innerHTML = ''; return; }
+    timer = setTimeout(async () => {
+      const resp = await fetch('{{ url_for("admin_users_search") }}?q=' + encodeURIComponent(q));
+      const data = await resp.json();
+      results.innerHTML = '';
+      if (data.error) { results.innerHTML = '<li class="err"></li>'; results.firstChild.textContent = data.error; return; }
+      if (!data.users.length) { results.innerHTML = '<li class="muted">Нікого не знайдено</li>'; return; }
+      data.users.forEach(u => {
+        const li = document.createElement('li');
+        li.innerHTML = '<strong></strong> <span class="muted"></span>';
+        li.children[0].textContent = u.name;
+        li.children[1].textContent = u.email;
+        li.onclick = () => { location.href = cardUrl(u.id); };
+        results.appendChild(li);
+      });
+    }, 300);
+  });
 
-input.addEventListener('input', () => {
-  clearTimeout(timer);
-  const q = input.value.trim();
-  if (q.length < 2) { results.innerHTML = ''; return; }
-  timer = setTimeout(async () => {
-    const resp = await fetch('{{ url_for("admin_users_search") }}?q=' + encodeURIComponent(q));
-    const data = await resp.json();
-    results.innerHTML = '';
-    if (data.error) { results.innerHTML = '<li class="err"></li>'; results.firstChild.textContent = data.error; return; }
-    if (!data.users.length) { results.innerHTML = '<li class="muted">Нікого не знайдено</li>'; return; }
-    data.users.forEach(u => {
-      const li = document.createElement('li');
-      li.innerHTML = '<strong></strong> <span class="muted"></span>';
-      li.children[0].textContent = u.name;
-      li.children[1].textContent = u.email;
-      li.onclick = () => {
-        document.getElementById('picked-id').value = u.id;
-        document.getElementById('picked-name').value = u.name;
-        document.getElementById('picked-email').value = u.email;
-        picked.textContent = '✓ ' + u.name + ' — ' + u.email;
-        picked.hidden = false;
-        results.innerHTML = '';
-        input.value = '';
-        document.getElementById('add-submit').disabled = false;
-      };
-      results.appendChild(li);
-    });
-  }, 300);
-});
+  // Пошук у списку користувачів
+  const filter = document.getElementById('users-filter');
+  if (filter) filter.addEventListener('input', () => {
+    const q = filter.value.trim().toLowerCase();
+    document.querySelectorAll('#admin-users tbody tr').forEach(tr => { tr.hidden = q && !tr.textContent.toLowerCase().includes(q); });
+  });
+})();
 </script>
 {% endblock %}

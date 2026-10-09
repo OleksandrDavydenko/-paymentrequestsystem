@@ -1,8 +1,8 @@
-// Адмінка: вікно «Статті бюджету» користувача (прямі / усі відділи / вибрані відділи).
+// Картка користувача: «Статті бюджету» (прямі / усі відділи / вибрані відділи) з живим підрахунком.
 (function () {
-  const dialog = document.getElementById('budget-dialog');
-  if (!dialog) return;
-  const form = dialog.querySelector('form');
+  const root = document.getElementById('budget-inline');
+  if (!root) return;
+  const form = root.closest('form');
   const ITEMS = JSON.parse(document.getElementById('budget-items').textContent || '[]');
   const depsBox = document.getElementById('budget-deps');
   const depList = document.getElementById('budget-dep-list');
@@ -14,7 +14,7 @@
     return n % 10 === 1 && n % 100 !== 11 ? 'стаття' : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? 'статті' : 'статей';
   }
 
-  // Живий підрахунок: скільки статей буде доступно з поточними налаштуваннями
+  // Скільки статей буде доступно з поточними налаштуваннями
   function recount() {
     const direct = form.direct.checked;
     const mode = form.mode.value;
@@ -28,44 +28,21 @@
     const n = d + a;
     total.className = 'budget-total' + (n ? '' : ' empty');
     total.textContent = n ? `Буде доступно: ${n} ${word(n)} (прямих ${d}, з розподілом ${a})`
-                          : 'Користувач не зможе вибрати жодної статті';
+                          : 'Людина не зможе вибрати жодної статті';
   }
-
-  document.querySelectorAll('.budget-edit').forEach(btn => btn.addEventListener('click', () => {
-    const u = JSON.parse(btn.dataset.user);
-    form.user_id.value = u.id;
-    form.name.value = u.name;
-    form.email.value = u.email;
-    document.getElementById('budget-title').textContent = 'Статті бюджету — ' + u.name;
-    form.direct.checked = !!u.direct;
-    form.mode.value = u.all ? 'all' : (u.deps.length ? 'selected' : 'none');
-    // Відділи, яких уже немає в довіднику, показуємо окремо, щоб їх можна було зняти
-    depList.querySelectorAll('.budget-dep.missing').forEach(el => el.remove());
-    const known = new Set(depBoxes().map(b => b.value));
-    u.deps.filter(d => !known.has(d)).forEach(d => {
-      const label = document.createElement('label');
-      label.className = 'budget-dep missing';
-      label.innerHTML = '<input type="checkbox" name="departments"> <span></span> <span class="muted">немає в довіднику</span>';
-      label.querySelector('input').value = d;
-      label.querySelector('span').textContent = d;
-      depList.prepend(label);
-    });
-    depBoxes().forEach(b => { b.checked = u.deps.includes(b.value); });
-    search.value = '';
-    filterDeps();
-    recount();
-    dialog.showModal();
-  }));
 
   function filterDeps() {
     const q = search.value.trim().toLowerCase();
     depList.querySelectorAll('.budget-dep').forEach(l => { l.hidden = q && !l.textContent.toLowerCase().includes(q); });
   }
 
-  form.addEventListener('change', recount);
+  root.addEventListener('change', recount);
   search.addEventListener('input', filterDeps);
+  // Enter у пошуку не відправляє всю картку
+  search.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
   document.getElementById('budget-all').addEventListener('click', () => {
     depBoxes().forEach(b => { if (!b.closest('label').hidden) b.checked = true; });
+    if (form.mode.value !== 'selected') form.mode.value = 'selected';
     recount();
   });
   document.getElementById('budget-none').addEventListener('click', () => {
@@ -76,4 +53,5 @@
   depList.addEventListener('click', e => {
     if (e.target.matches('input') && form.mode.value !== 'selected') { form.mode.value = 'selected'; recount(); }
   });
+  recount();
 })();

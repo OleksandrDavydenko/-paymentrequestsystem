@@ -1011,20 +1011,25 @@ def _configured_groups():
     return {role: gid for role, gid in GROUPS.items() if gid}
 
 
-@app.route("/admin/users")
-@auth.login_required(scopes=graph.ADMIN_SCOPES)
-@requires("admin")
-def admin_users(*, context):
-    token = context["access_token"]
-    groups = _configured_groups()
+def _group_users(token):
+    """Користувачі з груп ролей: ({id: {id, name, email, roles}}, текст помилки або None)."""
     users, error = {}, None
     try:
-        for role, gid in groups.items():
+        for role, gid in _configured_groups().items():
             for u in graph.group_members(token, gid):
                 users.setdefault(u["id"], {**u, "roles": set()})["roles"].add(role)
     except graph.GraphError as e:
         error = str(e)
     user_directory.remember(users.values(), active=True)  # пошта погоджувачів для листів, список користувачів
+    return users, error
+
+
+@app.route("/admin/users")
+@auth.login_required(scopes=graph.ADMIN_SCOPES)
+@requires("admin")
+def admin_users(*, context):
+    users, error = _group_users(context["access_token"])
+    groups = _configured_groups()
     return render_template(
         "admin_users.html",
         user_name=g.user["name"],
@@ -1076,31 +1081,6 @@ def admin_expense_refresh(*, context):
     return redirect(url_for("admin_users") + "#expense-items")
 
 
-@app.route("/admin/users/budget", methods=["POST"])
-@auth.login_required
-@requires("admin")
-def admin_users_budget(*, context):
-    user_id = request.form.get("user_id", "").strip()
-    if not user_id:
-        abort(400)
-    mode = request.form.get("mode")
-    known = {d for d, _ in expense_items.get_departments()}
-    previous = set((user_budget.get(user_id) or {}).get("departments") or [])
-    # Відділи, яких уже немає в довіднику, лишаються, лише якщо адмін їх не зняв
-    departments = [d for d in request.form.getlist("departments") if d in known or d in previous] \
-        if mode == "selected" else []
-    saved = user_budget.save_settings(
-        user_id, request.form.get("email", ""), request.form.get("name", ""),
-        direct=request.form.get("direct") == "1",
-        all_departments=mode == "all",
-        departments=departments,
-        updated_by=g.user["email"],
-    )
-    items = user_budget.allowed_items(saved, expense_items.get_items())
-    flash(f"{saved['name']}: статті бюджету збережено — доступно {len(items)} статей", "success")
-    return redirect(url_for("admin_users") + "#admin-users")
-
-
 @app.route("/admin/users/search")
 @auth.login_required(scopes=graph.ADMIN_SCOPES)
 @requires("admin")
@@ -1129,49 +1109,111 @@ def _apply_role_changes(token, user_id, wanted, current):
     return added, removed
 
 
-def _save_department(user_id, email, name):
-    """Відділ співробітника з форми (поле department). Повертає True, якщо змінився."""
-    if "department" not in request.form:
-        return False
-    dep = request.form.get("department") or None
-    if dep and dep not in departments.get_map() and dep != org_structure.department_of(user_id):
-        return False
-    if dep == org_structure.department_of(user_id):
-        return False
-    org_structure.set_department(user_id, email, name, dep, g.user["email"])
-    return True
-
-
-def admin_department_flash(name, user_id):
-    dep = org_structure.department_of(user_id)
-    flash(f"{name}: відділ — {departments.get_name(dep) if dep else 'не вказано'}", "success")
-
-
-@app.route("/admin/users/save", methods=["POST"])
+@app.route("/admin/users/<user_id>", methods=["GET", "POST"])
 @auth.login_required(scopes=graph.ADMIN_SCOPES)
 @requires("admin")
-def admin_users_save(*, context):
-    user_id = request.form.get("user_id", "")
-    name = request.form.get("name", "")
-    email = request.form.get("email", "")
-    wanted = {r for r in request.form.getlist("roles") if r in wf.ROLES}
-    current = {r for r in request.form.get("current", "").split(",") if r in wf.ROLES}
+def admin_user_card(user_id, *, context):
+    """Картка користувача: ролі, відділ, керівництво й перегляд відділів, статті бюджету — в одному місці."""
+    token = context["access_token"]
+    users, error = _group_users(token)
+    person = users.get(user_id)
+    if not person:  # новий: ще не має жодної ролі
+        try:
+            person = {**graph.get_user(token, user_id), "roles": set()}
+        except graph.GraphError as e:
+            flash(f"Користувача не знайдено в Azure: {e}", "error")
+            return redirect(url_for("admin_users"))
+    if request.method == "POST":
+        if error:  # не знаємо поточних ролей — нічого не змінюємо
+            flash("Не вдалося прочитати ролі з Azure, тож зміни не збережено: " + error, "error")
+            return redirect(url_for("admin_user_card", user_id=user_id))
+        return _save_user_card(context["access_token"], person)
+    allow_alt = app_settings.get("allow_custom_email")
+    return render_template(
+        "admin_user_card.html",
+        user_name=g.user["name"],
+        person=person,
+        is_new=not person["roles"],
+        error=error,
+        me_oid=g.user["oid"],
+        groups=_configured_groups(),
+        group_url=_azure_group_url,
+        ROLE_GROUPS=wf.ROLE_GROUPS,
+        ROLE_HINTS=wf.ROLE_HINTS,
+        departments_list=departments.get_departments(),
+        user_department=org_structure.department_of(user_id),
+        dept_staff={d["code"]: org_structure.staff(d["code"]) for d in departments.get_departments()},
+        head_deps=org_structure.head_departments(user_id),
+        view_deps=org_structure.viewer_departments(user_id),
+        head_mode=app_settings.get("dept_head_mode"),
+        budget=user_budget.get(user_id) or {},
+        budget_departments=expense_items.get_departments(),
+        budget_items=[{"k": i["kind"], "d": i["departments"]} for i in expense_items.get_items()],
+        expense_status=expense_items.status(),
+        delivery=user_prefs.delivery_address(person["email"], allow_alt),
+    )
+
+
+def _save_user_card(token, person):
+    f = request.form
+    uid, name, email, who = person["id"], person["name"], person["email"], g.user["email"]
+    current = set(person["roles"])
+    changes = []
+
+    # Ролі (групи Azure). Свою роль адміністратора зняти не можна — поле вимкнене.
+    wanted = {r for r in f.getlist("roles") if r in ADMIN_ROLE_ORDER}
+    if uid == g.user["oid"] and "admin" in current:
+        wanted.add("admin")
     try:
-        added, removed = _apply_role_changes(context["access_token"], user_id, wanted, current)
+        added, removed = _apply_role_changes(token, uid, wanted, current)
     except graph.GraphError as e:
         flash(str(e), "error")
-        return redirect(url_for("admin_users"))
-    dep_changed = _save_department(user_id, email, name)
-    if dep_changed:
-        admin_department_flash(name, user_id)
-    if added or removed:
-        parts = ([f"додано: {', '.join(added)}"] if added else []) + ([f"знято: {', '.join(removed)}"] if removed else [])
-        flash(f"{name}: {'; '.join(parts)}. Зміни вже в Azure; користувачу треба вийти й увійти знову.", "success")
-        if not wanted:
-            flash(f"{name} більше не має доступу до системи.", "success")
-    elif not dep_changed:
+        return redirect(url_for("admin_user_card", user_id=uid))
+    if added:
+        changes.append("додано ролі: " + ", ".join(added))
+    if removed:
+        changes.append("знято ролі: " + ", ".join(removed))
+
+    # Відділ співробітника
+    known = departments.get_map()
+    dep = f.get("department") or None
+    if dep != org_structure.department_of(uid) and (dep is None or dep in known):
+        org_structure.set_department(uid, email, name, dep, who)
+        changes.append(f"відділ — {departments.get_name(dep) if dep else 'не вказано'}")
+
+    # Які відділи очолює / заявки яких бачить (відділи, яких уже немає в довіднику, не чіпаємо)
+    old_heads, old_views = org_structure.head_departments(uid), org_structure.viewer_departments(uid)
+    heads = {d for d in f.getlist("head_deps") if d in known} | {d for d in old_heads if d not in known}
+    views = ({d for d in f.getlist("view_deps") if d in known} | {d for d in old_views if d not in known}) - heads
+    if heads != set(old_heads) or views != set(old_views):
+        replaced = org_structure.set_person_assignments({"id": uid, "email": email, "name": name}, heads, views, who)
+        changes.append("очолює: " + (", ".join(departments.get_name(d) for d in sorted(heads)) or "жодного відділу"))
+        changes.append("бачить заявки: " + (", ".join(departments.get_name(d) for d in sorted(views)) or "жодного відділу"))
+        for code, prev in replaced:
+            changes.append(f"у відділі «{departments.get_name(code)}» замінено керівника {prev['name']}")
+
+    # Статті бюджету
+    mode = f.get("mode")
+    known_exp = {d for d, _ in expense_items.get_departments()}
+    prev = user_budget.get(uid) or {}
+    exp_deps = [d for d in f.getlist("departments") if d in known_exp or d in (prev.get("departments") or [])] \
+        if mode == "selected" else []
+    new = {"direct": f.get("direct") == "1", "all_departments": mode == "all", "departments": exp_deps}
+    norm = lambda b: (bool(b.get("direct")), bool(b.get("all_departments")), sorted(b.get("departments") or []))
+    if norm(prev) != norm(new):
+        saved = user_budget.save_settings(uid, email, name, updated_by=who, **new)
+        changes.append(f"статті бюджету — доступно {len(user_budget.allowed_items(saved, expense_items.get_items()))}")
+
+    if changes:
+        flash(f"{name}: " + "; ".join(changes) + ".", "success")
+        if added or removed:
+            flash("Ролі вже змінено в Azure. Щоб вони запрацювали, користувачу треба вийти з системи й увійти знову.",
+                  "success")
+        if current and not wanted:
+            flash(f"{name} більше не має жодної ролі — доступу до системи немає.", "success")
+    else:
         flash("Змін немає", "success")
-    return redirect(url_for("admin_users"))
+    return redirect(url_for("admin_user_card", user_id=uid))
 
 
 @app.route("/admin/departments/save", methods=["POST"])
@@ -1199,28 +1241,6 @@ def admin_departments_save(*, context):
         parts.append("бачать заявки: " + ", ".join(v["name"] for v in staff["viewers"]))
     flash(f"{departments.get_name(code)}: " + "; ".join(parts), "success")
     return redirect(url_for("admin_users") + "#departments")
-
-
-@app.route("/admin/users/add", methods=["POST"])
-@auth.login_required(scopes=graph.ADMIN_SCOPES)
-@requires("admin")
-def admin_users_add(*, context):
-    user_id = request.form.get("user_id", "")
-    name = request.form.get("name", "")
-    wanted = {r for r in request.form.getlist("roles") if r in wf.ROLES}
-    if not user_id:
-        flash("Оберіть співробітника зі списку пошуку", "error")
-    elif not wanted:
-        flash("Оберіть хоча б одну роль", "error")
-    else:
-        try:
-            added, _ = _apply_role_changes(context["access_token"], user_id, wanted, set())
-            flash(f"{name}: додано ролі {', '.join(added)}. Зміни вже в Azure.", "success")
-            if _save_department(user_id, request.form.get("email", ""), name):
-                admin_department_flash(name, user_id)
-        except graph.GraphError as e:
-            flash(str(e), "error")
-    return redirect(url_for("admin_users"))
 
 
 # ---------------------------------------------------------------- документи

@@ -72,6 +72,11 @@ def group_members_app(group_id):
     return group_members(mailer.app_token(), group_id)
 
 
+def get_user(token, user_id):
+    """Один користувач за ID (для картки користувача в адмінці)."""
+    return _user(_get(token, f"/users/{user_id}", params={"$select": "id,displayName,mail,userPrincipalName"}))
+
+
 def search_users(token, query):
     query = query.replace('"', "").strip()
     if len(query) < 2:

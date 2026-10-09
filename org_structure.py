@@ -161,6 +161,42 @@ def set_department_staff(department, head, viewers, updated_by):
         _write()
 
 
+def set_person_assignments(person, head_deps, view_deps, updated_by):
+    """Картка користувача: які відділи людина очолює і заявки яких бачить.
+    Очолити відділ = стати його єдиним керівником (попередній замінюється).
+    Повертає [(відділ, попередній керівник)] — кого замінено."""
+    pid = person["id"]
+    head_deps, view_deps = set(head_deps), set(view_deps) - set(head_deps)
+    replaced = []
+    with _lock:
+        deps = _load()["departments"]
+        codes = set(deps) | head_deps | view_deps
+        changed = False
+        for code in codes:
+            entry = deps.get(code) or {"head": None, "viewers": []}
+            head = entry.get("head")
+            viewers = [v for v in entry.get("viewers") or [] if v.get("id") != pid]
+            if code in head_deps:
+                if head and head.get("id") != pid:
+                    replaced.append((code, head))
+                head = {"id": pid, "email": person.get("email", ""), "name": person.get("name", "")}
+            elif head and head.get("id") == pid:
+                head = None
+            if code in view_deps:
+                viewers.append({"id": pid, "email": person.get("email", ""), "name": person.get("name", "")})
+            new = {"head": head, "viewers": viewers}
+            if new["head"] == entry.get("head") and new["viewers"] == list(entry.get("viewers") or []):
+                continue
+            changed = True
+            if not head and not viewers:
+                deps.pop(code, None)
+            else:
+                deps[code] = {**new, "updated_by": updated_by, "updated_at": clock.now().isoformat(timespec="seconds")}
+        if changed:
+            _write()
+    return replaced
+
+
 def is_head_of(email, department):
     """Чи очолює людина з цією поштою відділ (для «автор — керівник відділу»)."""
     head = head_of(department)
