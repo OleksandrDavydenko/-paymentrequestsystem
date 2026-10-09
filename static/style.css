@@ -551,3 +551,10 @@ input.exp-missing { color: #8a4b00; background: #fff8ec; border-color: #f3d19c; 
 .notif-events:disabled { opacity: .5; }
 .notif-event { display: flex; gap: 10px; align-items: center; padding: 7px 0; cursor: pointer; border-bottom: 1px solid #f1f3f5; }
 @media (max-width: 760px) { .mail-grid { grid-template-columns: 1fr; } }
+.smtp-presets { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 4px 0 8px; }
+.smtp-presets .chip { font: inherit; font-size: 13px; cursor: pointer; }
+.smtp-port-row { display: flex; gap: 8px; }
+.smtp-port-row input { width: 100px; flex-shrink: 0; }
+.smtp-port-row select { flex: 1; min-width: 0; }
+.smtp-pass-info { margin-top: 4px; font-size: 12px; }
+.inline-check { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; cursor: pointer; }

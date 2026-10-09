@@ -112,21 +112,16 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
   не допомагає, якщо репозиторій уже був публічним.
 
 ## Email-сповіщення
-Листи надсилаються через Microsoft Graph `sendMail` від імені додатку (без паролів і SMTP)
-зі скриньки, вказаної в «Адмініструванні → Email-сповіщення». Там же — тестовий лист і журнал останніх листів.
+Листи надсилаються через **SMTP** будь-якої пошти (Gmail / Google Workspace, Microsoft 365, SendPulse…).
+Усе налаштовується в «Адмініструванні → Email-сповіщення»: сервер, порт, шифрування, логін, пароль додатку,
+відправник; там же тестовий лист і журнал останніх листів. Пароль зберігається **зашифрованим**
+(ключ виводиться з `FLASK_SECRET_KEY`; якщо його змінити — пароль треба ввести заново) і ніколи не показується.
+
+Gmail / Google Workspace: smtp.gmail.com, 587, STARTTLS; на акаунті відправника — двоетапна перевірка
+і «пароль додатку» (myaccount.google.com → Безпека → Паролі додатків).
+
 Користувачі вибирають події в меню «✉ Сповіщення на пошту» (`data/user_prefs.json`, на Azure — `/home/data/`).
+Щоб знати, кому з погоджувачів надсилати, сервер читає склад груп ролей через Microsoft Graph:
+потрібен application-дозвіл `GroupMember.Read.All` з admin consent.
 
-Налаштування (одноразово):
-1. Спільна скринька, напр. `noreply@ftpua.com` (Exchange admin center → Recipients → Mailboxes → Add a shared mailbox).
-2. App registration → API permissions → Microsoft Graph → **Application**: `Mail.Send`, `GroupMember.Read.All`
-   → Grant admin consent.
-3. Обмежити `Mail.Send` лише цією скринькою (Exchange Online PowerShell):
-   ```powershell
-   Connect-ExchangeOnline
-   New-DistributionGroup -Name "PRS Mail Senders" -Type Security -Members noreply@ftpua.com
-   New-ApplicationAccessPolicy -AppId <CLIENT_ID> -PolicyScopeGroupId "PRS Mail Senders" -AccessRight RestrictAccess -Description "PRS: only noreply"
-   Test-ApplicationAccessPolicy -AppId <CLIENT_ID> -Identity noreply@ftpua.com
-   ```
-4. В адмінці вказати пошту відправника → «Надіслати тестовий лист собі» → увімкнути розсилку.
-
-`APP_BASE_URL` (необов'язково) — адреса сайту для посилань у листах, напр. власний домен.
+`APP_BASE_URL` (необов'язково) — адреса сайту для посилань у листах.

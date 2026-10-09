@@ -100,11 +100,48 @@
       <label for="mail_sender_name">Ім'я відправника</label>
       <input type="text" id="mail_sender_name" name="mail_sender_name" value="{{ mail.mail_sender_name }}">
     </div>
-    <p class="muted">Листи надсилаються через Microsoft Graph від імені додатку зі вказаної скриньки (рекомендовано спільну скриньку).
+
+    <div class="budget-section-title">SMTP-сервер</div>
+    <div class="smtp-presets">
+      <span class="muted">Шаблон:</span>
+      {% for code, (label, host, port, sec) in SMTP_PRESETS.items() %}
+      <button type="button" class="chip smtp-preset" data-host="{{ host }}" data-port="{{ port }}" data-sec="{{ sec }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="mail-grid">
+      <label for="smtp_host">Сервер</label>
+      <input type="text" id="smtp_host" name="smtp_host" value="{{ mail.smtp_host }}" placeholder="smtp.gmail.com" autocomplete="off">
+      <label for="smtp_port">Порт</label>
+      <div class="smtp-port-row">
+        <input type="number" id="smtp_port" name="smtp_port" value="{{ mail.smtp_port }}" min="1" max="65535">
+        <select id="smtp_security" name="smtp_security" aria-label="Шифрування">
+          {% for code, label in SMTP_SECURITY.items() %}
+          <option value="{{ code }}" {{ 'selected' if code == mail.smtp_security }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label for="smtp_username">Логін</label>
+      <input type="text" id="smtp_username" name="smtp_username" value="{{ mail.smtp_username }}"
+             placeholder="{{ mail.mail_sender or 'зазвичай — та сама адреса' }}" autocomplete="off">
+      <label for="smtp_password">Пароль додатку</label>
+      <div>
+        <input type="password" id="smtp_password" name="smtp_password" autocomplete="new-password"
+               placeholder="{{ '•••••••• збережено — введіть новий, щоб замінити' if mail_password.value else 'не задано' }}">
+        <div class="muted smtp-pass-info">
+          {% if mail_password.value %}
+            🔒 Збережено зашифрованим{% if mail_password.updated_by %} · {{ mail_password.updated_by }}, {{ mail_password.updated_at.replace('T', ' ') }}{% endif %}.
+            <label class="inline-check"><input type="checkbox" name="smtp_password_clear" value="1"> видалити</label>
+          {% else %}
+            Пароль не показується після збереження. Для Gmail — «пароль додатку» (16 символів), не звичайний пароль.
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <p class="muted">Підійде будь-яка пошта з SMTP: Gmail / Google Workspace, Microsoft 365, SendPulse тощо.
       Користувачі вибирають події в меню «✉ Сповіщення на пошту».</p>
     <div class="mail-actions">
       <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
-      <button type="submit" class="btn btn-sm" formaction="{{ url_for('admin_mail_test') }}" {{ 'disabled' if not mail.mail_sender }}
+      <button type="submit" class="btn btn-sm" formaction="{{ url_for('admin_mail_test') }}" {{ 'disabled' if not (mail.mail_sender and mail.smtp_host) }}
               title="Лист прийде на вашу адресу">✉ Надіслати тестовий лист собі</button>
     </div>
   </form>
@@ -205,6 +242,14 @@
     </div>
   </form>
 </dialog>
+<script>
+  // Шаблони SMTP: підставити сервер, порт і шифрування
+  document.querySelectorAll('.smtp-preset').forEach(b => b.addEventListener('click', () => {
+    document.getElementById('smtp_host').value = b.dataset.host;
+    document.getElementById('smtp_port').value = b.dataset.port;
+    document.getElementById('smtp_security').value = b.dataset.sec;
+  }));
+</script>
 <script type="application/json" id="budget-items">{{ budget_items | tojson }}</script>
 <script src="{{ url_for('static', filename='admin-budget.js') }}"></script>
 

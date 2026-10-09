@@ -12,6 +12,7 @@ from flask import render_template, url_for
 
 import app_settings
 import mailer
+import secret_box
 import user_prefs
 import workflow as wf
 
@@ -67,8 +68,21 @@ def responsible_roles(req):
     return []
 
 
+def smtp_config():
+    """Налаштування SMTP з адмінки (пароль розшифровується лише тут, у пам'яті)."""
+    return {
+        "host": app_settings.get("smtp_host"),
+        "port": app_settings.get("smtp_port"),
+        "security": app_settings.get("smtp_security"),
+        "username": app_settings.get("smtp_username") or app_settings.get("mail_sender"),
+        "password": secret_box.decrypt(app_settings.get("smtp_password")),
+        "sender": app_settings.get("mail_sender"),
+        "sender_name": app_settings.get("mail_sender_name"),
+    }
+
+
 def enabled():
-    return bool(app_settings.get("mail_enabled") and app_settings.get("mail_sender"))
+    return bool(app_settings.get("mail_enabled") and app_settings.get("mail_sender") and app_settings.get("smtp_host"))
 
 
 def _link(req):
@@ -79,7 +93,7 @@ def _link(req):
 
 def _send(to, subject, template_args):
     html = render_template("email/notification.html", **template_args)
-    mailer.enqueue(app_settings.get("mail_sender"), app_settings.get("mail_sender_name"), to, subject, html)
+    mailer.enqueue(smtp_config(), to, subject, html)
 
 
 def notify(event, req, actor, comment=""):

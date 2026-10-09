@@ -16,6 +16,7 @@ import clock
 import graph
 import mailer
 import notifications
+import secret_box
 import user_prefs
 import user_budget
 import mock_data as db
@@ -561,18 +562,42 @@ def notification_settings(*, context):
 @auth.login_required
 @requires("admin")
 def admin_mail(*, context):
-    sender = (request.form.get("mail_sender") or "").strip()
+    f = request.form
+    sender = (f.get("mail_sender") or "").strip()
+    host = (f.get("smtp_host") or "").strip()
+    try:
+        port = int(f.get("smtp_port") or 0)
+    except ValueError:
+        port = 0
+    security = f.get("smtp_security") if f.get("smtp_security") in mailer.SECURITY else "starttls"
+    errors = []
     if sender and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", sender):
-        flash("Некоректна адреса відправника", "error")
+        errors.append("некоректна адреса відправника")
+    if not 0 < port < 65536:
+        errors.append("порт має бути числом від 1 до 65535")
+    if errors:
+        flash("Налаштування не збережено: " + "; ".join(errors), "error")
         return redirect(url_for("admin_users") + "#mail-settings")
-    enabled = request.form.get("mail_enabled") == "1"
-    if enabled and not sender:
-        flash("Щоб увімкнути розсилку, вкажіть пошту відправника", "error")
+
+    who = g.user["email"]
+    app_settings.set("mail_sender", sender, who)
+    app_settings.set("mail_sender_name", (f.get("mail_sender_name") or "").strip()
+                     or app_settings.DEFAULTS["mail_sender_name"], who)
+    app_settings.set("smtp_host", host, who)
+    app_settings.set("smtp_port", port, who)
+    app_settings.set("smtp_security", security, who)
+    app_settings.set("smtp_username", (f.get("smtp_username") or "").strip(), who)
+    # Пароль: порожнє поле — лишити збережений; галочка — видалити
+    if f.get("smtp_password_clear") == "1":
+        app_settings.set("smtp_password", "", who)
+    elif f.get("smtp_password"):
+        app_settings.set("smtp_password", secret_box.encrypt(f.get("smtp_password")), who)
+
+    enabled = f.get("mail_enabled") == "1"
+    if enabled and not (sender and host):
+        flash("Щоб увімкнути розсилку, вкажіть SMTP-сервер і пошту відправника", "error")
         enabled = False
-    app_settings.set("mail_sender", sender, g.user["email"])
-    app_settings.set("mail_sender_name", (request.form.get("mail_sender_name") or "").strip()
-                     or app_settings.DEFAULTS["mail_sender_name"], g.user["email"])
-    app_settings.set("mail_enabled", enabled, g.user["email"])
+    app_settings.set("mail_enabled", enabled, who)
     flash("Налаштування пошти збережено" + (" — розсилку увімкнено" if enabled else " — розсилку вимкнено"),
           "success")
     return redirect(url_for("admin_users") + "#mail-settings")
@@ -582,16 +607,19 @@ def admin_mail(*, context):
 @auth.login_required
 @requires("admin")
 def admin_mail_test(*, context):
-    sender = app_settings.get("mail_sender")
+    cfg = notifications.smtp_config()
     to = g.user["email"]
-    html = render_template("email/test.html", user_name=g.user["name"], sender=sender)
-    error = mailer.deliver(sender, app_settings.get("mail_sender_name"), to,
-                           "Тестовий лист — Система заявок на оплату", html) if sender \
-        else "Спочатку вкажіть і збережіть пошту відправника"
+    if not (cfg["sender"] and cfg["host"]):
+        error = "Спочатку вкажіть і збережіть SMTP-сервер і пошту відправника"
+    elif app_settings.get("smtp_password") and cfg["password"] is None:
+        error = "Збережений пароль не вдалося розшифрувати (змінився FLASK_SECRET_KEY?) — введіть пароль заново"
+    else:
+        html = render_template("email/test.html", user_name=g.user["name"], sender=cfg["sender"], host=cfg["host"])
+        error = mailer.deliver(cfg, to, "Тестовий лист — Система заявок на оплату", html)
     if error:
         flash("Тестовий лист не надіслано: " + error, "error")
     else:
-        flash(f"Тестовий лист надіслано на {to} від {sender}. Перевірте пошту.", "success")
+        flash(f"Тестовий лист надіслано на {to} від {cfg['sender']}. Перевірте пошту (і папку «Спам»).", "success")
     return redirect(url_for("admin_users") + "#mail-settings")
 
 
@@ -784,7 +812,11 @@ def admin_users(*, context):
         me_oid=g.user["oid"],
         expense_status=expense_items.status(),
         approval_mode=app_settings.info("approval_mode"),
-        mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name")},
+        mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name", "smtp_host",
+                                                "smtp_port", "smtp_security", "smtp_username")},
+        mail_password=app_settings.info("smtp_password"),
+        SMTP_PRESETS=mailer.PRESETS,
+        SMTP_SECURITY=mailer.SECURITY,
         mail_log=list(mailer.LOG)[:20],
         APPROVAL_MODES=wf.APPROVAL_MODES,
         budgets={uid: user_budget.get(uid) for uid in users},

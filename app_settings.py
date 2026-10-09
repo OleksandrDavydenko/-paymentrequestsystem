@@ -14,6 +14,11 @@ DEFAULTS = {
     "mail_enabled": False,
     "mail_sender": "",
     "mail_sender_name": "Система заявок на оплату",
+    "smtp_host": "smtp.gmail.com",
+    "smtp_port": 587,
+    "smtp_security": "starttls",
+    "smtp_username": "",
+    "smtp_password": "",  # зашифрований (secret_box)
 }
 
 _lock = threading.Lock()
