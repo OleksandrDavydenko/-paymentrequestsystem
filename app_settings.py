@@ -19,7 +19,8 @@ DEFAULTS = {
     "smtp_security": "starttls",
     "smtp_username": "",
     "smtp_password": "",  # зашифрований (secret_box)
-    "allow_custom_email": False,  # користувачі можуть вказати іншу пошту для сповіщень
+    "allow_custom_email": False,
+    "dept_head_mode": "view",  # керівник відділу: view — лише бачить заявки відділу, approve — погоджує першим  # користувачі можуть вказати іншу пошту для сповіщень
 }
 
 _lock = threading.Lock()

@@ -29,9 +29,16 @@
   <ol class="route {{ 'route-parallel' if parallel }}">
     <li class="done"><span>Ініціатор</span></li>
     {% for name, state in stages %}
-    <li class="{{ state }} {{ 'par' if parallel and loop.index0 < 2 }}"><span>{{ name }}</span></li>
+    {% set off = 1 if req.head_step else 0 %}
+    <li class="{{ state }} {{ 'par' if parallel and loop.index0 >= off and loop.index0 < off + 2 }}"><span>{{ name }}</span></li>
     {% endfor %}
   </ol>
+  {% if req.status == 'dept_head' %}
+  <div class="route-note">
+    Спершу погоджує керівник відділу{% if req.department %} «{{ dept_name(req.department) }}»{% endif %}:
+    <span class="badge amber">очікує: {{ head_names or 'керівника не призначено' }}</span>
+  </div>
+  {% endif %}
   {% if parallel %}
   <div class="route-note">
     ⇉ Паралельне погодження: бухгалтер і фіндиректор погоджують одночасно.
@@ -67,7 +74,8 @@
 
     <div class="field">
       <label>Автор</label>
-      <input type="text" value="{{ req.author_name }}" title="{{ req.author_email }}" readonly>
+      <input type="text" value="{{ req.author_name }}{% if req.department %} · {{ dept_name(req.department) }}{% endif %}"
+             title="{{ req.author_email }}{% if req.department %} — відділ {{ dept_name(req.department) }}{% endif %}" readonly>
     </div>
     <div class="field">
       <label for="pay_date">Дата оплати</label>

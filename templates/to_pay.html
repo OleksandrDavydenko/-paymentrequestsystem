@@ -110,7 +110,7 @@
         <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
-        <td data-label="Автор">{{ r.author_name }}</td>
+        <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
         {% if view == 'paid' %}
         {% set p = paid_entry(r) %}
         <td data-label="Оплачено" data-sort="{{ p.at.isoformat() if p }}">

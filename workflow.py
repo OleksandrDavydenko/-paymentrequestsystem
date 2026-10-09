@@ -12,6 +12,7 @@ ROLES = {
     "acc_resident": "Бухгалтер (безготівка, резидент)",
     "acc_nonresident": "Бухгалтер (безготівка, нерезидент)",
     "cfo": "Фіндиректор",
+    "dept_head": "Керівник відділу",
 }
 # Короткі назви для заголовків таблиць
 ROLE_SHORT = {
@@ -19,7 +20,28 @@ ROLE_SHORT = {
     "acc_cash": "Бух. готівка",
     "acc_resident": "Бух. резидент",
     "acc_nonresident": "Бух. нерезидент",
+    "dept_head": "Кер. відділу",
 }
+
+
+class RoleSet(frozenset):
+    """Ролі користувача + коди відділів, які він очолює (для ролі «Керівник відділу»).
+
+    Поводиться як звичайна множина ролей, тож усі перевірки `"cfo" in roles` працюють як раніше.
+    """
+    def __new__(cls, roles=(), head_departments=()):
+        obj = super().__new__(cls, roles)
+        obj.head_departments = frozenset(head_departments)
+        return obj
+
+
+def head_deps(roles):
+    return getattr(roles, "head_departments", frozenset())
+
+
+def heads_department(req, roles):
+    """Чи очолює користувач відділ автора заявки."""
+    return "dept_head" in roles and bool(req.get("department")) and req["department"] in head_deps(roles)
 
 # Форму оплати вибирає ініціатор
 PAYMENT_FORMS = {
@@ -52,11 +74,12 @@ def channel_of(req):
     if form == "bank":
         return "bank_nonresident" if req.get("organization_id") in NONRESIDENT_ORGANIZATIONS else "bank_resident"
     return None
-APPROVER_ROLES = ACCOUNTANT_ROLES | {"cfo"}
+APPROVER_ROLES = ACCOUNTANT_ROLES | {"cfo", "dept_head"}
 
 # код -> (назва, css-клас бейджа)
 STATUSES = {
     "draft": ("Чернетка", "grey"),
+    "dept_head": ("Погодження керівника відділу", "amber"),
     "approval": ("На погодженні", "amber"),  # паралельний режим: бухгалтер і фіндиректор одночасно
     "accountant": ("Перевірка бухгалтера", "amber"),
     "cfo": ("Погодження фіндиректора", "amber"),
@@ -70,6 +93,7 @@ CLOSED_STATUSES = {"paid", "rejected"}
 
 # Смуга маршруту в картці: (статус етапу, назва)
 STAGES = [
+    ("dept_head", "Керівник відділу"),  # лише для заявок з кроком керівника (req["head_step"])
     ("accountant", "Бухгалтер"),
     ("cfo", "Фіндиректор"),
     ("to_pay", "Оплата"),
@@ -87,6 +111,7 @@ ACTIONS = {
     "file_delete": (None, "Видалено документ", "grey", False),
     "admin_status": (None, "Статус змінено адміністратором", "purple", True),
     "comment": (None, "Коментар", "slate", True),
+    "auto_skip": (None, "Крок пропущено", "grey", False),
 }
 
 # Режими погодження (налаштовуються в адмінці, запам'ятовуються в заявці при відправці)
@@ -94,6 +119,19 @@ APPROVAL_MODES = {
     "sequential": "Послідовно: Бухгалтер → Фіндиректор → Оплата",
     "parallel": "Паралельно: бухгалтер і фіндиректор одночасно → Оплата",
 }
+# Роль керівника відділу (налаштовується в адмінці, запам'ятовується в заявці при відправці)
+HEAD_MODES = {
+    "view": "Лише бачить: керівник бачить усі заявки свого відділу, але не погоджує їх",
+    "approve": "Погоджує першим кроком: заявка спершу йде керівнику відділу автора",
+}
+SYSTEM_USER = {"name": "Система", "email": ""}
+
+
+def route_label(mode, head_mode):
+    """Підсумок маршруту для адмінки: «Керівник відділу → Бухгалтер → Фіндиректор → Оплата»."""
+    steps = ["Керівник відділу"] if head_mode == "approve" else []
+    steps += ["Бухгалтер + Фіндиректор (одночасно)"] if mode == "parallel" else ["Бухгалтер", "Фіндиректор"]
+    return " → ".join(steps + ["Оплата"])
 MAX_COMMENT = 2000
 
 # статус -> (хто діє: "author", "accountant" (за формою оплати) або роль, {дія: новий статус})
@@ -102,6 +140,8 @@ WORKFLOW = {
     "rework": ("author", {"submit": "accountant"}),
     "accountant": ("accountant", {"approve": "cfo", "rework": "rework", "reject": "rejected"}),
     "cfo": ("cfo", {"approve": "to_pay", "rework": "rework", "reject": "rejected"}),
+    # Керівник відділу: «approve» веде до бухгалтера або до паралельного погодження (див. apply_action)
+    "dept_head": ("dept_head", {"approve": "accountant", "rework": "rework", "reject": "rejected"}),
     # Паралельно: «approve» веде до to_pay лише коли погодили всі (див. apply_action)
     "approval": ("parallel", {"approve": "to_pay", "rework": "rework", "reject": "rejected"}),
     "to_pay": ("accountant", {"pay": "paid"}),
@@ -142,6 +182,8 @@ def acting_role(req, roles, user_email):
     actor = stage_actor(req)
     if actor == "author":
         return "initiator" if "initiator" in roles and is_author(req, user_email) else None
+    if actor == "dept_head":  # лише керівник відділу автора
+        return actor if heads_department(req, roles) else None
     return actor if actor in roles else None
 
 
@@ -151,6 +193,8 @@ def in_queue(req, roles):
     if req["status"] == "approval":
         return any(r in roles for r in pending_roles(req))
     actor = stage_actor(req)
+    if actor == "dept_head":
+        return heads_department(req, roles)
     return req["status"] != "to_pay" and actor in APPROVER_ROLES and actor in roles
 
 
@@ -169,6 +213,8 @@ DECISION_ACTIONS = {"approve", "rework", "reject", "pay"}
 def processed_entry(req, roles):
     """Останнє рішення, ухвалене однією з ролей погоджувача (для «Опрацьовані»), або None."""
     mine = roles & APPROVER_ROLES
+    if "dept_head" in mine and not heads_department(req, roles):
+        mine = mine - {"dept_head"}  # рішення керівників інших відділів — не «мої»
     return next((h for h in reversed(req.get("history", []))
                  if h["action"] in DECISION_ACTIONS and h["role"] in mine), None)
 
@@ -197,7 +243,10 @@ def admin_set_status(req, new_status, user, comment):
     old = req["status"]
     req["status"] = new_status
     req["approvals"] = {}
-    if new_status == "approval":
+    if new_status == "dept_head":
+        req["head_step"] = True
+        req.setdefault("route_mode", "sequential")
+    elif new_status == "approval":
         req["route_mode"] = "parallel"
     elif new_status in ("accountant", "cfo"):
         req["route_mode"] = "sequential"
@@ -215,8 +264,16 @@ def add_comment(req, user, role, text):
 
 
 def can_view(req, roles, user_email):
-    # Адміністратор бачить усі заявки (лише перегляд — дії визначаються іншими ролями)
-    return is_author(req, user_email) or bool(roles & (APPROVER_ROLES | {"admin"}))
+    # Адміністратор бачить усі заявки (лише перегляд — дії визначаються іншими ролями).
+    # Керівник відділу — лише заявки свого відділу (крім чернеток).
+    if is_author(req, user_email) or roles & (ACCOUNTANT_ROLES | {"cfo", "admin"}):
+        return True
+    return in_department(req, roles)
+
+
+def in_department(req, roles):
+    """Розділ «Заявки відділу»: заявки відділів, які очолює користувач (без чернеток)."""
+    return heads_department(req, roles) and req["status"] != "draft"
 
 
 def can_edit(req, roles, user_email):
@@ -255,14 +312,16 @@ def history_role(req, roles, user_email):
         return role
     if "initiator" in roles and is_author(req, user_email):
         return "initiator"
-    return next((r for r in (*sorted(ACCOUNTANT_ROLES), "cfo", "initiator", "admin") if r in roles), "initiator")
+    return next((r for r in (*sorted(ACCOUNTANT_ROLES), "cfo", "dept_head", "initiator", "admin") if r in roles),
+                "initiator")
 
 
-def apply_action(req, action, roles, user, comment="", mode="sequential"):
+def apply_action(req, action, roles, user, comment="", mode="sequential", head_mode="view", heads=()):
     """Виконати дію процесу над заявкою (змінює req). Кидає WorkflowError.
 
-    mode — режим погодження з налаштувань; враховується лише при відправці (submit)
-    і запам'ятовується в заявці, щоб зміна налаштувань не ламала заявки в процесі.
+    mode / head_mode — режим погодження і роль керівника відділу з налаштувань; враховуються
+    лише при відправці (submit) і запам'ятовуються в заявці, щоб зміна налаштувань не ламала
+    заявки в процесі. heads — пошта керівників відділу заявки (для submit).
     """
     comment = (comment or "").strip()
     role = acting_role(req, roles, user["email"])
@@ -273,9 +332,10 @@ def apply_action(req, action, roles, user, comment="", mode="sequential"):
     old = req["status"]
     new = WORKFLOW[old][1][action]
     if action == "submit":
-        req["route_mode"] = "parallel" if mode == "parallel" else "sequential"
-        req["approvals"] = {}
-        new = "approval" if req["route_mode"] == "parallel" else "accountant"
+        _submit(req, user, comment, mode, head_mode, heads)
+        return
+    if old == "dept_head" and action == "approve":
+        new = _after_head(req)
     elif old == "approval" and action == "approve":
         req.setdefault("approvals", {})[role] = {"at": clock.now(), "user_name": user["name"]}
         new = "approval" if pending_roles(req) else "to_pay"
@@ -285,13 +345,50 @@ def apply_action(req, action, roles, user, comment="", mode="sequential"):
     add_history(req, action, user, role, comment, old, new)
 
 
+def _after_head(req):
+    """Куди йде заявка після керівника відділу (або одразу, якщо кроку керівника немає)."""
+    req["approvals"] = {}
+    return "approval" if req.get("route_mode") == "parallel" else "accountant"
+
+
+def _submit(req, user, comment, mode, head_mode, heads):
+    old = req["status"]
+    req["route_mode"] = "parallel" if mode == "parallel" else "sequential"
+    after = _after_head(req)
+    req["head_step"] = False
+    skip_reason = None
+    if head_mode == "approve":
+        if not req.get("department"):
+            skip_reason = "у автора не вказано відділ"
+        elif not heads:
+            skip_reason = "у відділу автора немає керівника"
+        else:
+            req["head_step"] = True
+    if not req["head_step"]:
+        req["status"] = after
+        add_history(req, "submit", user, "initiator", comment, old, after)
+        if skip_reason:
+            add_history(req, "auto_skip", SYSTEM_USER, "dept_head",
+                        f"Погодження керівника відділу пропущено: {skip_reason}", None, after)
+        return
+    req["status"] = "dept_head"
+    add_history(req, "submit", user, "initiator", comment, old, "dept_head")
+    if (user.get("email") or "").lower() in {h.lower() for h in heads}:
+        # Автор сам очолює свій відділ — крок керівника зараховується автоматично
+        req["status"] = after
+        add_history(req, "approve", user, "dept_head", "Автоматично: автор — керівник відділу", "dept_head", after)
+
+
 def stage_names(req):
     """Назви етапів для смуги маршруту; етап бухгалтера — за формою оплати."""
     accountant = ROLES.get(ACCOUNTANT_BY_CHANNEL.get(channel_of(req)), "Бухгалтер")
-    return [(code, accountant if code == "accountant" else name) for code, name in STAGES]
+    return [(code, accountant if code == "accountant" else name) for code, name in STAGES
+            if code != "dept_head" or req.get("head_step")]
 
 
 def _role_stage(role):
+    if role == "dept_head":
+        return "dept_head"
     return "cfo" if role == "cfo" else "accountant" if role in ACCOUNTANT_ROLES else None
 
 
@@ -302,7 +399,8 @@ def stage_states(req):
     status = req["status"]
     if status == "approval":  # паралельно: кожен погоджувач окремо
         done = {_role_stage(r) for r in (req.get("approvals") or {})}
-        return [(name, "done" if code in done else "current" if code in ("accountant", "cfo") else "todo")
+        return [(name, "done" if code in done or code == "dept_head" else
+                 "current" if code in ("accountant", "cfo") else "todo")
                 for code, name in stages]
     last = next((h for h in reversed(req.get("history", []))
                  if h["to_status"] == status and h["from_status"] == "approval"), None)

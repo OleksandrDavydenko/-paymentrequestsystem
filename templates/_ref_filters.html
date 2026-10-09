@@ -1,5 +1,6 @@
-{# Фільтри за довідниками (організація, контрагент, вид витрат). Очікує refs = ref_filters(...).
-   Вставляється всередину GET-форми. #}
+{# Фільтри за довідниками (організація, контрагент, вид витрат, відділ). Очікує refs = ref_filters(...).
+   Вставляється всередину GET-форми. Фільтр «Відділ» — якщо в заявках є кілька відділів
+   і сторінка не вимкнула його (show_dep_filter=False). #}
 <select name="org" onchange="this.form.submit()" aria-label="Організація" class="{{ 'is-active' if refs.org }}">
   <option value="">Усі організації</option>
   {% for key, label in ORGANIZATIONS.items() %}
@@ -18,6 +19,15 @@
   <option value="{{ code }}" {{ 'selected' if code == refs.exp }}>{{ expense_name(code) }}</option>
   {% endfor %}
 </select>
+{% set deps = dep_options() %}
+{% if (show_dep_filter is not defined or show_dep_filter) and (deps | length > 1 or refs.dep) %}
+<select name="dep" onchange="this.form.submit()" aria-label="Відділ" class="{{ 'is-active' if refs.dep }}">
+  <option value="">Усі відділи</option>
+  {% for code in deps %}
+  <option value="{{ code }}" {{ 'selected' if code == refs.dep }}>{{ dept_name(code) }}</option>
+  {% endfor %}
+</select>
+{% endif %}
 {% if request.args | reject('equalto', 'view') | list | length %}
 <a class="btn btn-sm reset-filters" href="{{ url_for(request.endpoint, view=request.args.get('view')) }}">✕ Скинути фільтри</a>
 {% endif %}

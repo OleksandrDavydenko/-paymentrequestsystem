@@ -13,6 +13,8 @@ import identity.flask
 import expense_items
 import app_settings
 import clock
+import departments
+import org_structure
 import graph
 import mailer
 import notifications
@@ -77,6 +79,10 @@ def inject_refs():
         "PAYMENT_FORMS": db.PAYMENT_FORMS,
         "CHANNELS": wf.CHANNELS,
         "channel_of": wf.channel_of,
+        "dept_name": departments.get_name,
+        # Фільтр «Відділ»: лише відділи, що трапляються в заявках
+        "dep_options": lambda: sorted({r["department"] for r in db.list_all() if r.get("department")},
+                                      key=lambda c: departments.get_name(c).lower()),
         "STATUSES": db.STATUSES,
     }
 
@@ -180,6 +186,7 @@ GROUPS = {
     "acc_resident": os.environ.get("GROUP_ACC_RESIDENT") or os.environ.get("GROUP_ACCOUNTANT", ""),
     "acc_nonresident": os.environ.get("GROUP_ACC_NONRESIDENT", ""),
     "cfo": os.environ.get("GROUP_CFO", ""),
+    "dept_head": os.environ.get("GROUP_DEPT_HEAD", ""),
 }
 # Страховка від блокування: ці люди завжди адміністратори
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "od@ftpua.com").split(",") if e.strip()}
@@ -224,7 +231,8 @@ def requires(*needed):
             email = claims.get("preferred_username", "")
             g.user = {"email": email, "name": claims.get("name") or email, "oid": claims.get("oid")}
             user_directory.remember([{"id": g.user["oid"], "email": email, "name": g.user["name"]}])
-            g.roles = resolve_roles(claims)
+            roles = resolve_roles(claims)
+            g.roles = wf.RoleSet(roles, org_structure.head_departments(g.user["oid"]) if "dept_head" in roles else ())
             if not g.roles or (needed and not g.roles & set(needed)):
                 return render_template("no_access.html", user_name=g.user["name"], missing=needed), 403
             return view(*args, context=context, **kwargs)
@@ -264,16 +272,27 @@ def inject_roles():
         "roles": roles,
         "ROLES": wf.ROLES,
         "ROLE_SHORT": wf.ROLE_SHORT,
-        "is_approver": bool(roles & wf.APPROVER_ROLES),
+        "is_approver": bool(_deciding_roles(roles)),
+        "is_dept_head": "dept_head" in roles,
         "queue_count": len(db.list_queue(roles)) if roles & wf.APPROVER_ROLES else 0,
         "can_see_payments": wf.can_see_payments(roles),
         "payments_count": len(db.list_to_pay(roles)) if wf.can_see_payments(roles) else 0,
     }
 
 
+def _deciding_roles(roles):
+    """Ролі, якими користувач ухвалює рішення. Керівник відділу — лише якщо він погоджує (налаштування)."""
+    deciding = set(roles & wf.APPROVER_ROLES)
+    if app_settings.get("dept_head_mode") != "approve":
+        deciding.discard("dept_head")
+    return deciding
+
+
 def _home():
-    if "initiator" not in g.roles and g.roles & wf.APPROVER_ROLES:
+    if "initiator" not in g.roles and _deciding_roles(g.roles):
         return url_for("approvals")
+    if "initiator" not in g.roles and "dept_head" in g.roles:
+        return url_for("department_requests")
     if g.roles == {"admin"}:
         return url_for("admin_requests")
     return url_for("requests_list")
@@ -292,6 +311,7 @@ REF_FILTERS = {  # параметр запиту -> (поле заявки, до
     "org": ("organization_id", db.ORGANIZATIONS),
     "cp": ("counterparty_id", db.COUNTERPARTIES),
     "exp": ("expense_code", None),  # код статті витрат (рядок)
+    "dep": ("department", None),  # код відділу автора (рядок)
 }
 
 
@@ -299,12 +319,13 @@ def ref_filters(args):
     """Вибрані значення фільтрів довідників: {"org": 1, "cp": None, "exp": "01.001"}."""
     selected = {key: _parse_ref(args.get(key), ref) for key, (_, ref) in REF_FILTERS.items() if ref is not None}
     selected["exp"] = (args.get("exp") or "").strip() or None
+    selected["dep"] = (args.get("dep") or "").strip() or None
     return selected
 
 
 def apply_ref_filters(rows, selected):
     return [r for r in rows
-            if all(not value or r[REF_FILTERS[key][0]] == value for key, value in selected.items())]
+            if all(not value or r.get(REF_FILTERS[key][0]) == value for key, value in selected.items())]
 
 
 # ---------------------------------------------------------------- маршрути
@@ -328,6 +349,7 @@ def requests_list(*, context):
         requests=apply_ref_filters(db.list_requests(g.user["email"], status or None), refs),
         status_filter=status,
         refs=refs,
+        show_dep_filter=False,
     )
 
 
@@ -365,6 +387,7 @@ def request_card(request_id=None, *, context):
             "created_at": clock.now(),
             "author_email": user["email"],
             "author_name": user["name"],
+            "department": org_structure.department_of(user["oid"]),
             "status": "draft",
             "payment_form": "bank",
             "currency": "UAH",
@@ -393,8 +416,10 @@ def request_card(request_id=None, *, context):
             if req["id"] is None:
                 req["created_at"] = clock.now()
                 wf.add_history(req, "create", user, "initiator", to_status="draft")
+            if not req.get("department"):  # заявки, створені до появи відділів
+                req["department"] = org_structure.department_of(user["oid"])
             if action == "submit":
-                wf.apply_action(req, "submit", roles, user, mode=app_settings.get("approval_mode"))
+                wf.apply_action(req, "submit", roles, user, **_route_settings(req))
             new_id = db.save_request(req)
             number = db.get_request(new_id)["number"]
             if action == "submit":
@@ -429,12 +454,22 @@ def request_card(request_id=None, *, context):
         admin_comment=session.pop("admin_comment", ""),
         comment_draft=session.pop("comment_draft", ""),
         parallel=req.get("route_mode") == "parallel",
+        head_names=", ".join(h["name"] or h["email"] for h in org_structure.heads_of(req.get("department"))),
         approvals=req.get("approvals") or {},
         pending_roles=wf.pending_roles(req) if req["status"] == "approval" else [],
         current_email=user["email"],
         back_url=url_for("requests_list") if wf.is_author(req, user["email"]) and "initiator" in roles
         else _home(),
     )
+
+
+def _route_settings(req):
+    """Налаштування маршруту для відправки заявки: режим, роль керівника, керівники відділу автора."""
+    return {
+        "mode": app_settings.get("approval_mode"),
+        "head_mode": app_settings.get("dept_head_mode"),
+        "heads": [h["email"] for h in org_structure.heads_of(req.get("department")) if h["email"]],
+    }
 
 
 @app.route("/requests/<int:request_id>/action", methods=["POST"])
@@ -444,8 +479,7 @@ def request_action(request_id, *, context):
     req = _load_visible(request_id)
     action = request.form.get("action")
     try:
-        wf.apply_action(req, action, g.roles, g.user, request.form.get("comment"),
-                        mode=app_settings.get("approval_mode"))
+        wf.apply_action(req, action, g.roles, g.user, request.form.get("comment"), **_route_settings(req))
     except wf.WorkflowError as e:
         flash(str(e), "error")
         session["draft_comment"] = request.form.get("comment", "")
@@ -736,11 +770,13 @@ def admin_mail_test(*, context):
 @requires("admin")
 def admin_settings(*, context):
     mode = request.form.get("approval_mode")
-    if mode not in wf.APPROVAL_MODES:
+    head_mode = request.form.get("dept_head_mode", app_settings.get("dept_head_mode"))
+    if mode not in wf.APPROVAL_MODES or head_mode not in wf.HEAD_MODES:
         flash("Невідомий режим погодження", "error")
-    elif mode != app_settings.get("approval_mode"):
+    elif mode != app_settings.get("approval_mode") or head_mode != app_settings.get("dept_head_mode"):
         app_settings.set("approval_mode", mode, g.user["email"])
-        flash(f"Режим погодження: {wf.APPROVAL_MODES[mode]}. Діє для нових відправлень.", "success")
+        app_settings.set("dept_head_mode", head_mode, g.user["email"])
+        flash(f"Маршрут: {wf.route_label(mode, head_mode)}. Діє для нових і повторно відправлених заявок.", "success")
     else:
         flash("Змін немає", "success")
     return redirect(url_for("admin_users") + "#process-settings")
@@ -812,6 +848,21 @@ def to_pay(*, context):
 @auth.login_required
 @requires("admin")
 def admin_requests(*, context):
+    return _requests_overview(db.list_all(), title="Усі заявки", table_id="all-requests")
+
+
+@app.route("/department")
+@auth.login_required
+@requires("dept_head")
+def department_requests(*, context):
+    deps = sorted(wf.head_deps(g.roles), key=lambda c: departments.get_name(c).lower())
+    title = "Заявки відділу" + (": " + ", ".join(departments.get_name(c) for c in deps) if deps else "")
+    rows = [r for r in db.list_all() if wf.in_department(r, g.roles)]
+    return _requests_overview(rows, title=title, table_id="department-requests", no_departments=not deps,
+                              show_dep_filter=len(deps) > 1)
+
+
+def _requests_overview(source, title, table_id, **extra):
     today = clock.today()
     args = request.args
     status = args.get("status") if args.get("status") in wf.STATUSES else ""
@@ -831,13 +882,17 @@ def admin_requests(*, context):
             return False
         if q:
             haystack = " ".join([r["number"], r["author_name"], r["author_email"], r.get("note") or "",
-                                 db.COUNTERPARTIES.get(r["counterparty_id"], "")]).lower()
+                                 db.COUNTERPARTIES.get(r["counterparty_id"], ""),
+                                 departments.get_name(r.get("department"))]).lower()
             return q in haystack
         return True
 
-    rows = [r for r in apply_ref_filters(db.list_all(), refs) if matches(r)]
+    rows = [r for r in apply_ref_filters(source, refs) if matches(r)]
     return render_template(
         "admin_requests.html",
+        title=title,
+        table_id=table_id,
+        **extra,
         user_name=g.user["name"],
         requests=rows,
         totals=currency_totals(rows, today),
@@ -884,7 +939,7 @@ def to_pay_bulk(*, context):
 
 # ---------------------------------------------------------------- адміністрування
 
-ADMIN_ROLE_ORDER = ["admin", "initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo"]
+ADMIN_ROLE_ORDER = ["admin", "initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo", "dept_head"]
 
 
 def _azure_group_url(group_id):
@@ -921,6 +976,13 @@ def admin_users(*, context):
         me_oid=g.user["oid"],
         expense_status=expense_items.status(),
         approval_mode=app_settings.info("approval_mode"),
+        head_mode=app_settings.info("dept_head_mode"),
+        HEAD_MODES=wf.HEAD_MODES,
+        route_label=wf.route_label,
+        departments_list=departments.get_departments(),
+        departments_status=departments.status(),
+        user_departments={uid: org_structure.department_of(uid) for uid in users},
+        head_departments={uid: org_structure.head_departments(uid) for uid in users},
         mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name", "smtp_host",
                                                 "smtp_port", "smtp_security", "smtp_username",
                                                 "allow_custom_email")},
@@ -1002,12 +1064,31 @@ def _apply_role_changes(token, user_id, wanted, current):
     return added, removed
 
 
+def _save_department(user_id, email, name):
+    """Відділ співробітника з форми (поле department). Повертає True, якщо змінився."""
+    if "department" not in request.form:
+        return False
+    dep = request.form.get("department") or None
+    if dep and dep not in departments.get_map() and dep != org_structure.department_of(user_id):
+        return False
+    if dep == org_structure.department_of(user_id):
+        return False
+    org_structure.set_department(user_id, email, name, dep, g.user["email"])
+    return True
+
+
+def admin_department_flash(name, user_id):
+    dep = org_structure.department_of(user_id)
+    flash(f"{name}: відділ — {departments.get_name(dep) if dep else 'не вказано'}", "success")
+
+
 @app.route("/admin/users/save", methods=["POST"])
 @auth.login_required(scopes=graph.ADMIN_SCOPES)
 @requires("admin")
 def admin_users_save(*, context):
     user_id = request.form.get("user_id", "")
     name = request.form.get("name", "")
+    email = request.form.get("email", "")
     wanted = {r for r in request.form.getlist("roles") if r in wf.ROLES}
     current = {r for r in request.form.get("current", "").split(",") if r in wf.ROLES}
     try:
@@ -1015,14 +1096,37 @@ def admin_users_save(*, context):
     except graph.GraphError as e:
         flash(str(e), "error")
         return redirect(url_for("admin_users"))
+    if "dept_head" in current and "dept_head" not in wanted:
+        org_structure.set_head_departments(user_id, email, name, [], g.user["email"])
+    dep_changed = _save_department(user_id, email, name)
+    if dep_changed:
+        admin_department_flash(name, user_id)
     if added or removed:
         parts = ([f"додано: {', '.join(added)}"] if added else []) + ([f"знято: {', '.join(removed)}"] if removed else [])
         flash(f"{name}: {'; '.join(parts)}. Зміни вже в Azure; користувачу треба вийти й увійти знову.", "success")
         if not wanted:
             flash(f"{name} більше не має доступу до системи.", "success")
-    else:
+    elif not dep_changed:
         flash("Змін немає", "success")
     return redirect(url_for("admin_users"))
+
+
+@app.route("/admin/users/head", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_users_head(*, context):
+    """Відділи, які очолює керівник."""
+    user_id = request.form.get("user_id", "").strip()
+    if not user_id:
+        abort(400)
+    known = set(departments.get_map())
+    previous = set(org_structure.head_departments(user_id))
+    deps = [d for d in request.form.getlist("departments") if d in known or d in previous]
+    name = request.form.get("name", "")
+    org_structure.set_head_departments(user_id, request.form.get("email", ""), name, deps, g.user["email"])
+    flash(f"{name}: очолює — {', '.join(departments.get_name(d) for d in sorted(deps)) or 'жодного відділу'}",
+          "success")
+    return redirect(url_for("admin_users") + "#admin-users")
 
 
 @app.route("/admin/users/add", methods=["POST"])
@@ -1040,6 +1144,8 @@ def admin_users_add(*, context):
         try:
             added, _ = _apply_role_changes(context["access_token"], user_id, wanted, set())
             flash(f"{name}: додано ролі {', '.join(added)}. Зміни вже в Azure.", "success")
+            if _save_department(user_id, request.form.get("email", ""), name):
+                admin_department_flash(name, user_id)
         except graph.GraphError as e:
             flash(str(e), "error")
     return redirect(url_for("admin_users"))

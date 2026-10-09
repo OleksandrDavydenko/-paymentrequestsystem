@@ -62,6 +62,8 @@ _ME = ("od@ftpua.com", "Oleksandr Davydenko")
 _OTHER = ("i.petrenko@ftpua.com", "Ірина Петренко")
 _ACC = ("o.bondar@ftpua.com", "Олена Бондар")
 _CFO = ("a.melnyk@ftpua.com", "Андрій Мельник")
+# Відділ автора мокових заявок (коди з departments.MOCK_DEPARTMENTS)
+_AUTHOR_DEPARTMENT = {_ME[0]: "BA", _OTHER[0]: "LOG"}
 
 # ---------------------------------------------------------------- заявки
 
@@ -83,6 +85,7 @@ def _req(id_, author, pay_date, cp, org, exp, form, cur, amount, steps, note="",
         "created_at": datetime.fromisoformat(created),
         "author_email": author[0],
         "author_name": author[1],
+        "department": _AUTHOR_DEPARTMENT.get(author[0]),
         "pay_date": date.fromisoformat(pay_date),
         "counterparty_id": cp,
         "organization_id": org,
@@ -188,6 +191,19 @@ def _parallel(req, day, approved_by=()):
 _parallel(_req(17, _OTHER, "2026-10-16", 2, 1, 2, "bank", "UAH", "3920.00", [], "Зв'язок, листопад"), 6,
           approved_by=[(_ACC, "accountant")])
 _parallel(_req(18, _ME, "2026-10-15", 6, 3, 4, "cash", "UAH", "1450.00", [], "Канцтовари"), 7)
+
+
+def _at_head(req, day):
+    """Мокова заявка, що чекає погодження керівника відділу (послідовний маршрут)."""
+    at = datetime.fromisoformat(f"2026-10-{day:02d}T10:00:00")
+    req["route_mode"], req["head_step"], req["approvals"], req["status"] = "sequential", True, {}, "dept_head"
+    req["history"].append({"at": at, "user_name": req["author_name"], "user_email": req["author_email"],
+                           "role": "initiator", "action": "submit", "from_status": "draft",
+                           "to_status": "dept_head", "comment": ""})
+    _REQUESTS[req["id"]] = req
+
+
+_at_head(_req(19, _OTHER, "2026-10-20", 1, 1, 1, "bank", "UAH", "7600.00", [], "Перевезення, жовтень"), 8)
 
 
 def list_requests(author_email, status=None):

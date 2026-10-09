@@ -18,6 +18,9 @@
         На погодження{% if queue_count %} <span class="count">{{ queue_count }}</span>{% endif %}
       </a>
       {% endif %}
+      {% if is_dept_head %}
+      <a href="{{ url_for('department_requests') }}" class="{{ 'active' if request.endpoint == 'department_requests' }}">Заявки відділу</a>
+      {% endif %}
       {% if can_see_payments %}
       <a href="{{ url_for('to_pay') }}" class="{{ 'active' if request.endpoint == 'to_pay' }}">
         До оплати{% if payments_count %} <span class="count">{{ payments_count }}</span>{% endif %}

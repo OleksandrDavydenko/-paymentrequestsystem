@@ -12,6 +12,7 @@ from flask import render_template, url_for
 
 import app_settings
 import mailer
+import org_structure
 import secret_box
 import user_prefs
 import workflow as wf
@@ -68,7 +69,7 @@ def responsible_roles(req):
     """Ролі, які мають діяти на поточному етапі заявки."""
     if req["status"] == "approval":
         return wf.pending_roles(req)
-    if req["status"] in ("accountant", "cfo", "to_pay"):
+    if req["status"] in ("dept_head", "accountant", "cfo", "to_pay"):
         role = wf.stage_actor(req)
         return [role] if role else []
     return []
@@ -135,7 +136,10 @@ def _notify(event, req, actor, comment):
     if event != "comment" and status_changed:
         kind = "task_pay" if req["status"] == "to_pay" else "task_new"
         for role in responsible_roles(req):
-            for m in cached_role_members(role):
+            # Керівник відділу — лише керівники відділу автора, а не вся група
+            members = org_structure.heads_of(req.get("department")) if role == "dept_head" \
+                else cached_role_members(role)
+            for m in members:
                 add(m["email"], "task_new", f"ви — {wf.ROLES.get(role, role).lower()}", SUBJECTS[kind])
 
     # 3. Коментар — учасникам-погоджувачам, які вже ухвалювали рішення
