@@ -121,8 +121,12 @@
         </select>
       </div>
       <label for="smtp_username">Логін</label>
-      <input type="text" id="smtp_username" name="smtp_username" value="{{ mail.smtp_username }}"
-             placeholder="{{ mail.mail_sender or 'зазвичай — та сама адреса' }}" autocomplete="off">
+      <div>
+        <input type="text" id="smtp_username" name="smtp_username" value="{{ mail.smtp_username }}"
+               placeholder="{{ mail.mail_sender or 'зазвичай — та сама адреса' }}" autocomplete="off">
+        <div class="muted smtp-pass-info">Обліковий запис, яким система входить на поштовий сервер.
+          Залиште порожнім — буде використано пошту відправника. Пароль додатку створюється саме для цього запису.</div>
+      </div>
       <label for="smtp_password">Пароль додатку</label>
       <div>
         <div class="pass-field">

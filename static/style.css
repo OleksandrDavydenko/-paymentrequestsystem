@@ -538,8 +538,8 @@ input.exp-missing { color: #8a4b00; background: #fff8ec; border-color: #f3d19c; 
 .ud-link { display: block; color: var(--text) !important; text-decoration: none; padding: 6px 0; margin-bottom: 8px; font-size: 13px; }
 .ud-link:hover { color: var(--primary) !important; }
 .mail-settings { margin-top: 16px; }
-.mail-grid { display: grid; grid-template-columns: 160px minmax(0, 420px); gap: 8px 12px; align-items: center; margin: 12px 0; }
-.mail-grid label { color: var(--muted); }
+.mail-grid { display: grid; grid-template-columns: 160px minmax(0, 420px); gap: 8px 12px; align-items: start; margin: 12px 0; }
+.mail-grid > label { color: var(--muted); padding-top: 8px; }  /* навпроти поля, навіть якщо під ним є підказка */
 .mail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
 .mail-log { margin-top: 14px; font-size: 13px; }
 .mail-log summary { cursor: pointer; color: var(--primary); }
