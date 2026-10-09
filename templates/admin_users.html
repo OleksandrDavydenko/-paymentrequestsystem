@@ -125,14 +125,22 @@
              placeholder="{{ mail.mail_sender or 'зазвичай — та сама адреса' }}" autocomplete="off">
       <label for="smtp_password">Пароль додатку</label>
       <div>
-        <input type="password" id="smtp_password" name="smtp_password" autocomplete="new-password"
-               placeholder="{{ '•••••••• збережено — введіть новий, щоб замінити' if mail_password.value else 'не задано' }}">
-        <div class="muted smtp-pass-info">
+        <div class="pass-field">
+          <input type="password" id="smtp_password" name="smtp_password" autocomplete="new-password" spellcheck="false"
+                 placeholder="{{ '••••••••••••••••' if mail_password.value else 'вставте пароль додатку' }}">
+          {% if mail_password.value %}
+          <button type="button" class="pass-btn" id="pass-show" title="Показати збережений пароль" aria-label="Показати пароль">👁</button>
+          <button type="button" class="pass-btn" id="pass-copy" title="Скопіювати збережений пароль" aria-label="Скопіювати пароль">⧉</button>
+          {% endif %}
+        </div>
+        <div class="muted smtp-pass-info" id="pass-info">
           {% if mail_password.value %}
             🔒 Збережено зашифрованим{% if mail_password.updated_by %} · {{ mail_password.updated_by }}, {{ mail_password.updated_at.replace('T', ' ') }}{% endif %}.
+            Щоб замінити — вставте новий.
             <label class="inline-check"><input type="checkbox" name="smtp_password_clear" value="1"> видалити</label>
           {% else %}
-            Пароль не показується після збереження. Для Gmail — «пароль додатку» (16 символів), не звичайний пароль.
+            <span class="pass-missing">Пароль не задано — Gmail не прийме лист без нього.</span>
+            Для Gmail це «пароль додатку» (16 символів), не звичайний пароль.
           {% endif %}
         </div>
       </div>
@@ -243,6 +251,38 @@
   </form>
 </dialog>
 <script>
+  // Пароль SMTP: показати (розмитим, чітко при наведенні) і скопіювати. Береться окремим запитом.
+  (function () {
+    const input = document.getElementById('smtp_password');
+    const show = document.getElementById('pass-show');
+    const copy = document.getElementById('pass-copy');
+    if (!show) return;
+    let cached = null;
+    async function load() {
+      if (cached !== null) return cached;
+      const r = await fetch('{{ url_for("admin_mail_password") }}', {method: 'POST', headers: {'X-Requested-With': 'fetch'}});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Не вдалося отримати пароль');
+      return (cached = data.password);
+    }
+    show.addEventListener('click', async () => {
+      try {
+        if (input.type === 'password' || !input.value) {
+          if (!input.value) input.value = await load();
+          input.type = 'text'; input.classList.add('revealed'); show.textContent = '🙈'; show.title = 'Сховати';
+        } else {
+          input.type = 'password'; input.classList.remove('revealed'); show.textContent = '👁'; show.title = 'Показати збережений пароль';
+        }
+      } catch (e) { alert(e.message); }
+    });
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(input.value || await load());
+        copy.textContent = '✓'; setTimeout(() => { copy.textContent = '⧉'; }, 1500);
+      } catch (e) { alert(e.message); }
+    });
+  })();
+
   // Шаблони SMTP: підставити сервер, порт і шифрування
   document.querySelectorAll('.smtp-preset').forEach(b => b.addEventListener('click', () => {
     document.getElementById('smtp_host').value = b.dataset.host;

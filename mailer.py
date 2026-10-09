@@ -58,7 +58,11 @@ def app_token():
     return result["access_token"]
 
 
-def _explain(exc, host):
+def _explain(exc, host, has_password=True):
+    code = getattr(exc, "smtp_code", None)
+    if code == 530 or (code in (550, 553) and not has_password):
+        return ("Сервер вимагає авторизацію: " + ("пароль не задано — " if not has_password else "")
+                + "вкажіть логін і пароль додатку й збережіть налаштування.")
     if isinstance(exc, smtplib.SMTPAuthenticationError):
         return ("Сервер не прийняв логін або пароль. Для Gmail потрібен «пароль додатку» "
                 "(Google-акаунт → Безпека → Двоетапна перевірка → Паролі додатків), а не звичайний пароль. "
@@ -101,7 +105,7 @@ def send_now(cfg, to, subject, html, text=None):
     except MailError:
         raise
     except Exception as e:
-        raise MailError(_explain(e, host)) from e
+        raise MailError(_explain(e, host, bool(cfg.get("password")))) from e
 
 
 # Транспорт можна підмінити в тестах

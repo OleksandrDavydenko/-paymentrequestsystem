@@ -603,6 +603,19 @@ def admin_mail(*, context):
     return redirect(url_for("admin_users") + "#mail-settings")
 
 
+@app.route("/admin/mail/password", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_mail_password(*, context):
+    """Збережений пароль SMTP — лише на явний запит адміна (кнопки «Показати / Копіювати»), не в HTML сторінки."""
+    password = secret_box.decrypt(app_settings.get("smtp_password"))
+    if password is None:
+        return {"error": "Пароль не задано або його не вдалося розшифрувати"}, 404
+    resp = app.make_response({"password": password})
+    resp.headers["Cache-Control"] = "no-store"
+    return resp
+
+
 @app.route("/admin/mail/test", methods=["POST"])
 @auth.login_required
 @requires("admin")
