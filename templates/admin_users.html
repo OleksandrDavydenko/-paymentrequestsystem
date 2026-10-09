@@ -3,9 +3,13 @@
 {% block title %}Адміністрування — користувачі{% endblock %}
 
 {% block content %}
-<div class="card">
+<div class="sec-all"><button type="button" class="btn-link" id="sec-expand-all">Розгорнути все</button> ·
+  <button type="button" class="btn-link" id="sec-collapse-all">Згорнути все</button></div>
+
+<div class="card" id="users" data-collapsible data-default="open">
   <div class="toolbar">
     <h1 style="margin:0">Користувачі та ролі</h1>
+    <span class="sec-summary muted">{{ users | length }} користувачів</span>
     <span class="spacer"></span>
     <button type="button" class="btn btn-primary" onclick="document.getElementById('add-dialog').showModal()"
             {{ 'disabled' if not groups }}>+ Додати користувача</button>
@@ -46,6 +50,7 @@
         <td>
           <strong>{{ u.name }}</strong>{% if u.id == me_oid %} <span class="muted">(ви)</span>{% endif %}
           <div class="muted">{{ u.email }}</div>
+          {% if alt_addresses.get(u.email | lower) %}<div class="muted alt-addr" title="Користувач підтвердив іншу адресу для сповіщень">✉ листи на: {{ alt_addresses[u.email | lower] }}</div>{% endif %}
         </td>
         {% for r in role_order %}
         <td class="role-col">
@@ -84,7 +89,7 @@
   </div>
 </div>
 
-<div class="card mail-settings" id="mail-settings">
+<div class="card mail-settings" id="mail-settings" data-collapsible>
   <div class="toolbar">
     <h2 style="margin:0">Email-сповіщення</h2>
     <span class="badge {{ 'green' if mail.mail_enabled else 'grey' }}">{{ 'Увімкнено' if mail.mail_enabled else 'Вимкнено' }}</span>
@@ -93,6 +98,11 @@
     <label class="notif-master">
       <input type="checkbox" name="mail_enabled" value="1" {{ 'checked' if mail.mail_enabled }}>
       <span><strong>Розсилка увімкнена</strong><span class="muted"> — якщо вимкнути, листи не отримує ніхто</span></span>
+    </label>
+    <label class="notif-master">
+      <input type="checkbox" name="allow_custom_email" value="1" {{ 'checked' if mail.allow_custom_email }}>
+      <span><strong>Дозволити користувачам вказувати іншу пошту</strong><span class="muted"> — для сповіщень, з підтвердженням
+        посиланням з листа; якщо вимкнути, листи знову йдуть на робочу пошту</span></span>
     </label>
     <div class="mail-grid">
       <label for="mail_sender">Пошта відправника</label>
@@ -173,9 +183,10 @@
   {% endif %}
 </div>
 
-<form method="post" action="{{ url_for('admin_settings') }}" class="card process-settings" id="process-settings">
+<form method="post" action="{{ url_for('admin_settings') }}" class="card process-settings" id="process-settings" data-collapsible>
   <div class="toolbar">
     <h2 style="margin:0">Налаштування процесу</h2>
+    <span class="sec-summary muted">{{ APPROVAL_MODES[approval_mode.value].split(':')[0] }}</span>
   </div>
   <div class="budget-section-title">Порядок погодження заявок</div>
   {% for code, label in APPROVAL_MODES.items() %}
@@ -195,9 +206,10 @@
 </form>
 
 {% set es = expense_status %}
-<div class="card expense-status" id="expense-items">
+<div class="card expense-status" id="expense-items" data-collapsible>
   <div class="toolbar">
     <h2 style="margin:0">Довідник статей витрат</h2>
+    <span class="sec-summary muted">{{ es.count }} статей{% if es.updated %} · оновлено {{ es.updated.replace('T', ' ')[:16] }}{% endif %}</span>
     <span class="spacer"></span>
     <form method="post" action="{{ url_for('admin_expense_refresh') }}">
       <button type="submit" class="btn btn-sm">⟳ Оновити зараз</button>
@@ -296,6 +308,7 @@
 </script>
 <script type="application/json" id="budget-items">{{ budget_items | tojson }}</script>
 <script src="{{ url_for('static', filename='admin-budget.js') }}"></script>
+<script src="{{ url_for('static', filename='admin-sections.js') }}"></script>
 
 <dialog id="add-dialog">
   <form method="post" action="{{ url_for('admin_users_add') }}">

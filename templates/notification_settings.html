@@ -12,9 +12,43 @@
 
   <div class="notif-email">
     <span class="muted">Листи надходять на</span>
-    <strong>{{ user_email }}</strong>
-    <span class="muted">— адреса вашого робочого облікового запису</span>
+    <strong>{{ delivery }}</strong>
+    <span class="muted">— {{ 'адреса вашого робочого облікового запису' if delivery == user_email else 'підтверджена інша адреса' }}</span>
   </div>
+
+  {% if allow_custom %}
+  {% set alt = prefs.alt_email %}
+  <div class="notif-address" id="address">
+    <div class="budget-section-title" style="margin-top:0">Адреса для листів</div>
+    <label class="addr-option">
+      <input type="radio" name="target" value="work" form="addr-form" {{ 'checked' if not alt }}>
+      <span>Робоча пошта <span class="muted">({{ user_email }})</span></span>
+    </label>
+    <label class="addr-option">
+      <input type="radio" name="target" value="other" form="addr-form" id="addr-other" {{ 'checked' if alt }}>
+      <span>Інша адреса:</span>
+      <input type="email" name="alt_email" form="addr-form" id="addr-input" value="{{ alt }}" placeholder="name@example.com"
+             maxlength="254" autocomplete="email" aria-label="Інша адреса для сповіщень">
+    </label>
+    {% if alt %}
+    <div class="addr-status">
+      {% if prefs.alt_verified %}
+        <span class="badge green">✓ Підтверджено</span>
+      {% else %}
+        <span class="badge amber">Очікує підтвердження</span>
+        <span class="muted">лист надіслано на {{ alt }}{% if prefs.alt_sent_at %} · {{ prefs.alt_sent_at.replace('T', ' ')[:16] }}{% endif %}
+          · посилання діє {{ confirm_hours }} год</span>
+        <button type="submit" form="addr-form" name="action" value="resend" class="btn-link">Надіслати ще раз</button>
+      {% endif %}
+      <button type="submit" form="addr-form" name="action" value="clear" class="btn-link">Скасувати</button>
+    </div>
+    {% endif %}
+    <div class="form-actions" style="justify-content:flex-start;margin-top:10px">
+      <button type="submit" form="addr-form" name="action" value="save" class="btn btn-sm" id="addr-save">Зберегти адресу</button>
+      <span class="muted">Нова адреса почне діяти після переходу за посиланням з листа на неї.</span>
+    </div>
+  </div>
+  {% endif %}
 
   <label class="notif-master">
     <input type="checkbox" name="enabled" value="1" id="notif-enabled" {{ 'checked' if prefs.enabled }}>
@@ -41,7 +75,18 @@
     {% if prefs.updated_at %}<span class="muted">Збережено {{ prefs.updated_at.replace('T', ' ') }}</span>{% endif %}
   </div>
 </form>
+{% if allow_custom %}
+<form method="post" action="{{ url_for('notification_address') }}" id="addr-form" hidden></form>
+{% endif %}
 <script>
+  const addrInput = document.getElementById('addr-input');
+  if (addrInput) {
+    addrInput.addEventListener('focus', () => { document.getElementById('addr-other').checked = true; });
+    // Enter у полі — «Зберегти адресу» (а не перша кнопка форми, напр. «Надіслати ще раз»)
+    addrInput.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); document.getElementById('addr-save').click(); }
+    });
+  }
   document.getElementById('notif-enabled').addEventListener('change', e => {
     document.getElementById('notif-events').disabled = !e.target.checked;
   });

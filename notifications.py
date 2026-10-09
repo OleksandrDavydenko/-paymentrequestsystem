@@ -98,8 +98,10 @@ def _link(req):
 
 
 def _send(to, subject, template_args):
+    """to — робоча пошта одержувача; лист іде на підтверджену іншу адресу, якщо адмін це дозволив."""
     html = render_template("email/notification.html", **template_args)
-    mailer.enqueue(smtp_config(), to, subject, html)
+    address = user_prefs.delivery_address(to, app_settings.get("allow_custom_email"))
+    mailer.enqueue(smtp_config(), address, subject, html)
 
 
 def notify(event, req, actor, comment=""):

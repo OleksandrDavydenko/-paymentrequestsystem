@@ -573,8 +573,83 @@ def notification_settings(*, context):
         user_prefs.save(email, enabled, new_events)
         flash("Налаштування сповіщень збережено", "success")
         return redirect(url_for("notification_settings"))
+    allow_custom = app_settings.get("allow_custom_email")
     return render_template("notification_settings.html", user_name=g.user["name"], user_email=email,
-                           prefs=user_prefs.get(email), events=events, mail_enabled=notifications.enabled())
+                           prefs=user_prefs.get(email), events=events, mail_enabled=notifications.enabled(),
+                           allow_custom=allow_custom, delivery=user_prefs.delivery_address(email, allow_custom),
+                           confirm_hours=int(user_prefs.CONFIRM_TTL.total_seconds() // 3600))
+
+
+def _send_address_confirmation(email, alt_email):
+    """Лист з посиланням підтвердження на іншу адресу. Повертає None або текст помилки."""
+    token = user_prefs.set_alt(email, alt_email)
+    link = url_for("notification_address_confirm", token=token, _external=True)
+    base = os.environ.get("APP_BASE_URL", "").rstrip("/")
+    if base:
+        link = base + url_for("notification_address_confirm", token=token)
+    html = render_template("email/confirm_address.html", user_name=g.user["name"], login_email=email,
+                           alt_email=alt_email, link=link,
+                           hours=int(user_prefs.CONFIRM_TTL.total_seconds() // 3600))
+    return mailer.deliver(notifications.smtp_config(), alt_email, "Підтвердіть адресу для сповіщень — Система заявок на оплату", html)
+
+
+@app.route("/settings/notifications/address", methods=["POST"])
+@auth.login_required
+@requires()
+def notification_address(*, context):
+    email = g.user["email"]
+    back = redirect(url_for("notification_settings") + "#address")
+    if not app_settings.get("allow_custom_email"):
+        flash("Адміністратор не дозволив вказувати іншу пошту — листи надходять на робочу", "error")
+        return back
+    action = request.form.get("action")
+    if action == "clear" or (action == "save" and request.form.get("target") == "work"):
+        user_prefs.clear_alt(email)
+        flash(f"Листи надходитимуть на робочу пошту {email}", "success")
+        return back
+    if action == "resend":
+        alt_email = user_prefs.get(email)["alt_email"]
+    else:
+        alt_email = (request.form.get("alt_email") or "").strip()
+    if not alt_email or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", alt_email) or len(alt_email) > 254:
+        flash("Вкажіть коректну адресу пошти", "error")
+        return back
+    if alt_email.lower() == email.lower():
+        user_prefs.clear_alt(email)
+        flash("Це ваша робоча пошта — листи надходитимуть на неї", "success")
+        return back
+    prefs = user_prefs.get(email)
+    if prefs["alt_email"].lower() == alt_email.lower() and prefs["alt_verified"]:
+        flash("Цю адресу вже підтверджено", "success")
+        return back
+    if not notifications.enabled():
+        flash("Розсилку листів зараз вимкнено — лист підтвердження надіслати неможливо", "error")
+        return back
+    wait = user_prefs.resend_wait(email)
+    if wait:
+        flash(f"Лист підтвердження вже надіслано — повторити можна через {wait} с", "error")
+        return back
+    error = _send_address_confirmation(email, alt_email)
+    if error:
+        flash("Лист підтвердження не надіслано: " + error, "error")
+    else:
+        flash(f"На {alt_email} надіслано лист із посиланням для підтвердження. "
+              f"Доки адресу не підтверджено, листи надходять на {email}.", "success")
+    return back
+
+
+@app.route("/settings/notifications/confirm/<token>")
+@auth.login_required
+@requires()
+def notification_address_confirm(token, *, context):
+    email = g.user["email"]
+    alt_email = user_prefs.confirm_alt(email, token) if app_settings.get("allow_custom_email") else None
+    if alt_email:
+        flash(f"Адресу підтверджено — листи надходитимуть на {alt_email}", "success")
+    else:
+        flash("Посилання недійсне: воно протерміноване, вже використане або належить іншому користувачу. "
+              "Увійдіть тим обліковим записом, для якого вказували адресу, або надішліть лист ще раз.", "error")
+    return redirect(url_for("notification_settings") + "#address")
 
 
 @app.route("/admin/mail", methods=["POST"])
@@ -617,6 +692,7 @@ def admin_mail(*, context):
         flash("Щоб увімкнути розсилку, вкажіть SMTP-сервер і пошту відправника", "error")
         enabled = False
     app_settings.set("mail_enabled", enabled, who)
+    app_settings.set("allow_custom_email", f.get("allow_custom_email") == "1", who)
     flash("Налаштування пошти збережено" + (" — розсилку увімкнено" if enabled else " — розсилку вимкнено"),
           "success")
     return redirect(url_for("admin_users") + "#mail-settings")
@@ -846,7 +922,9 @@ def admin_users(*, context):
         expense_status=expense_items.status(),
         approval_mode=app_settings.info("approval_mode"),
         mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name", "smtp_host",
-                                                "smtp_port", "smtp_security", "smtp_username")},
+                                                "smtp_port", "smtp_security", "smtp_username",
+                                                "allow_custom_email")},
+        alt_addresses=user_prefs.confirmed_addresses() if app_settings.get("allow_custom_email") else {},
         mail_password=app_settings.info("smtp_password"),
         SMTP_PRESETS=mailer.PRESETS,
         SMTP_SECURITY=mailer.SECURITY,

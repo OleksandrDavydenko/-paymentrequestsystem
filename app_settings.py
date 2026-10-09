@@ -19,6 +19,7 @@ DEFAULTS = {
     "smtp_security": "starttls",
     "smtp_username": "",
     "smtp_password": "",  # зашифрований (secret_box)
+    "allow_custom_email": False,  # користувачі можуть вказати іншу пошту для сповіщень
 }
 
 _lock = threading.Lock()

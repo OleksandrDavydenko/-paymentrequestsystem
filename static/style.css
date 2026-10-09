@@ -569,3 +569,26 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .pass-btn { border: none; border-left: 1px solid var(--border); background: #f6f8fa; width: 38px; cursor: pointer; font-size: 15px; color: var(--muted); }
 .pass-btn:hover { background: #e8f1fb; color: var(--primary); }
 .pass-missing { color: #b3261e; font-weight: 600; }
+
+/* Згортання розділів адмінки */
+.sec-all { display: flex; justify-content: flex-end; gap: 4px; align-items: center; color: var(--muted); font-size: 13px; margin: -4px 0 8px; }
+.sec-all .btn-link { color: var(--primary); font-size: 13px; padding: 0; }
+.sec-all .btn-link:hover { text-decoration: underline; }
+.sec-head { cursor: pointer; user-select: none; }
+.sec-head > h1, .sec-head > h2 { display: inline-flex; align-items: center; gap: 8px; border-radius: 4px; }
+.sec-head > h1::before, .sec-head > h2::before { content: "▾"; font-size: .7em; color: var(--muted); width: 1em; transition: transform .15s; }
+.sec-head > h1:focus-visible, .sec-head > h2:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+.collapsed > .sec-head > h1::before, .collapsed > .sec-head > h2::before { transform: rotate(-90deg); }
+.sec-summary { display: none; }
+.card.collapsed > .sec-head { margin-bottom: 0; }
+.card.collapsed > .sec-head .sec-summary { display: inline; }
+.card.collapsed > :not(.sec-head) { display: none !important; }
+.alt-addr { font-size: 12px; color: var(--primary); }
+
+/* Інша пошта для сповіщень */
+.notif-address { border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; margin: 12px 0 16px; }
+.notif-address .addr-option { display: flex; gap: 10px; align-items: center; padding: 6px 0; cursor: pointer; flex-wrap: wrap; }
+.notif-address .addr-option input[type=email] { flex: 1; min-width: 220px; max-width: 360px; }
+.addr-status { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0 0 28px; font-size: 13px; }
+.addr-status .btn-link { color: var(--primary); font-size: 13px; padding: 0; }
+@media (max-width: 760px) { .addr-status { margin-left: 0; } }
