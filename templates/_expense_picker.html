@@ -21,7 +21,9 @@
     <ul class="exp-suggest" id="exp-suggest" role="listbox" hidden></ul>
   </div>
   {% else %}
-  <input type="text" value="{{ expense_name(req.expense_code) }}" readonly>
+  <input type="text" value="{{ expense_name(req.expense_code) }}" readonly
+         class="{{ 'exp-missing' if req.expense_code and '— немає в довіднику' in expense_name(req.expense_code) }}"
+         title="{{ 'Цієї статті немає в поточному довіднику Power BI (можливо, її видалили або змінили код)' if req.expense_code and '— немає в довіднику' in expense_name(req.expense_code) }}">
   {% endif %}
   {% if errors.expense_code %}<span class="err">{{ errors.expense_code }}</span>{% endif %}
 </div>

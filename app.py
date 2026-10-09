@@ -95,11 +95,11 @@ def _parse_ref(raw, ref):
 
 
 def expense_label(code):
-    """«Назва (код)» для статті витрат; невідомий код показуємо як є."""
+    """«Назва (код)» для статті витрат; код, якого немає в довіднику, позначаємо явно."""
     if not code:
         return ""
     name = expense_items.get_name(code)
-    return f"{name} ({code})" if name else code
+    return f"{name} ({code})" if name else f"{code} — немає в довіднику"
 
 
 def parse_request_form(form, current=None, allowed_codes=None):

@@ -255,5 +255,10 @@
   // Початковий стан
   const initial = BY_CODE.get(hidden.value);
   if (initial) select(initial, { save: false });
-  else if (hidden.value) { input.value = hidden.value; chip.hidden = clearBtn.hidden = false; chip.textContent = hidden.value; }
+  else if (hidden.value) {
+    input.value = hidden.value + ' — немає в довіднику';
+    input.title = 'Цієї статті немає в поточному довіднику. Оберіть актуальну статтю зі списку';
+    picker.classList.add('unmatched');
+    chip.hidden = clearBtn.hidden = false; chip.textContent = hidden.value;
+  }
 })();
