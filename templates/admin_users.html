@@ -165,7 +165,7 @@
       <tbody>
       {% for m in mail_log %}
         <tr><td>{{ m.at | dt }}</td><td>{{ m.to }}</td><td>{{ m.subject }}</td>
-            <td>{% if m.ok %}<span class="badge green">надіслано</span>{% else %}<span class="badge red" title="{{ m.error }}">помилка</span> <span class="muted">{{ m.error[:160] }}</span>{% endif %}</td></tr>
+            <td>{% if m.ok %}<span class="badge green">надіслано</span>{% else %}<span class="badge red" title="{{ m.error }}">помилка</span> <span class="muted">{{ m.error[:400] }}</span>{% endif %}</td></tr>
       {% endfor %}
       </tbody>
     </table>

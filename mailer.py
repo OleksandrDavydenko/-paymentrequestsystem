@@ -116,6 +116,11 @@ def _log(to, subject, error=None):
     LOG.appendleft({"at": clock.now(), "to": to, "subject": subject, "ok": error is None, "error": error})
 
 
+def log_problem(to, subject, error):
+    """Записати в журнал проблему, через яку лист не було сформовано (напр., не прочитано групу)."""
+    _log(to, subject, error)
+
+
 def deliver(cfg, to, subject, html):
     """Надіслати й записати в журнал. Повертає None або текст помилки."""
     try:

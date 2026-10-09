@@ -43,18 +43,24 @@ SUBJECTS = {
 role_members = lambda role: []  # noqa: E731
 _members_cache = {}
 MEMBERS_TTL = 600
+FAILED_TTL = 60  # після помилки пробуємо знову через хвилину, а не через 10
+MEMBERS_HINT = ("Щоб листи отримували погоджувачі, додатку потрібен дозвіл Microsoft Graph → "
+                "Application permissions → GroupMember.Read.All з Grant admin consent.")
 
 
 def cached_role_members(role):
     hit = _members_cache.get(role)
-    if hit and time.time() - hit[0] < MEMBERS_TTL:
+    if hit and time.time() - hit[0] < (MEMBERS_TTL if hit[2] else FAILED_TTL):
         return hit[1]
     try:
-        members = role_members(role)
-    except Exception:
+        members, ok = role_members(role), True
+    except Exception as e:
         logger.exception("Не вдалося отримати склад ролі %s", role)
-        members = hit[1] if hit else []
-    _members_cache[role] = (time.time(), members)
+        members, ok = (hit[1] if hit else []), False
+        # У журнал листів адмінки — інакше погоджувачі мовчки не отримують листів
+        mailer.log_problem(f"роль «{wf.ROLES.get(role, role)}»", "Не вдалося визначити одержувачів",
+                           f"{MEMBERS_HINT} ({e})")
+    _members_cache[role] = (time.time(), members, ok)
     return members
 
 
