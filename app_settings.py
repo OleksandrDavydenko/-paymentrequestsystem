@@ -11,6 +11,9 @@ import clock
 
 DEFAULTS = {
     "approval_mode": "sequential",
+    "mail_enabled": False,
+    "mail_sender": "",
+    "mail_sender_name": "Система заявок на оплату",
 }
 
 _lock = threading.Lock()

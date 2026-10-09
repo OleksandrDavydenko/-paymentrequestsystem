@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+
+{% block title %}Сповіщення на пошту{% endblock %}
+
+{% block content %}
+<form method="post" class="card notif-settings">
+  <h1>Сповіщення на пошту</h1>
+
+  {% if not mail_enabled %}
+  <div class="flash error">Розсилку листів зараз вимкнув адміністратор системи — налаштування збережуться і запрацюють, коли її увімкнуть.</div>
+  {% endif %}
+
+  <div class="notif-email">
+    <span class="muted">Листи надходять на</span>
+    <strong>{{ user_email }}</strong>
+    <span class="muted">— адреса вашого робочого облікового запису</span>
+  </div>
+
+  <label class="notif-master">
+    <input type="checkbox" name="enabled" value="1" id="notif-enabled" {{ 'checked' if prefs.enabled }}>
+    <span><strong>Отримувати листи</strong><span class="muted"> — вимкніть, щоб не отримувати жодних сповіщень</span></span>
+  </label>
+
+  <fieldset class="notif-events" id="notif-events" {{ 'disabled' if not prefs.enabled }}>
+    {% for group, title in [('author', 'Мої заявки'), ('approver', 'Погодження та оплата')] %}
+    {% set items = events | selectattr('2', 'equalto', group) | list %}
+    {% if items %}
+    <div class="budget-section-title">{{ title }}</div>
+    {% for code, label, _ in items %}
+    <label class="notif-event">
+      <input type="checkbox" name="events" value="{{ code }}" {{ 'checked' if prefs.events[code] }}>
+      <span>{{ label }}</span>
+    </label>
+    {% endfor %}
+    {% endif %}
+    {% endfor %}
+  </fieldset>
+
+  <div class="form-actions" style="justify-content:flex-start">
+    <button type="submit" class="btn btn-primary">Зберегти</button>
+    {% if prefs.updated_at %}<span class="muted">Збережено {{ prefs.updated_at.replace('T', ' ') }}</span>{% endif %}
+  </div>
+</form>
+<script>
+  document.getElementById('notif-enabled').addEventListener('change', e => {
+    document.getElementById('notif-events').disabled = !e.target.checked;
+  });
+</script>
+{% endblock %}

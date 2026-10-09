@@ -66,6 +66,12 @@ def group_members(token, group_id):
     return users
 
 
+def group_members_app(group_id):
+    """Члени групи з токеном самого додатку (application GroupMember.Read.All) — для розсилки."""
+    import mailer  # той самий client-credentials токен Graph
+    return group_members(mailer.app_token(), group_id)
+
+
 def search_users(token, query):
     query = query.replace('"', "").strip()
     if len(query) < 2:

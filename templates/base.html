@@ -42,6 +42,7 @@
           {% for code, label in ROLES.items() if code in roles %}<li>{{ label }}</li>{% endfor %}
         </ul>
         {% endif %}
+        {% if roles %}<a class="ud-link" href="{{ url_for('notification_settings') }}">✉ Сповіщення на пошту</a>{% endif %}
         <a class="btn btn-sm" href="{{ url_for('identity.logout') }}">Вийти</a>
       </div>
     </details>

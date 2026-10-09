@@ -14,6 +14,9 @@ import expense_items
 import app_settings
 import clock
 import graph
+import mailer
+import notifications
+import user_prefs
 import user_budget
 import mock_data as db
 import workflow as wf
@@ -226,6 +229,14 @@ def requires(*needed):
     return deco
 
 
+def _role_members(role):
+    gid = GROUPS.get(role)
+    return graph.group_members_app(gid) if gid else []
+
+
+notifications.role_members = _role_members
+
+
 @app.context_processor
 def inject_roles():
     roles = getattr(g, "roles", set())
@@ -367,6 +378,7 @@ def request_card(request_id=None, *, context):
             new_id = db.save_request(req)
             number = db.get_request(new_id)["number"]
             if action == "submit":
+                notifications.notify("submit", db.get_request(new_id), user)
                 flash(f"Заявку № {number} відправлено на погодження", "success")
                 return redirect(url_for("requests_list"))
             flash(f"Заявку № {number} записано", "success")
@@ -412,12 +424,14 @@ def request_action(request_id, *, context):
     req = _load_visible(request_id)
     action = request.form.get("action")
     try:
-        wf.apply_action(req, action, g.roles, g.user, request.form.get("comment"))
+        wf.apply_action(req, action, g.roles, g.user, request.form.get("comment"),
+                        mode=app_settings.get("approval_mode"))
     except wf.WorkflowError as e:
         flash(str(e), "error")
         session["draft_comment"] = request.form.get("comment", "")
         return redirect(url_for("request_card", request_id=request_id))
     db.save_request(req)
+    notifications.notify(action, req, g.user)
     flash(f"Заявка № {req['number']}: {wf.ACTIONS[action][1].lower()}", "success")
     return redirect(url_for("to_pay") if action == "pay" or request.form.get("next") == "to_pay"
                     else url_for("approvals"))
@@ -510,8 +524,75 @@ def request_comment(request_id, *, context):
         session["comment_draft"] = request.form.get("comment", "")
         return redirect(url_for("request_card", request_id=request_id) + "#comment")
     db.save_request(req)
+    notifications.notify("comment", req, g.user)
     flash("Коментар додано", "success")
     return redirect(url_for("request_card", request_id=request_id) + "#history")
+
+
+@app.route("/settings/notifications", methods=["GET", "POST"])
+@auth.login_required
+@requires()
+def notification_settings(*, context):
+    email = g.user["email"]
+    groups = []
+    if "initiator" in g.roles:
+        groups.append("author")
+    if g.roles & wf.APPROVER_ROLES:
+        groups.append("approver")
+    events = [(code, label, group) for code, (label, group, _) in user_prefs.EVENTS.items() if group in groups]
+    if request.method == "POST":
+        enabled = request.form.get("enabled") == "1"
+        prev = user_prefs.get(email)["events"]
+        chosen = set(request.form.getlist("events"))
+        # Коли листи вимкнено, поля неактивні й не надсилаються — зберігаємо попередній вибір
+        new_events = {code: (code in chosen) if enabled else prev[code] for code in user_prefs.EVENTS}
+        # Події не своєї ролі не чіпаємо
+        for code, (_, group, _) in user_prefs.EVENTS.items():
+            if group not in groups:
+                new_events[code] = prev[code]
+        user_prefs.save(email, enabled, new_events)
+        flash("Налаштування сповіщень збережено", "success")
+        return redirect(url_for("notification_settings"))
+    return render_template("notification_settings.html", user_name=g.user["name"], user_email=email,
+                           prefs=user_prefs.get(email), events=events, mail_enabled=notifications.enabled())
+
+
+@app.route("/admin/mail", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_mail(*, context):
+    sender = (request.form.get("mail_sender") or "").strip()
+    if sender and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", sender):
+        flash("Некоректна адреса відправника", "error")
+        return redirect(url_for("admin_users") + "#mail-settings")
+    enabled = request.form.get("mail_enabled") == "1"
+    if enabled and not sender:
+        flash("Щоб увімкнути розсилку, вкажіть пошту відправника", "error")
+        enabled = False
+    app_settings.set("mail_sender", sender, g.user["email"])
+    app_settings.set("mail_sender_name", (request.form.get("mail_sender_name") or "").strip()
+                     or app_settings.DEFAULTS["mail_sender_name"], g.user["email"])
+    app_settings.set("mail_enabled", enabled, g.user["email"])
+    flash("Налаштування пошти збережено" + (" — розсилку увімкнено" if enabled else " — розсилку вимкнено"),
+          "success")
+    return redirect(url_for("admin_users") + "#mail-settings")
+
+
+@app.route("/admin/mail/test", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_mail_test(*, context):
+    sender = app_settings.get("mail_sender")
+    to = g.user["email"]
+    html = render_template("email/test.html", user_name=g.user["name"], sender=sender)
+    error = mailer.deliver(sender, app_settings.get("mail_sender_name"), to,
+                           "Тестовий лист — Система заявок на оплату", html) if sender \
+        else "Спочатку вкажіть і збережіть пошту відправника"
+    if error:
+        flash("Тестовий лист не надіслано: " + error, "error")
+    else:
+        flash(f"Тестовий лист надіслано на {to} від {sender}. Перевірте пошту.", "success")
+    return redirect(url_for("admin_users") + "#mail-settings")
 
 
 @app.route("/admin/settings", methods=["POST"])
@@ -539,11 +620,12 @@ def admin_change_status(request_id, *, context):
     new_status = request.form.get("status", "")
     try:
         wf.admin_set_status(req, new_status, g.user, request.form.get("comment"))
+        db.save_request(req)
+        notifications.notify("admin_status", req, g.user)
     except wf.WorkflowError as e:
         flash(str(e), "error")
         session["admin_comment"] = request.form.get("comment", "")
         return redirect(url_for("request_card", request_id=request_id) + "#admin-status")
-    db.save_request(req)
     flash(f"Заявка № {req['number']}: статус змінено на «{wf.STATUSES[new_status][0]}»", "success")
     return redirect(url_for("request_card", request_id=request_id))
 
@@ -653,6 +735,7 @@ def to_pay_bulk(*, context):
             skipped.append(req["number"])
             continue
         db.save_request(req)
+        notifications.notify("pay", req, g.user)
         paid.append(req["number"])
     if paid:
         flash(f"Позначено оплаченими: {', '.join('№ ' + n for n in paid)}", "success")
@@ -701,6 +784,8 @@ def admin_users(*, context):
         me_oid=g.user["oid"],
         expense_status=expense_items.status(),
         approval_mode=app_settings.info("approval_mode"),
+        mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name")},
+        mail_log=list(mailer.LOG)[:20],
         APPROVAL_MODES=wf.APPROVAL_MODES,
         budgets={uid: user_budget.get(uid) for uid in users},
         budget_summary=user_budget.summary,

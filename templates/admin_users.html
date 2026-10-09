@@ -84,6 +84,46 @@
   </div>
 </div>
 
+<div class="card mail-settings" id="mail-settings">
+  <div class="toolbar">
+    <h2 style="margin:0">Email-сповіщення</h2>
+    <span class="badge {{ 'green' if mail.mail_enabled else 'grey' }}">{{ 'Увімкнено' if mail.mail_enabled else 'Вимкнено' }}</span>
+  </div>
+  <form method="post" action="{{ url_for('admin_mail') }}" class="mail-form">
+    <label class="notif-master">
+      <input type="checkbox" name="mail_enabled" value="1" {{ 'checked' if mail.mail_enabled }}>
+      <span><strong>Розсилка увімкнена</strong><span class="muted"> — якщо вимкнути, листи не отримує ніхто</span></span>
+    </label>
+    <div class="mail-grid">
+      <label for="mail_sender">Пошта відправника</label>
+      <input type="email" id="mail_sender" name="mail_sender" value="{{ mail.mail_sender }}" placeholder="noreply@ftpua.com">
+      <label for="mail_sender_name">Ім'я відправника</label>
+      <input type="text" id="mail_sender_name" name="mail_sender_name" value="{{ mail.mail_sender_name }}">
+    </div>
+    <p class="muted">Листи надсилаються через Microsoft Graph від імені додатку зі вказаної скриньки (рекомендовано спільну скриньку).
+      Користувачі вибирають події в меню «✉ Сповіщення на пошту».</p>
+    <div class="mail-actions">
+      <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+      <button type="submit" class="btn btn-sm" formaction="{{ url_for('admin_mail_test') }}" {{ 'disabled' if not mail.mail_sender }}
+              title="Лист прийде на вашу адресу">✉ Надіслати тестовий лист собі</button>
+    </div>
+  </form>
+  {% if mail_log %}
+  <details class="mail-log">
+    <summary>Останні листи ({{ mail_log | length }})</summary>
+    <table>
+      <thead><tr><th>Час</th><th>Кому</th><th>Тема</th><th>Результат</th></tr></thead>
+      <tbody>
+      {% for m in mail_log %}
+        <tr><td>{{ m.at | dt }}</td><td>{{ m.to }}</td><td>{{ m.subject }}</td>
+            <td>{% if m.ok %}<span class="badge green">надіслано</span>{% else %}<span class="badge red" title="{{ m.error }}">помилка</span> <span class="muted">{{ m.error[:160] }}</span>{% endif %}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  </details>
+  {% endif %}
+</div>
+
 <form method="post" action="{{ url_for('admin_settings') }}" class="card process-settings" id="process-settings">
   <div class="toolbar">
     <h2 style="margin:0">Налаштування процесу</h2>

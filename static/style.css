@@ -532,3 +532,22 @@ input.exp-missing { color: #8a4b00; background: #fff8ec; border-color: #f3d19c; 
   border-radius: 0 5px 5px 0; cursor: pointer; }
 .exp-open:hover { background: #e8f1fb; color: var(--primary); }
 .exp-open:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+/* ---------- Email-сповіщення ---------- */
+.ud-link { display: block; color: var(--text) !important; text-decoration: none; padding: 6px 0; margin-bottom: 8px; font-size: 13px; }
+.ud-link:hover { color: var(--primary) !important; }
+.mail-settings { margin-top: 16px; }
+.mail-grid { display: grid; grid-template-columns: 160px minmax(0, 420px); gap: 8px 12px; align-items: center; margin: 12px 0; }
+.mail-grid label { color: var(--muted); }
+.mail-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.mail-log { margin-top: 14px; font-size: 13px; }
+.mail-log summary { cursor: pointer; color: var(--primary); }
+.mail-log table { margin-top: 8px; }
+.notif-settings { max-width: 760px; }
+.notif-email { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin: 4px 0 16px; padding: 10px 12px; background: #f6f8fa; border-radius: 6px; }
+.notif-master { display: flex; gap: 10px; align-items: flex-start; padding: 10px 0; cursor: pointer; }
+.notif-master input, .notif-event input { width: 18px; height: 18px; margin-top: 1px; flex-shrink: 0; }
+.notif-events { border: none; padding: 0; margin: 0; }
+.notif-events:disabled { opacity: .5; }
+.notif-event { display: flex; gap: 10px; align-items: center; padding: 7px 0; cursor: pointer; border-bottom: 1px solid #f1f3f5; }
+@media (max-width: 760px) { .mail-grid { grid-template-columns: 1fr; } }

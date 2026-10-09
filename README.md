@@ -110,3 +110,23 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 - Якщо секрет потрапив у коміт, чат чи пошту — одразу замініть його (App registration → Certificates & secrets →
   New client secret, оновити `CLIENT_SECRET` в App Service і `.env`, видалити старий). Видалення з історії git
   не допомагає, якщо репозиторій уже був публічним.
+
+## Email-сповіщення
+Листи надсилаються через Microsoft Graph `sendMail` від імені додатку (без паролів і SMTP)
+зі скриньки, вказаної в «Адмініструванні → Email-сповіщення». Там же — тестовий лист і журнал останніх листів.
+Користувачі вибирають події в меню «✉ Сповіщення на пошту» (`data/user_prefs.json`, на Azure — `/home/data/`).
+
+Налаштування (одноразово):
+1. Спільна скринька, напр. `noreply@ftpua.com` (Exchange admin center → Recipients → Mailboxes → Add a shared mailbox).
+2. App registration → API permissions → Microsoft Graph → **Application**: `Mail.Send`, `GroupMember.Read.All`
+   → Grant admin consent.
+3. Обмежити `Mail.Send` лише цією скринькою (Exchange Online PowerShell):
+   ```powershell
+   Connect-ExchangeOnline
+   New-DistributionGroup -Name "PRS Mail Senders" -Type Security -Members noreply@ftpua.com
+   New-ApplicationAccessPolicy -AppId <CLIENT_ID> -PolicyScopeGroupId "PRS Mail Senders" -AccessRight RestrictAccess -Description "PRS: only noreply"
+   Test-ApplicationAccessPolicy -AppId <CLIENT_ID> -Identity noreply@ftpua.com
+   ```
+4. В адмінці вказати пошту відправника → «Надіслати тестовий лист собі» → увімкнути розсилку.
+
+`APP_BASE_URL` (необов'язково) — адреса сайту для посилань у листах, напр. власний домен.
