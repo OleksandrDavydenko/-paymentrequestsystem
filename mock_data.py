@@ -208,6 +208,76 @@ _participant(2, _ME, _OTHER)
 _participant(4, _OTHER, _ME)
 
 
+# ---------------------------------------------------------------- демо-заявки на справжніх довідниках
+
+def _realize_demo():
+    """Коли довідники з 1С підключені (Power BI), демо-заявки отримують справжні організації, контрагентів,
+    статті витрат, відділи й види оплати — щоб на сайті все виглядало як у роботі. Без Power BI
+    (локально, у тестах) — лишаються мокові. Вибір стабільний: однаковий після кожного перезапуску."""
+    import random
+
+    import counterparties
+    import departments
+    import expense_items
+    import org_structure
+    import organizations
+    import payment_types
+
+    if not expense_items._configured():
+        return
+    rng = random.Random(2026)
+    clean = lambda name: name and not name.startswith(("-", "(", "*")) and "test" not in name.lower()         and "тест" not in name.lower()
+
+    # Організації: мокові 1–3 — резиденти, 4 — нерезидент; ФОП Коваленко — по змозі справжній ФОП
+    orgs = [o for o in organizations.get_all() if o["code"] in organizations.options() and clean(o["name"])]
+    res = sorted((o for o in orgs if o["resident"]), key=lambda o: o["name"])
+    nonres = sorted((o for o in orgs if not o["resident"]), key=lambda o: o["name"])
+    fop = [o for o in res if "фоп" in o["name"].lower()] or res
+    if not res or not nonres:
+        return
+    companies = [o for o in res if "фоп" not in o["name"].lower()] or res
+    pair = rng.sample(companies, 2) if len(companies) > 1 else companies * 2
+    org_map = {"1": pair[0]["code"], "2": pair[1]["code"], "3": rng.choice(fop)["code"], "4": rng.choice(nonres)["code"]}
+
+    # Контрагенти: 5 — нерезидент, решта — українські юрособи з коректним ЄДРПОУ
+    cps = [c for c in counterparties.onec_items() if clean(c["name"])]
+    cp_res = sorted((c for c in cps if c["resident"] and len(c["edrpou"]) == 8), key=lambda c: c["id"])
+    cp_non = sorted((c for c in cps if not c["resident"]), key=lambda c: c["id"])
+    if len(cp_res) < 5 or not cp_non:
+        return
+    picked = rng.sample(cp_res, 5)
+    cp_map = {"1": picked[0]["id"], "2": picked[1]["id"], "3": picked[2]["id"], "4": picked[3]["id"],
+              "6": picked[4]["id"], "5": rng.choice(cp_non)["id"]}
+
+    # Статті витрат, відділи, види оплати
+    items = sorted(expense_items.get_items(), key=lambda i: i["code"])
+    exp_codes = sorted(set(_EXP.values()))
+    exp_map = dict(zip(exp_codes, (i["code"] for i in rng.sample(items, min(len(items), len(exp_codes))))))         if items else {}
+    deps = [d["code"] for d in departments.get_departments()]
+    my_dep = next((u.get("department") for u in org_structure._load()["users"].values()
+                   if (u.get("email") or "").lower() == _ME[0] and u.get("department") in deps), None)
+    dep_map = {"BA": my_dep or (rng.choice(deps) if deps else None), "LOG": rng.choice(deps) if deps else None}
+    ptypes = [t["id"] for t in payment_types.types()]
+
+    for r in _REQUESTS.values():
+        r["organization_id"] = org_map.get(r["organization_id"], r["organization_id"])
+        r["counterparty_id"] = cp_map.get(r["counterparty_id"], r["counterparty_id"])
+        r["expense_code"] = exp_map.get(r["expense_code"], r["expense_code"])
+        if r.get("department") in dep_map:
+            r["department"] = dep_map[r["department"]]
+        if r.get("payment_account_id"):
+            r["payment_account_id"] = rng.choice(ptypes) if ptypes else None
+    for inv in INVOICES:
+        inv["counterparty_id"] = cp_map.get(inv["counterparty_id"], inv["counterparty_id"])
+
+
+try:
+    _realize_demo()
+except Exception:  # довідники недоступні — лишаємо мокові демо-дані
+    import logging
+    logging.getLogger(__name__).exception("Не вдалося підставити справжні довідники в демо-заявки")
+
+
 def list_requests(author_email, status=None):
     rows = [
         r for r in _REQUESTS.values()
