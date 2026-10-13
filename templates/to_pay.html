@@ -135,7 +135,7 @@
           {% if overdue %}<span class="badge red">прострочено</span>{% elif due_today %}<span class="badge amber">сьогодні</span>{% endif %}
         </td>
         <td data-label="Організація">{{ org_name(r.organization_id) }}</td>
-        <td data-label="Контрагент">{{ COUNTERPARTIES.get(r.counterparty_id, '') }}{% if cp_pending(r.counterparty_id) %}
+        <td data-label="Контрагент">{{ cp_name(r.counterparty_id) }}{% if cp_pending(r.counterparty_id) %}
           <span class="badge amber" title="Контрагента ще немає в 1С{{ ' — оплату заблоковано' if pending_cp_mode == 'block' }}">новий</span>{% endif %}</td>
         <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>

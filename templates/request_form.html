@@ -278,16 +278,22 @@
     <dd><span>{{ value }}</span> <button type="button" class="btn-link cp-copy" data-copy="{{ value }}" title="Скопіювати">⧉</button></dd>
     {% endfor %}
   </dl>
-  <form method="post" action="{{ url_for('counterparty_link', cp_id=cp.id) }}" class="cp-link-form">
+  <form method="post" action="{{ url_for('counterparty_check', cp_id=cp.id) }}" class="cp-link-form">
     <input type="hidden" name="next" value="{{ url_for('request_card', request_id=req.id) }}">
-    <label for="cp-link-select">Прив'язати до контрагента з 1С</label>
-    <select name="onec_id" id="cp-link-select" required>
-      <option value="">— оберіть —</option>
-      {% for c in onec_counterparties %}
-      <option value="{{ c.id }}" {{ 'selected' if c.id == cp_suggested }}>{{ c.name }}{{ ' · ' ~ c.edrpou if c.edrpou }}</option>
-      {% endfor %}
-    </select>
-    <button type="submit" class="btn btn-primary btn-sm">Прив'язати</button>
+    <button type="submit" class="btn btn-primary btn-sm" {{ 'disabled' if not cp.edrpou }}>⟳ Перевірити в 1С зараз</button>
+    <span class="muted">{% if cp.edrpou %}Шукає в 1С контрагента з ЄДРПОУ {{ cp.edrpou }} і прив'язує його — одразу після того, як його завели в 1С.{% else %}ЄДРПОУ не вказано — знайдіть контрагента в 1С вручну нижче.{% endif %}</span>
+  </form>
+  <form method="post" action="{{ url_for('counterparty_link', cp_id=cp.id) }}" class="cp-link-form cp-manual" autocomplete="off">
+    <input type="hidden" name="next" value="{{ url_for('request_card', request_id=req.id) }}">
+    <input type="hidden" name="onec_id" id="cp-link-id" value="{{ cp_suggested.id if cp_suggested else '' }}">
+    <label for="cp-link-search">Або прив'язати вручну:</label>
+    <div class="cp-link-search-wrap">
+      <input type="search" id="cp-link-search" placeholder="Пошук у 1С: назва або ЄДРПОУ…"
+             value="{{ cp_suggested.name ~ ' · ' ~ cp_suggested.edrpou if cp_suggested else '' }}"
+             data-url="{{ url_for('counterparties_search', scope='onec', limit=10) }}">
+      <ul class="search-results" id="cp-link-results" hidden></ul>
+    </div>
+    <button type="submit" class="btn btn-sm" id="cp-link-submit" {{ 'disabled' if not cp_suggested }}>Прив'язати</button>
     {% if cp_suggested %}<span class="muted">Знайдено збіг за ЄДРПОУ — перевірте й підтвердьте</span>{% endif %}
   </form>
 </div>
@@ -471,7 +477,7 @@ if (document.getElementById('add-line')) {
   document.getElementById('add-line').onclick = () => addLine().querySelector('input').focus();
   document.getElementById('pick-invoices').onclick = () => {
     const cpHidden = document.getElementById('counterparty_id');
-    const cp = Number(cpHidden.value);
+    const cp = cpHidden.value;
     if (!cp) { alert('Спочатку оберіть контрагента'); document.getElementById('cp-input').focus(); return; }
     const added = new Set(rows().map(tr => tr.querySelector('[name$="-invoice"]').value));
     const list = INVOICES.filter(inv => inv.counterparty_id === cp);
@@ -503,6 +509,41 @@ if (document.getElementById('add-line')) {
 }
 
 refresh();
+
+// Прив'язка тимчасового контрагента: пошук у 1С
+(function () {
+  const input = document.getElementById('cp-link-search');
+  if (!input) return;
+  const hidden = document.getElementById('cp-link-id'), list = document.getElementById('cp-link-results');
+  const submit = document.getElementById('cp-link-submit');
+  let timer;
+  input.addEventListener('input', () => {
+    hidden.value = ''; submit.disabled = true;
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2) { list.hidden = true; return; }
+    timer = setTimeout(async () => {
+      const data = await (await fetch(input.dataset.url + '&q=' + encodeURIComponent(q))).json();
+      list.innerHTML = '';
+      if (!data.items.length) list.innerHTML = '<li class="muted">У 1С не знайдено</li>';
+      data.items.forEach(c => {
+        const li = document.createElement('li');
+        li.innerHTML = '<strong></strong> <span class="muted"></span>';
+        li.children[0].textContent = c.name;
+        li.children[1].textContent = c.edrpou ? 'ЄДРПОУ ' + c.edrpou : '';
+        li.addEventListener('mousedown', e => {
+          e.preventDefault();
+          hidden.value = c.id; input.value = c.name + (c.edrpou ? ' · ' + c.edrpou : '');
+          submit.disabled = false; list.hidden = true;
+        });
+        list.appendChild(li);
+      });
+      list.hidden = false;
+    }, 250);
+  });
+  input.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  input.addEventListener('blur', () => setTimeout(() => { list.hidden = true; }, 150));
+})();
 
 document.querySelectorAll('.cp-copy').forEach(b => b.addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✓'; setTimeout(() => { b.textContent = '⧉'; }, 1200); }

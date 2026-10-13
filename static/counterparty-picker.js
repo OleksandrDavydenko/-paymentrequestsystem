@@ -1,55 +1,38 @@
-// Вибір контрагента в картці заявки.
+// Вибір контрагента в картці заявки. Довідник великий (десятки тисяч з 1С) — пошук на сервері.
 // 1) Поле з підказками: назва або ЄДРПОУ — до 10 збігів, ↑↓/Enter/Esc.
 // 2) «☰» — вікно довідника: пошук, фільтри, «Нещодавні», «+ Новий контрагент» (якого ще немає в 1С).
 (function () {
-  const ITEMS = JSON.parse(document.getElementById('cp-items-data').textContent || '[]');
-  const RECENT_KEY = 'counterparty-recent';
-  const MAX_SUGGEST = 10, MAX_LIST = 500;
-  let filter = '';
-
   const $ = id => document.getElementById(id);
   const picker = $('cp-picker'), hidden = $('counterparty_id'), input = $('cp-input'), chip = $('cp-chip');
   const clearBtn = $('cp-clear'), suggest = $('cp-suggest'), dialog = $('cp-dialog');
   const dInput = $('cp-dialog-input'), dList = $('cp-dialog-list'), dCount = $('cp-dialog-count');
   const recentBox = $('cp-recent'), recentList = $('cp-recent-list');
   const listView = $('cp-list-view'), newView = $('cp-new-view');
+  const SEARCH_URL = picker.dataset.searchUrl;
+  const RECENT_KEY = 'counterparty-recent-v2';
+  let filter = '';
 
-  const norm = s => (s || '').toLowerCase().replace(/[ʼ’`]/g, "'").replace(/[«»"]/g, '').replace(/\s+/g, ' ').trim();
-  const compact = s => (s || '').replace(/\s+/g, '');
-  const index = i => { i._name = norm(i.name); };
-  ITEMS.forEach(index);
-  const byId = id => ITEMS.find(i => String(i.id) === String(id));
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-
-  function search(query, limit) {
-    const q = norm(query), qc = compact(query);
-    const pass = i => !filter || (filter === 'pending' ? i.pending : filter === 'resident' ? i.resident : !i.resident);
-    const rows = ITEMS.filter(pass);
-    if (!q) return rows.slice(0, limit);
-    const tokens = q.split(' ');
-    const found = [];
-    for (const i of rows) {
-      let rank = 9;
-      if (i.edrpou && i.edrpou === qc) rank = 0;
-      else if (i.edrpou && qc.length > 2 && i.edrpou.startsWith(qc)) rank = 2;
-      else if (tokens.every(t => i._name.includes(t))) rank = i._name.startsWith(q) ? 3 : 4;
-      if (rank < 9) found.push([rank, i]);
-    }
-    found.sort((a, b) => a[0] - b[0] || a[1].name.localeCompare(b[1].name, 'uk'));
-    return found.slice(0, limit).map(f => f[1]);
-  }
-
   const meta = i => [i.edrpou ? (i.resident ? 'ЄДРПОУ ' : '№ ') + esc(i.edrpou) : '', !i.resident && i.country ? esc(i.country) : '']
     .filter(Boolean).join(' · ');
   const badge = i => i.pending ? '<span class="cp-new-chip">новий</span>' : (i.resident ? '' : '<span class="exp-kind exp-kind-allocated">нерезидент</span>');
 
+  // Запит до сервера; відповіді, що запізнилися, відкидаються
+  let seq = 0;
+  async function search(q, { kind = '', limit = 10 } = {}) {
+    const my = ++seq;
+    const url = `${SEARCH_URL}?q=${encodeURIComponent(q)}&kind=${kind}&limit=${limit}`;
+    const data = await (await fetch(url, { headers: { 'X-Requested-With': 'fetch' } })).json();
+    return my === seq ? data : null;
+  }
+
   // ---------- вибір ----------
   function recent() {
-    try { return (JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') || []).filter(id => byId(id)); }
+    try { return (JSON.parse(localStorage.getItem(RECENT_KEY) || '[]') || []).filter(x => x && x.id); }
     catch (e) { return []; }
   }
-  function remember(id) {
-    try { localStorage.setItem(RECENT_KEY, JSON.stringify([id, ...recent().filter(x => String(x) !== String(id))].slice(0, 5))); }
+  function remember(item) {
+    try { localStorage.setItem(RECENT_KEY, JSON.stringify([item, ...recent().filter(x => x.id !== item.id)].slice(0, 6))); }
     catch (e) { /* приватний режим */ }
   }
   function select(item, { save = true } = {}) {
@@ -60,18 +43,16 @@
     clearBtn.hidden = !item;
     picker.classList.toggle('has-value', !!item);
     picker.classList.remove('invalid', 'unmatched');
-    if (item && save) remember(item.id);
+    if (item && save) remember(item);
     closeSuggest();
     hidden.dispatchEvent(new Event('change', { bubbles: true }));
   }
 
   // ---------- підказки під полем ----------
-  let active = -1, current = [];
+  let active = -1, current = [], timer;
   function closeSuggest() { suggest.hidden = true; input.setAttribute('aria-expanded', 'false'); active = -1; }
-  function renderSuggest() {
-    const saved = filter; filter = '';
-    current = search(input.value, MAX_SUGGEST);
-    filter = saved;
+  function renderSuggest(items) {
+    current = items;
     suggest.innerHTML = '';
     if (!current.length) suggest.innerHTML = '<li class="exp-empty">Не знайдено. Відкрийте довідник ☰ — там можна внести нового контрагента</li>';
     current.forEach((item, idx) => {
@@ -85,18 +66,26 @@
     suggest.hidden = false;
     input.setAttribute('aria-expanded', 'true');
   }
+  function querySuggest() {
+    clearTimeout(timer);
+    const q = input.value.trim();
+    if (q.length < 2) { closeSuggest(); return; }
+    timer = setTimeout(async () => {
+      try { const data = await search(q, { limit: 10 }); if (data) renderSuggest(data.items); }
+      catch (e) { /* мережа — спробує на наступному введенні */ }
+    }, 200);
+  }
   input.addEventListener('input', () => {
     if (hidden.value) { hidden.value = ''; chip.hidden = clearBtn.hidden = true; picker.classList.remove('has-value'); }
     picker.classList.toggle('unmatched', !!input.value.trim());
     active = -1;
-    if (input.value.trim()) renderSuggest(); else closeSuggest();
+    querySuggest();
   });
   input.addEventListener('blur', () => setTimeout(closeSuggest, 120));
   input.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
       e.preventDefault();
-      if (suggest.hidden) renderSuggest();
-      if (!current.length) return;
+      if (!current.length || suggest.hidden) return;
       active = (active + (e.key === 'ArrowDown' ? 1 : -1) + current.length) % current.length;
       [...suggest.querySelectorAll('.exp-option')].forEach((li, i) => li.classList.toggle('active', i === active));
     } else if (e.key === 'Enter') {
@@ -107,13 +96,12 @@
   clearBtn.addEventListener('click', () => { select(null); input.focus(); });
 
   // ---------- вікно довідника ----------
-  let dActive = -1, dRows = [];
+  let dActive = -1, dRows = [], dTimer;
   function renderRecent() {
-    const ids = dInput.value.trim() || filter ? [] : recent();
-    recentBox.hidden = !ids.length;
+    const items = dInput.value.trim() || filter ? [] : recent();
+    recentBox.hidden = !items.length;
     recentList.innerHTML = '';
-    ids.forEach(id => {
-      const item = byId(id);
+    items.forEach(item => {
       const b = document.createElement('button');
       b.type = 'button';
       b.className = 'exp-recent-chip';
@@ -122,21 +110,33 @@
       recentList.appendChild(b);
     });
   }
-  function renderDialog() {
-    const all = search(dInput.value, Infinity);
-    dRows = all.slice(0, MAX_LIST);
-    dCount.textContent = (dInput.value.trim() || filter) ? `Знайдено ${all.length} з ${ITEMS.length}` : `Усього ${ITEMS.length}`;
+  function renderRows(data) {
+    dRows = data.items;
+    const q = dInput.value.trim();
+    dCount.textContent = data.total > dRows.length ? `Показано ${dRows.length} з ${data.total} — уточніть пошук`
+      : (q || filter ? `Знайдено ${data.total}` : '');
     dList.innerHTML = dRows.length ? '' : '<div class="exp-empty">Не знайдено. Якщо контрагента ще немає в 1С — натисніть «+ Новий контрагент»</div>';
     dRows.forEach((item, idx) => {
       const row = document.createElement('div');
       row.role = 'option';
-      row.className = 'exp-row cp-row' + (String(item.id) === hidden.value ? ' selected' : '') + (idx === dActive ? ' active' : '');
+      row.className = 'exp-row cp-row' + (item.id === hidden.value ? ' selected' : '') + (idx === dActive ? ' active' : '');
       row.dataset.idx = idx;
       row.innerHTML = `<span class="exp-name">${esc(item.name)}</span><span class="cp-meta muted">${meta(item)}</span>${badge(item)}`;
       row.addEventListener('click', () => choose(item));
       dList.appendChild(row);
     });
     renderRecent();
+  }
+  function loadDialog(delay = 200) {
+    clearTimeout(dTimer);
+    dTimer = setTimeout(async () => {
+      try {
+        const data = await search(dInput.value.trim(), { kind: filter, limit: 100 });
+        if (data) renderRows(data);
+      } catch (e) {
+        dList.innerHTML = '<div class="exp-empty">Не вдалося завантажити довідник — перевірте з\'єднання</div>';
+      }
+    }, delay);
   }
   function setDialogActive(idx) {
     dActive = idx;
@@ -153,15 +153,17 @@
     dInput.value = hidden.value ? '' : input.value;
     dActive = -1;
     showList();
-    renderDialog();
+    dList.innerHTML = '<div class="exp-empty">Завантаження…</div>';
+    renderRecent();
     dialog.showModal();
     dInput.focus();
+    loadDialog(0);
   });
-  dInput.addEventListener('input', () => { dActive = -1; renderDialog(); dList.scrollTop = 0; });
+  dInput.addEventListener('input', () => { dActive = -1; loadDialog(); dList.scrollTop = 0; });
   dialog.querySelectorAll('.exp-kind-filter .chip').forEach(btn => btn.addEventListener('click', () => {
     filter = btn.dataset.filter;
     dialog.querySelectorAll('.exp-kind-filter .chip').forEach(b => b.classList.toggle('active', b === btn));
-    dActive = -1; renderDialog(); dInput.focus();
+    dActive = -1; loadDialog(0); dInput.focus();
   }));
   dInput.addEventListener('keydown', e => {
     if (e.key === 'ArrowDown') { e.preventDefault(); setDialogActive(Math.min(dActive + 1, dRows.length - 1)); }
@@ -177,8 +179,10 @@
   function syncKind() {
     const res = isResident();
     dialog.querySelectorAll('.cp-nonres').forEach(el => { el.hidden = res; });
-    $('cp-new-edrpou-label').textContent = res ? 'ЄДРПОУ / ІПН' : 'Реєстраційний номер';
-    f('edrpou').placeholder = res ? '8 цифр (ФОП — 10)' : 'номер у реєстрі країни';
+    $('cp-new-edrpou-label').textContent = res ? 'ЄДРПОУ / ІПН *' : 'Реєстраційний номер';
+    $('cp-new-edrpou-hint').textContent = res ? 'Обов\'язково: 8 цифр для ТОВ та інших юросіб, 10 цифр (ІПН) для ФОП і фізосіб'
+      : 'Необов\'язково — номер компанії в реєстрі її країни';
+    f('edrpou').placeholder = res ? '8 цифр (ФОП, фізособи — 10)' : 'необов\'язково';
     f('edrpou').inputMode = res ? 'numeric' : 'text';
   }
   dialog.querySelectorAll('input[name=cp-new-resident]').forEach(r => r.addEventListener('change', syncKind));
@@ -190,22 +194,16 @@
   $('cp-new-open').addEventListener('click', () => {
     listView.hidden = true; newView.hidden = false;
     clearErrors();
-    // Якщо в пошуку були цифри — це, мабуть, ЄДРПОУ; інакше — назва
-    const q = dInput.value.trim();
+    const q = dInput.value.trim();  // цифри в пошуку — мабуть, ЄДРПОУ; інакше — назва
     if (/^\d{8,10}$/.test(q)) f('edrpou').value = q; else if (q && !f('name').value) f('name').value = q;
     syncKind();
-    (f('edrpou').value ? f('name') : f('edrpou')).focus();
+    (isResident() && !f('edrpou').value ? f('edrpou') : f('name')).focus();
   });
   $('cp-new-back').addEventListener('click', showList);
-  // Enter у полях нового контрагента не відправляє форму заявки
   newView.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.tagName !== 'TEXTAREA') { e.preventDefault(); $('cp-new-save').click(); } });
 
   let duplicate = null;
-  $('cp-duplicate-pick').addEventListener('click', () => {
-    let item = duplicate && byId(duplicate.id);
-    if (!item && duplicate) { item = { ...duplicate, resident: true, country: '' }; index(item); ITEMS.push(item); }
-    if (item) choose(item);
-  });
+  $('cp-duplicate-pick').addEventListener('click', () => { if (duplicate) choose(duplicate); });
   $('cp-new-save').addEventListener('click', async () => {
     clearErrors();
     const btn = $('cp-new-save');
@@ -225,8 +223,6 @@
           + data.duplicate.name + (data.duplicate.edrpou ? ' · ' + data.duplicate.edrpou : '') + '.';
         $('cp-duplicate').hidden = false;
       } else if (data.item) {
-        index(data.item);
-        ITEMS.push(data.item);
         ['edrpou', 'country', 'name', 'note'].forEach(k => { f(k).value = ''; });
         choose(data.item);
       }
@@ -239,11 +235,11 @@
 
   // Перед відправкою: введений, але не вибраний текст — підсвітити поле
   input.form.addEventListener('submit', e => {
-    if (!hidden.value && input.value.trim()) { e.preventDefault(); picker.classList.add('invalid'); input.focus(); renderSuggest(); }
+    if (!hidden.value && input.value.trim()) { e.preventDefault(); picker.classList.add('invalid'); input.focus(); querySuggest(); }
   });
 
   // Початковий стан
-  const initial = byId(hidden.value);
+  const initial = JSON.parse($('cp-initial').textContent || 'null');
   if (initial) select(initial, { save: false });
   else if (hidden.value) {
     input.value = picker.dataset.initialName || ('#' + hidden.value);

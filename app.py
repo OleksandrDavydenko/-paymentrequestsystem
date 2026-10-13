@@ -75,10 +75,12 @@ def inject_refs():
         "ORG_OPTIONS": organizations.options(),
         "ORG_FILTER": organizations.filter_options(),
         "org_name": organizations.name,
-        "COUNTERPARTIES": counterparties.names(),
+        "cp_name": counterparties.name,
         "cp_pending": counterparties.is_pending,
         # Фільтр «Контрагент»: ті, кого можна вибрати (без уже прив'язаних тимчасових)
-        "cp_filter_options": {c["id"]: c["name"] for c in counterparties.get_all()},
+        # Фільтр «Контрагент»: лише ті, що трапляються в заявках (у довіднику — десятки тисяч)
+        "cp_filter_options": lambda: dict(sorted(counterparties.used_names(
+            {r.get("counterparty_id") for r in db.list_all()}).items(), key=lambda kv: kv[1].lower())),
         "pay_account_label": payment_accounts.label,
         "expense_name": expense_label,
         "expense_title": expense_items.get_name,
@@ -108,6 +110,12 @@ def _parse_amount(raw):
     return value.quantize(Decimal("0.01")) if value.is_finite() else None
 
 
+def _parse_counterparty(raw, current=None):
+    """Контрагент з форми: з 1С (не помічений на видалення), тимчасовий або той, що вже був у заявці."""
+    cp_id = (raw or "").strip()
+    return cp_id if cp_id and (cp_id == current or counterparties.is_selectable(cp_id)) else None
+
+
 def _parse_code(raw, allowed):
     """Рядковий код довідника (напр. організації з 1С) або None, якщо такого немає."""
     code = (raw or "").strip()
@@ -134,8 +142,7 @@ def parse_request_form(form, current=None, allowed_codes=None):
     """Повертає (дані заявки, словник помилок). Автор/дата/номер не з форми."""
     errors = {}
     data = {
-        "counterparty_id": _parse_ref(form.get("counterparty_id"),
-                                      counterparties.selectable_ids() | {(current or {}).get("counterparty_id")}),
+        "counterparty_id": _parse_counterparty(form.get("counterparty_id"), (current or {}).get("counterparty_id")),
         "organization_id": _parse_code(form.get("organization_id"),
                                        set(organizations.options()) | {(current or {}).get("organization_id")}),
         "expense_code": (form.get("expense_code") or "").strip() or None,
@@ -337,7 +344,7 @@ def _load_visible(request_id):
 
 REF_FILTERS = {  # параметр запиту -> (поле заявки, довідник)
     "org": ("organization_id", None),  # код організації (рядок)
-    "cp": ("counterparty_id", counterparties.names),
+    "cp": ("counterparty_id", None),  # id контрагента (рядок)
     "exp": ("expense_code", None),  # код статті витрат (рядок)
     "dep": ("department", None),  # код відділу автора (рядок)
 }
@@ -349,6 +356,8 @@ def ref_filters(args):
                 for key, (_, ref) in REF_FILTERS.items() if ref is not None}
     selected["exp"] = (args.get("exp") or "").strip() or None
     selected["org"] = _parse_code(args.get("org"), set(organizations.names()))
+    cp = (args.get("cp") or "").strip()
+    selected["cp"] = cp if cp and counterparties.get(cp) else None  # невідомий id — фільтр ігнорується
     selected["dep"] = (args.get("dep") or "").strip() or None
     return selected
 
@@ -518,16 +527,16 @@ def request_card(request_id=None, *, context):
         participants=req.get("participants") or [],
         history=wf.visible_history(req, roles),
         cp=counterparties.get(req.get("counterparty_id")),
-        cp_items=counterparties.picker_items() if wf.can_edit(req, roles, user["email"]) else [],
+        cp_brief=counterparties.brief(counterparties.get(req["counterparty_id"]))
+        if counterparties.get(req.get("counterparty_id")) else None,
         can_see_account=wf.can_see_payment_account(roles),
         account_options=payment_accounts.options_for(req) if wf.can_see_payment_account(roles) else [],
         account_required=wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES
         and req["status"] in ("accountant", "approval") and bool(payment_accounts.options_for(req)),
         can_link_cp=counterparties.is_pending(req.get("counterparty_id"))
         and bool(roles & (wf.ACCOUNTANT_ROLES | {"cfo", "admin"})),
-        onec_counterparties=sorted(counterparties.onec_items(), key=lambda c: c["name"].lower()),
-        cp_suggested=next((m["id"] for p_, m in counterparties.auto_link_candidates()
-                           if p_["id"] == req.get("counterparty_id")), None),
+        cp_suggested=next((m for p_, m in counterparties.auto_link_candidates(only_id=req.get("counterparty_id"))), None)
+        if counterparties.is_pending(req.get("counterparty_id")) else None,
         pay_blocked=_pay_guard(req)["cp_pending"] and _pay_guard(req)["block_pending"],
         pending_cp_block=app_settings.get("pending_cp_payment") == "block",
         can_manage_participants=req["id"] is not None and wf.can_manage_participants(req, roles, user["email"]),
@@ -591,8 +600,15 @@ def request_payment_account(request_id, *, context):
 @auth.login_required
 @requires()
 def counterparties_search(*, context):
-    return {"items": [{"id": c["id"], "name": c["name"], "edrpou": c.get("edrpou", ""), "pending": c["status"] == "pending"}
-                      for c in counterparties.search(request.args.get("q", ""))]}
+    """Пошук контрагентів для вікна вибору (q, kind = resident|nonresident|pending, scope = onec, limit)."""
+    try:
+        limit = max(1, min(int(request.args.get("limit", 20)), 200))
+    except ValueError:
+        limit = 20
+    kind = request.args.get("kind", "") if request.args.get("kind") in ("resident", "nonresident", "pending") else ""
+    found, total = counterparties.search(request.args.get("q", ""), limit, kind,
+                                         "onec" if request.args.get("scope") == "onec" else "all")
+    return {"items": [counterparties.brief(c) for c in found], "total": total}
 
 
 @app.route("/counterparties/new", methods=["POST"])
@@ -607,8 +623,20 @@ def counterparty_new(*, context):
     if duplicate:
         return {"duplicate": {"id": duplicate["id"], "name": duplicate["name"], "edrpou": duplicate.get("edrpou", ""),
                               "pending": duplicate["status"] == "pending"}}, 409
-    return {"item": {"id": item["id"], "name": item["name"], "edrpou": item["edrpou"], "country": item["country"],
-                     "resident": item["resident"], "pending": True}}
+    return {"item": counterparties.brief(item)}
+
+
+def _try_live_link(req, user, role):
+    """Якщо контрагент заявки тимчасовий — перевірити в 1С наживо за ЄДРПОУ і прив'язати. True, якщо прив'язано."""
+    if not counterparties.is_pending(req.get("counterparty_id")):
+        return False
+    pair = next(iter(counterparties.auto_link_candidates(live=True, only_id=req["counterparty_id"])), None)
+    if not pair:
+        return False
+    pending, target, _ = _link_counterparty(pair[0]["id"], pair[1]["id"], user, role)
+    req["counterparty_id"] = target["id"]
+    wf.add_history(req, "cp_link", user, role, f"{pending['name']} → {target['name']} (з 1С)", req["status"], req["status"])
+    return True
 
 
 def _link_counterparty(pending_id, onec_id, user, role):
@@ -618,7 +646,28 @@ def _link_counterparty(pending_id, onec_id, user, role):
                                                     f"{pending['name']} → {target['name']} (з 1С)")
 
 
-@app.route("/counterparties/<int:cp_id>/link", methods=["POST"])
+@app.route("/counterparties/<cp_id>/check", methods=["POST"])
+@auth.login_required
+@requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
+def counterparty_check(cp_id, *, context):
+    """«Перевірити в 1С зараз»: живий запит за ЄДРПОУ і автоприв'язка."""
+    nxt = request.form.get("next") or ""
+    back = nxt if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt else url_for("_home_redirect")
+    role = next((r for r in (*sorted(wf.ACCOUNTANT_ROLES), "cfo", "admin") if r in g.roles), "admin")
+    pair = next(iter(counterparties.auto_link_candidates(live=True, only_id=cp_id)), None)
+    if not pair:
+        cp = counterparties.get(cp_id)
+        why = "у 1С ще немає контрагента з таким ЄДРПОУ" if cp and cp.get("edrpou") else \
+            "у тимчасового контрагента не вказано ЄДРПОУ — знайдіть його в 1С вручну нижче"
+        flash(f"Не прив'язано: {why}", "error")
+        return redirect(back)
+    pending, target, count = _link_counterparty(pair[0]["id"], pair[1]["id"], g.user, role)
+    flash(f"Знайдено в 1С: «{target['name']}». Контрагента прив'язано (заявок: {count}) — тепер заявку можна оплатити",
+          "success")
+    return redirect(back)
+
+
+@app.route("/counterparties/<cp_id>/link", methods=["POST"])
 @auth.login_required
 @requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
 def counterparty_link(cp_id, *, context):
@@ -627,7 +676,7 @@ def counterparty_link(cp_id, *, context):
     back = nxt if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt else url_for("_home_redirect")
     try:
         role = next((r for r in (*sorted(wf.ACCOUNTANT_ROLES), "cfo", "admin") if r in g.roles), "admin")
-        pending, target, count = _link_counterparty(cp_id, request.form.get("onec_id") or 0, g.user, role)
+        pending, target, count = _link_counterparty(cp_id, request.form.get("onec_id") or "", g.user, role)
     except (ValueError, TypeError) as e:
         flash(str(e) or "Оберіть контрагента з 1С", "error")
         return redirect(back)
@@ -682,6 +731,8 @@ def request_action(request_id, *, context):
     action = request.form.get("action")
     try:
         _apply_payment_account(req, request.form.get("payment_account_id"), g.user, g.roles)
+        if action == "pay" and _try_live_link(req, g.user, wf.history_role(req, g.roles, g.user["email"])):
+            flash("Контрагента знайдено в 1С і прив'язано автоматично", "success")
         wf.apply_action(req, action, g.roles, g.user, request.form.get("comment"), **_route_settings(req),
                         guard=_pay_guard(req))
     except wf.WorkflowError as e:
@@ -1138,7 +1189,7 @@ def _requests_overview(source, title, table_id, **extra):
             return False
         if q:
             haystack = " ".join([r["number"], r["author_name"], r["author_email"], r.get("note") or "",
-                                 counterparties.names().get(r["counterparty_id"], ""),
+                                 counterparties.name(r.get("counterparty_id")),
                                  departments.get_name(r.get("department"))]).lower()
             return q in haystack
         return True
@@ -1177,6 +1228,7 @@ def to_pay_bulk(*, context):
         if not req:
             continue
         try:
+            _try_live_link(req, g.user, wf.history_role(req, g.roles, g.user["email"]))
             wf.apply_action(req, "pay", g.roles, g.user, comment, guard=_pay_guard(req))
         except wf.WorkflowError:
             skipped.append(req["number"])
@@ -1248,6 +1300,7 @@ def admin_users(*, context):
         departments_list=departments.get_departments(),
         departments_status=departments.status(),
         organizations_status=organizations.status(),
+        counterparties_status=counterparties.status(),
         org_list=organizations.get_all(),
         org_disabled=organizations.disabled_codes(),
         user_departments={uid: org_structure.department_of(uid) for uid in users},
@@ -1276,6 +1329,8 @@ def admin_users(*, context):
 @auth.login_required
 @requires("admin")
 def admin_expense_refresh(*, context):
+    if not counterparties.refresh():
+        flash("Не вдалося оновити довідник контрагентів: " + (counterparties.status()["error"] or "невідома помилка"), "error")
     for pending, target in counterparties.auto_link_candidates():
         _, _, count = _link_counterparty(pending["id"], target["id"], wf.SYSTEM_USER, "admin")
         flash(f"Контрагента «{pending['name']}» автоматично прив'язано до «{target['name']}» з 1С (заявок: {count})",

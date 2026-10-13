@@ -344,7 +344,8 @@
   {% set SRC = {'powerbi': 'Power BI', 'copy': 'Збережена копія (Power BI зараз недоступний)', 'mock': 'Мокові дані', 'empty': 'Немає даних'} %}
   <div class="budget-section-title">Інші довідники з 1С</div>
   <dl class="status-grid">
-    {% for title, st, note in [('Організації', organizations_status, 'резидент — країна Україна; порожня чи інша країна — нерезидент'),
+    {% for title, st, note in [('Контрагенти', counterparties_status, 'пошук на сервері; нових, ще не заведених у 1С: ' ~ counterparties_status.pending),
+                               ('Організації', organizations_status, 'резидент — країна Україна; порожня чи інша країна — нерезидент'),
                                ('Відділи співробітників', departments_status, "окремий довідник оргструктури, не пов'язаний з відділами статей")] %}
     <dt>{{ title }}</dt>
     <dd>{{ SRC.get(st.source, st.source) }} · {{ st.active }}{% if st.count != st.active %} <span class="muted">(+{{ st.count - st.active }} помічених на видалення)</span>{% endif %}

@@ -30,15 +30,15 @@ STATUSES = workflow.STATUSES
 
 # Рахунки контрагентів (у майбутньому — підбір з 1С)
 INVOICES = [
-    {"id": 1, "counterparty_id": 1, "number": "НП-104512", "date": "2026-09-02", "amount": "12450.00", "currency": "UAH", "deal": "Договір №15/2025 від 10.01.2025"},
-    {"id": 2, "counterparty_id": 1, "number": "НП-104788", "date": "2026-09-15", "amount": "8300.50", "currency": "UAH", "deal": "Договір №15/2025 від 10.01.2025"},
-    {"id": 3, "counterparty_id": 2, "number": "КС-2026-0912", "date": "2026-09-01", "amount": "4820.00", "currency": "UAH", "deal": "Договір про надання послуг зв'язку №77"},
-    {"id": 4, "counterparty_id": 3, "number": "ЕП-55123", "date": "2026-09-10", "amount": "23999.99", "currency": "UAH", "deal": "Рахунок-оферта"},
-    {"id": 5, "counterparty_id": 4, "number": "UC-0915", "date": "2026-09-15", "amount": "1250.00", "currency": "USD", "deal": "Договір інспекції №UC-12"},
-    {"id": 6, "counterparty_id": 4, "number": "UC-0920", "date": "2026-09-20", "amount": "980.00", "currency": "USD", "deal": "Договір інспекції №UC-12"},
-    {"id": 7, "counterparty_id": 5, "number": "MSK-7781203", "date": "2026-09-05", "amount": "3400.00", "currency": "EUR", "deal": "Booking 245887123"},
-    {"id": 8, "counterparty_id": 5, "number": "MSK-7781455", "date": "2026-09-18", "amount": "5150.00", "currency": "EUR", "deal": "Booking 245889010"},
-    {"id": 9, "counterparty_id": 6, "number": "ОС-3321", "date": "2026-09-12", "amount": "3150.00", "currency": "UAH", "deal": "Видаткова накладна №3321"},
+    {"id": 1, "counterparty_id": "1", "number": "НП-104512", "date": "2026-09-02", "amount": "12450.00", "currency": "UAH", "deal": "Договір №15/2025 від 10.01.2025"},
+    {"id": 2, "counterparty_id": "1", "number": "НП-104788", "date": "2026-09-15", "amount": "8300.50", "currency": "UAH", "deal": "Договір №15/2025 від 10.01.2025"},
+    {"id": 3, "counterparty_id": "2", "number": "КС-2026-0912", "date": "2026-09-01", "amount": "4820.00", "currency": "UAH", "deal": "Договір про надання послуг зв'язку №77"},
+    {"id": 4, "counterparty_id": "3", "number": "ЕП-55123", "date": "2026-09-10", "amount": "23999.99", "currency": "UAH", "deal": "Рахунок-оферта"},
+    {"id": 5, "counterparty_id": "4", "number": "UC-0915", "date": "2026-09-15", "amount": "1250.00", "currency": "USD", "deal": "Договір інспекції №UC-12"},
+    {"id": 6, "counterparty_id": "4", "number": "UC-0920", "date": "2026-09-20", "amount": "980.00", "currency": "USD", "deal": "Договір інспекції №UC-12"},
+    {"id": 7, "counterparty_id": "5", "number": "MSK-7781203", "date": "2026-09-05", "amount": "3400.00", "currency": "EUR", "deal": "Booking 245887123"},
+    {"id": 8, "counterparty_id": "5", "number": "MSK-7781455", "date": "2026-09-18", "amount": "5150.00", "currency": "EUR", "deal": "Booking 245889010"},
+    {"id": 9, "counterparty_id": "6", "number": "ОС-3321", "date": "2026-09-12", "amount": "3150.00", "currency": "UAH", "deal": "Видаткова накладна №3321"},
 ]
 
 
@@ -73,7 +73,7 @@ def _req(id_, author, pay_date, cp, org, exp, form, cur, amount, steps, note="",
         "author_name": author[1],
         "department": _AUTHOR_DEPARTMENT.get(author[0]),
         "pay_date": date.fromisoformat(pay_date),
-        "counterparty_id": cp,
+        "counterparty_id": str(cp),
         "organization_id": str(org),
         "expense_code": _EXP[exp],
         "payment_form": form,
