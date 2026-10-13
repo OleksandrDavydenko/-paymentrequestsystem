@@ -54,8 +54,16 @@ _access = pbi_cache.CachedTable("user_payment_types", "PBI_USER_PAYMENT_TYPES_TA
                                 _parse_access, lambda: _parse_access(MOCK_ACCESS))
 
 
+INACTIVE_PREFIX = "---"  # так у 1С позначають неактивні / вільні види оплати («---ЛЕНА», «---можнавикористовувати4»)
+
+
+def is_active(t):
+    return not t["deleted"] and not t["name"].startswith(INACTIVE_PREFIX)
+
+
 def types(include_deleted=False):
-    return [t for t in _types.items() if include_deleted or not t["deleted"]]
+    """Види оплати для вибору: без помічених на видалення і без неактивних («---» на початку назви)."""
+    return [t for t in _types.items() if include_deleted or is_active(t)]
 
 
 def get(type_id):
