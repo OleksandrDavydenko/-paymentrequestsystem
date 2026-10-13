@@ -16,6 +16,7 @@ import clock
 import counterparties
 import departments
 import org_structure
+import organizations
 import payment_accounts
 import graph
 import mailer
@@ -70,7 +71,9 @@ def fmt_datetime(value):
 @app.context_processor
 def inject_refs():
     return {
-        "ORGANIZATIONS": db.ORGANIZATIONS,
+        "ORGANIZATIONS": organizations.names(),
+        "ORG_OPTIONS": organizations.options(),
+        "org_name": organizations.name,
         "COUNTERPARTIES": counterparties.names(),
         "cp_pending": counterparties.is_pending,
         # Фільтр «Контрагент»: ті, кого можна вибрати (без уже прив'язаних тимчасових)
@@ -104,6 +107,12 @@ def _parse_amount(raw):
     return value.quantize(Decimal("0.01")) if value.is_finite() else None
 
 
+def _parse_code(raw, allowed):
+    """Рядковий код довідника (напр. організації з 1С) або None, якщо такого немає."""
+    code = (raw or "").strip()
+    return code if code and code in allowed else None
+
+
 def _parse_ref(raw, ref):
     try:
         key = int(raw)
@@ -126,7 +135,8 @@ def parse_request_form(form, current=None, allowed_codes=None):
     data = {
         "counterparty_id": _parse_ref(form.get("counterparty_id"),
                                       counterparties.selectable_ids() | {(current or {}).get("counterparty_id")}),
-        "organization_id": _parse_ref(form.get("organization_id"), db.ORGANIZATIONS),
+        "organization_id": _parse_code(form.get("organization_id"),
+                                       set(organizations.options()) | {(current or {}).get("organization_id")}),
         "expense_code": (form.get("expense_code") or "").strip() or None,
         "payment_form": form.get("payment_form") if form.get("payment_form") in db.PAYMENT_FORMS else None,
         "currency": form.get("currency") if form.get("currency") in db.CURRENCIES else None,
@@ -325,7 +335,7 @@ def _load_visible(request_id):
 # ---------------------------------------------------------------- фільтри списків
 
 REF_FILTERS = {  # параметр запиту -> (поле заявки, довідник)
-    "org": ("organization_id", db.ORGANIZATIONS),
+    "org": ("organization_id", None),  # код організації (рядок)
     "cp": ("counterparty_id", counterparties.names),
     "exp": ("expense_code", None),  # код статті витрат (рядок)
     "dep": ("department", None),  # код відділу автора (рядок)
@@ -337,6 +347,7 @@ def ref_filters(args):
     selected = {key: _parse_ref(args.get(key), ref() if callable(ref) else ref)
                 for key, (_, ref) in REF_FILTERS.items() if ref is not None}
     selected["exp"] = (args.get("exp") or "").strip() or None
+    selected["org"] = _parse_code(args.get("org"), set(organizations.names()))
     selected["dep"] = (args.get("dep") or "").strip() or None
     return selected
 
@@ -486,7 +497,9 @@ def request_card(request_id=None, *, context):
         invoices=db.INVOICES,
         expense_items=budget_items,
         KIND_LABELS=expense_items.KIND_LABELS,
-        nonresident_orgs=sorted(wf.NONRESIDENT_ORGANIZATIONS),
+        nonresident_orgs=organizations.nonresident_codes(),
+        org_options={**organizations.options(), **({req["organization_id"]: organizations.name(req["organization_id"])}
+                     if req.get("organization_id") and req["organization_id"] not in organizations.options() else {})},
         channel_roles={c: wf.ROLES[r] for c, r in wf.ACCOUNTANT_BY_CHANNEL.items()},
         editable=wf.can_edit(req, roles, user["email"]),
         can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
@@ -508,7 +521,7 @@ def request_card(request_id=None, *, context):
         can_see_account=wf.can_see_payment_account(roles),
         account_options=payment_accounts.options_for(req) if wf.can_see_payment_account(roles) else [],
         account_required=wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES
-        and req["status"] in ("accountant", "approval"),
+        and req["status"] in ("accountant", "approval") and bool(payment_accounts.options_for(req)),
         can_link_cp=counterparties.is_pending(req.get("counterparty_id"))
         and bool(roles & (wf.ACCOUNTANT_ROLES | {"cfo", "admin"})),
         onec_counterparties=sorted(counterparties.onec_items(), key=lambda c: c["name"].lower()),
@@ -528,7 +541,8 @@ def request_card(request_id=None, *, context):
 def _pay_guard(req):
     """Чи можна оплатити заявку з контрагентом, якого ще немає в 1С (параметр в адмінці)."""
     return {"cp_pending": counterparties.is_pending(req.get("counterparty_id")),
-            "block_pending": app_settings.get("pending_cp_payment") == "block"}
+            "block_pending": app_settings.get("pending_cp_payment") == "block",
+            "account_required": bool(payment_accounts.options_for(req))}
 
 
 def _apply_payment_account(req, raw, user, roles):
@@ -1215,6 +1229,7 @@ def admin_users(*, context):
         route_label=wf.route_label,
         departments_list=departments.get_departments(),
         departments_status=departments.status(),
+        organizations_status=organizations.status(),
         user_departments={uid: org_structure.department_of(uid) for uid in users},
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
         dept_rows=[{**d, **org_structure.staff(d["code"]), "members": org_structure.members_of(d["code"])}
@@ -1245,6 +1260,9 @@ def admin_expense_refresh(*, context):
         _, _, count = _link_counterparty(pending["id"], target["id"], wf.SYSTEM_USER, "admin")
         flash(f"Контрагента «{pending['name']}» автоматично прив'язано до «{target['name']}» з 1С (заявок: {count})",
               "success")
+    for name, ref in (("організацій", organizations), ("відділів", departments)):
+        if not ref.refresh():
+            flash(f"Не вдалося оновити довідник {name}: " + (ref.status()["error"] or "невідома помилка"), "error")
     if expense_items.refresh():
         st = expense_items.status()
         flash(f"Довідник статей витрат оновлено: {st['count']} статей", "success")

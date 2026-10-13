@@ -15,15 +15,7 @@ import workflow
 
 # ---------------------------------------------------------------- довідники
 
-ORGANIZATIONS = {
-    1: "ТОВ «Фрейт Транс Південь»",
-    2: "ТОВ «Укрбуд Логістик»",
-    3: "ФОП Коваленко І.П.",
-    4: "Litbia",
-}
-# Організації-нерезиденти: безготівкові заявки від них йдуть бухгалтеру з нерезидентів
-NONRESIDENT_ORGANIZATIONS = {4}
-workflow.NONRESIDENT_ORGANIZATIONS = NONRESIDENT_ORGANIZATIONS
+# Організації — у organizations.py (з 1С через Power BI); у заявці — код організації (рядок)
 
 # Контрагенти — у counterparties.py (з 1С + тимчасові, внесені в заявках)
 
@@ -82,7 +74,7 @@ def _req(id_, author, pay_date, cp, org, exp, form, cur, amount, steps, note="",
         "department": _AUTHOR_DEPARTMENT.get(author[0]),
         "pay_date": date.fromisoformat(pay_date),
         "counterparty_id": cp,
-        "organization_id": org,
+        "organization_id": str(org),
         "expense_code": _EXP[exp],
         "payment_form": form,
         "currency": cur,

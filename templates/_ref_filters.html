@@ -3,7 +3,7 @@
    і сторінка не вимкнула його (show_dep_filter=False). #}
 <select name="org" onchange="this.form.submit()" aria-label="Організація" class="{{ 'is-active' if refs.org }}">
   <option value="">Усі організації</option>
-  {% for key, label in ORGANIZATIONS.items() %}
+  {% for key, label in ORG_OPTIONS.items() %}
   <option value="{{ key }}" {{ 'selected' if key == refs.org }}>{{ label }}</option>
   {% endfor %}
 </select>

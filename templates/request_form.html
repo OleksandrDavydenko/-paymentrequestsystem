@@ -125,7 +125,7 @@
     {% include "_counterparty_picker.html" %}
     <div class="field">
       <label for="organization_id">Організація</label>
-      {{ select_ref('organization_id', ORGANIZATIONS, req.organization_id, '— оберіть організацію —') }}
+      {{ select_ref('organization_id', org_options, req.organization_id, '— оберіть організацію —') }}
       {{ err('organization_id') }}
     </div>
 
@@ -257,8 +257,9 @@
     {{ account_select() }}
     <button type="submit" class="btn btn-sm">Зберегти</button>
   </div>
+  {% if not account_options %}<p class="muted" style="margin:6px 0 0">Для цієї організації в довіднику ще немає {{ 'кас' if req.payment_form == 'cash' else 'рахунків' }} — поле поки не обов'язкове.</p>{% endif %}
   <p class="muted" style="margin:6px 0 0">З якого рахунку ({{ 'каси' if req.payment_form == 'cash' else 'банку' }}) організації
-    «{{ ORGANIZATIONS.get(req.organization_id, '') }}» платимо. Ініціатор цього поля не бачить.</p>
+    «{{ org_name(req.organization_id) }}» платимо. Ініціатор цього поля не бачить.</p>
 </form>
 {% endif %}
 
@@ -413,7 +414,7 @@ const CHANNEL_ROLES = {{ channel_roles | tojson }};
 function updateRouteHint() {
   const hint = document.getElementById('route-hint');
   const form = document.querySelector('input[name=payment_form]:checked');
-  const org = Number(document.getElementById('organization_id').value);
+  const org = document.getElementById('organization_id').value;
   if (!hint) return;
   if (!form) { hint.textContent = ''; return; }
   if (form.value === 'bank' && !org) { hint.textContent = 'Оберіть організацію — від неї залежить, хто перевірятиме заявку'; return; }

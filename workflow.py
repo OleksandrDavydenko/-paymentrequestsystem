@@ -4,6 +4,7 @@
 """
 
 import clock
+import organizations
 
 ROLES = {
     "admin": "Адміністратор",
@@ -96,8 +97,6 @@ ACCOUNTANT_BY_CHANNEL = {
 }
 ACCOUNTANT_ROLES = set(ACCOUNTANT_BY_CHANNEL.values())
 
-# ID організацій-нерезидентів. Заповнюється з довідника організацій (mock_data, пізніше — 1С).
-NONRESIDENT_ORGANIZATIONS = set()
 
 
 def channel_of(req):
@@ -106,7 +105,7 @@ def channel_of(req):
     if form == "cash":
         return "cash"
     if form == "bank":
-        return "bank_nonresident" if req.get("organization_id") in NONRESIDENT_ORGANIZATIONS else "bank_resident"
+        return "bank_nonresident" if organizations.is_nonresident(req.get("organization_id")) else "bank_resident"
     return None
 APPROVER_ROLES = ACCOUNTANT_ROLES | {"cfo", "dept_head"}
 
@@ -426,7 +425,8 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
     mode / head_mode — режим погодження і роль керівника відділу з налаштувань; враховуються
     лише при відправці (submit) і запам'ятовуються в заявці, щоб зміна налаштувань не ламала
     заявки в процесі. heads — пошта керівників відділу заявки (для submit).
-    guard — {"cp_pending": контрагента ще немає в 1С, "block_pending": тоді не можна оплатити}.
+    guard — {"cp_pending": контрагента ще немає в 1С, "block_pending": тоді не можна оплатити,
+             "account_required": чи обов'язковий «Вид оплати» (є рахунки / каси організації в довіднику)}.
     """
     comment = (comment or "").strip()
     role = acting_role(req, roles, user["email"])
@@ -434,10 +434,12 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
         raise WorkflowError("Ця дія недоступна для вашої ролі на поточному етапі")
     if ACTIONS[action][3] and not comment:
         raise WorkflowError("Вкажіть коментар — що саме потрібно виправити або чому заявку відхилено")
-    if action == "approve" and role in ACCOUNTANT_ROLES and not req.get("payment_account_id"):
+    # «Вид оплати» обов'язковий, якщо в довіднику є рахунки / каси організації заявки
+    account_required = (guard or {}).get("account_required", True)
+    if action == "approve" and role in ACCOUNTANT_ROLES and account_required and not req.get("payment_account_id"):
         raise WorkflowError("Перед погодженням оберіть «Вид оплати» — з якого рахунку чи каси платимо")
     if action == "pay":
-        if not req.get("payment_account_id"):
+        if account_required and not req.get("payment_account_id"):
             raise WorkflowError("Оберіть «Вид оплати» — з якого рахунку чи каси платимо")
         if guard and guard.get("cp_pending") and guard.get("block_pending"):
             raise WorkflowError("Контрагента ще немає в 1С — заведіть його в 1С і прив'яжіть у заявці, "

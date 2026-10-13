@@ -274,7 +274,7 @@
 {% set es = expense_status %}
 <div class="card expense-status" id="expense-items" data-collapsible>
   <div class="toolbar">
-    <h2 style="margin:0">Довідник статей витрат</h2>
+    <h2 style="margin:0">Довідники з 1С</h2>
     <span class="sec-summary muted">{{ es.count }} статей{% if es.updated %} · оновлено {{ es.updated.replace('T', ' ')[:16] }}{% endif %}</span>
     <span class="spacer"></span>
     <form method="post" action="{{ url_for('admin_expense_refresh') }}">
@@ -287,9 +287,18 @@
              'mock': 'Мокові дані — Power BI не налаштований', 'empty': 'Немає даних'}[es.source] | default(es.source) }}</dd>
     <dt>Статей (лише елементи)</dt><dd>{{ es.count }} <span class="muted">· прямих {{ es.direct }} · з розподілом {{ es.allocated }} · відділів {{ es.departments }}</span></dd>
     <dt>Оновлено</dt><dd>{{ es.updated.replace('T', ' ') if es.updated else '—' }}</dd>
-    <dt>Відділи співробітників</dt>
-    <dd>{{ 'Мокові дані' if departments_status.source == 'mock' else 'Power BI' }} ({{ departments_status.count }})
-      <span class="muted">· окремий довідник оргструктури, не пов'язаний з відділами статей</span></dd>
+  </dl>
+  {% set SRC = {'powerbi': 'Power BI', 'copy': 'Збережена копія (Power BI зараз недоступний)', 'mock': 'Мокові дані', 'empty': 'Немає даних'} %}
+  <div class="budget-section-title">Інші довідники з 1С</div>
+  <dl class="status-grid">
+    {% for title, st, note in [('Організації', organizations_status, 'резидент — країна Україна; порожня чи інша країна — нерезидент'),
+                               ('Відділи співробітників', departments_status, "окремий довідник оргструктури, не пов'язаний з відділами статей")] %}
+    <dt>{{ title }}</dt>
+    <dd>{{ SRC.get(st.source, st.source) }} · {{ st.active }}{% if st.count != st.active %} <span class="muted">(+{{ st.count - st.active }} помічених на видалення)</span>{% endif %}
+      {% if st.updated %}<span class="muted">· оновлено {{ st.updated.replace('T', ' ')[:16] }}</span>{% endif %}
+      <span class="muted">· таблиця «{{ st.table }}» · {{ note }}</span>
+      {% if st.error %}<div class="flash error" style="margin:4px 0 0">Остання помилка: {{ st.error }}</div>{% endif %}</dd>
+    {% endfor %}
   </dl>
   {% if es.error %}<div class="flash error">Остання помилка: {{ es.error }}</div>{% endif %}
   {% if not es.configured %}

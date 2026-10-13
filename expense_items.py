@@ -132,9 +132,13 @@ def _explain_error(resp):
 
 
 def _query_rows():
+    return query_table(os.environ.get("PBI_TABLE", "Expense_Item"))
+
+
+def query_table(table):
+    """Усі рядки таблиці семантичної моделі (EVALUATE 'table') — спільний клієнт для довідників з 1С."""
     group_id = os.environ["PBI_GROUP_ID"]
     dataset_id = os.environ["PBI_DATASET_ID"]
-    table = os.environ.get("PBI_TABLE", "Expense_Item")
     resp = requests.post(
         f"{PBI_API}/groups/{group_id}/datasets/{dataset_id}/executeQueries",
         headers={"Authorization": f"Bearer {_get_token()}"},
