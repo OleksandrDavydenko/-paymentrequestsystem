@@ -415,6 +415,7 @@
 const INVOICES = {{ invoices | tojson }};
 const NONRESIDENT_ORGS = new Set({{ nonresident_orgs | tojson }});
 const CHANNEL_ROLES = {{ channel_roles | tojson }};
+const ORG_ACCOUNTANTS = {{ org_accountants | tojson }};  // призначення бухгалтерів організаціям в адмінці
 
 // Підказка: якому бухгалтеру піде заявка (форма оплати + резидентність організації)
 function updateRouteHint() {
@@ -425,7 +426,8 @@ function updateRouteHint() {
   if (!form) { hint.textContent = ''; return; }
   if (form.value === 'bank' && !org) { hint.textContent = 'Оберіть організацію — від неї залежить, хто перевірятиме заявку'; return; }
   const channel = form.value === 'cash' ? 'cash' : (NONRESIDENT_ORGS.has(org) ? 'bank_nonresident' : 'bank_resident');
-  hint.textContent = 'Заявку перевірить: ' + CHANNEL_ROLES[channel];
+  const assigned = (ORG_ACCOUNTANTS[org] || {})[form.value];
+  hint.textContent = 'Заявку перевірить: ' + (assigned || CHANNEL_ROLES[channel]);
 }
 document.querySelectorAll('input[name=payment_form]').forEach(r => r.addEventListener('change', updateRouteHint));
 document.getElementById('organization_id').addEventListener('change', updateRouteHint);

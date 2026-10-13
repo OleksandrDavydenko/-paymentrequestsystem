@@ -95,6 +95,16 @@ def nonresident_codes():
     return sorted(o["code"] for o in _table.items() if not o["resident"])
 
 
+def accountant_overrides():
+    """{код організації: {"cash": роль, "bank": роль}} — призначення бухгалтерів в адмінці."""
+    return app_settings.get("org_accountants") or {}
+
+
+def accountant_for(code, form):
+    """Роль бухгалтера, якого адмін призначив організації для форми оплати (cash / bank), або None."""
+    return (accountant_overrides().get(str(code or "")) or {}).get(form)
+
+
 def refresh():
     return _table.refresh()
 

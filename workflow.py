@@ -99,6 +99,16 @@ ACCOUNTANT_ROLES = set(ACCOUNTANT_BY_CHANNEL.values())
 
 
 
+def accountant_role(req):
+    """Хто з бухгалтерів перевіряє й оплачує заявку: призначений організації в адмінці
+    для цієї форми оплати, а якщо не призначено — за правилом (форма оплати + резидентність)."""
+    form = req.get("payment_form")
+    override = organizations.accountant_for(req.get("organization_id"), form) if form else None
+    if override in ACCOUNTANT_ROLES:
+        return override
+    return ACCOUNTANT_BY_CHANNEL.get(channel_of(req))
+
+
 def channel_of(req):
     """Готівка — завжди «cash»; безготівка — резидент/нерезидент за організацією заявки."""
     form = req.get("payment_form")
@@ -199,13 +209,13 @@ def stage_actor(req):
     """Хто має діяти на поточному етапі: "author", конкретна роль або None (закрита)."""
     actor, _ = WORKFLOW.get(req["status"], (None, {}))
     if actor == "accountant":
-        return ACCOUNTANT_BY_CHANNEL.get(channel_of(req))
+        return accountant_role(req)
     return actor
 
 
 def parallel_roles(req):
     """Хто погоджує в паралельному режимі: бухгалтер каналу оплати і фіндиректор."""
-    return [r for r in (ACCOUNTANT_BY_CHANNEL.get(channel_of(req)), "cfo") if r]
+    return [r for r in (accountant_role(req), "cfo") if r]
 
 
 def pending_roles(req):
@@ -284,7 +294,7 @@ def processed_entry(req, roles):
 def in_paid(req, roles):
     """Оплачені заявки: фіндиректор бачить усі, бухгалтер — свого каналу оплати."""
     return req["status"] == "paid" and (
-        "cfo" in roles or ACCOUNTANT_BY_CHANNEL.get(channel_of(req)) in roles)
+        "cfo" in roles or accountant_role(req) in roles)
 
 
 def paid_entry(req):
@@ -496,7 +506,7 @@ def _submit(req, user, comment, mode, head_mode, heads):
 
 def stage_names(req):
     """Назви етапів для смуги маршруту; етап бухгалтера — за формою оплати."""
-    accountant = ROLES.get(ACCOUNTANT_BY_CHANNEL.get(channel_of(req)), "Бухгалтер")
+    accountant = ROLES.get(accountant_role(req), "Бухгалтер")
     return [(code, accountant if code == "accountant" else name) for code, name in STAGES
             if code != "dept_head" or req.get("head_step")]
 

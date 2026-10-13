@@ -512,6 +512,8 @@ def request_card(request_id=None, *, context):
         org_options={**organizations.options(), **({req["organization_id"]: organizations.name(req["organization_id"])}
                      if req.get("organization_id") and req["organization_id"] not in organizations.options() else {})},
         channel_roles={c: wf.ROLES[r] for c, r in wf.ACCOUNTANT_BY_CHANNEL.items()},
+        org_accountants={code: {f: wf.ROLES[r] for f, r in forms.items() if r in wf.ROLES}
+                         for code, forms in organizations.accountant_overrides().items()},
         editable=wf.can_edit(req, roles, user["email"]),
         can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
         actions=[a for a in available if a != "submit"],
@@ -1040,7 +1042,17 @@ def admin_organizations(*, context):
     # Вимкнені, яких зараз немає в довіднику (напр. помічені на видалення), лишаються вимкненими
     disabled = sorted((known - allowed) | (organizations.disabled_codes() - known))
     app_settings.set("disabled_organizations", disabled, g.user["email"])
-    flash(f"Організації для вибору в заявках: дозволено {len(known & allowed)} з {len(known)}", "success")
+    # Хто з бухгалтерів веде організацію (порожньо — автоматично); призначення зниклих з довідника — лишаються
+    overrides = {c: v for c, v in organizations.accountant_overrides().items() if c not in known}
+    for code in known:
+        forms = {f: request.form.get(f"acc_{f}_{code}") for f in ("cash", "bank")}
+        forms = {f: r for f, r in forms.items() if r in wf.ACCOUNTANT_ROLES}
+        if forms:
+            overrides[code] = forms
+    app_settings.set("org_accountants", overrides, g.user["email"])
+    flash(f"Організації збережено: дозволено для вибору {len(known & allowed)} з {len(known)}; "
+          f"призначено бухгалтерів для {len([c for c in overrides if c in known])}. "
+          "Заявки, що вже в роботі, переходять до призначеного бухгалтера одразу.", "success")
     return redirect(url_for("admin_users") + "#organizations")
 
 
@@ -1315,6 +1327,8 @@ def admin_users(*, context):
         counterparties_status=counterparties.status(),
         org_list=organizations.get_all(),
         org_disabled=organizations.disabled_codes(),
+        org_accountants=organizations.accountant_overrides(),
+        ACCOUNTANT_ROLE_LIST=[(r, wf.ROLE_SHORT[r]) for r in ("acc_cash", "acc_resident", "acc_nonresident")],
         user_departments={uid: org_structure.department_of(uid) for uid in users},
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
         dept_rows=[{**d, **org_structure.staff(d["code"]), "members": org_structure.members_of(d["code"])}

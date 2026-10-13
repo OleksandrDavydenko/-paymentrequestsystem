@@ -97,7 +97,7 @@ def _req(id_, author, pay_date, cp, org, exp, form, cur, amount, steps, note="",
         if user is _ME:
             user = author
         if role == "accountant":
-            role = workflow.ACCOUNTANT_BY_CHANNEL[workflow.channel_of(req)]
+            role = workflow.accountant_role(req)
         old = req["status"]
         new = workflow.WORKFLOW[old][1][action]
         if action == "approve" and role in workflow.ACCOUNTANT_ROLES:
@@ -169,7 +169,7 @@ def _parallel(req, day, approved_by=()):
     req["history"].append({"at": at, "user_name": author[1], "user_email": author[0], "role": "initiator",
                            "action": "submit", "from_status": "draft", "to_status": "approval", "comment": ""})
     for user, role in approved_by:
-        role = workflow.ACCOUNTANT_BY_CHANNEL[workflow.channel_of(req)] if role == "accountant" else role
+        role = workflow.accountant_role(req) if role == "accountant" else role
         req["approvals"][role] = {"at": at, "user_name": user[1]}
         if role in workflow.ACCOUNTANT_ROLES:
             req["payment_account_id"] = payment_accounts.options_for(req)[0]["id"]

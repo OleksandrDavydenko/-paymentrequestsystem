@@ -130,28 +130,46 @@
 <form method="post" action="{{ url_for('admin_organizations') }}" class="card organizations" id="organizations" data-collapsible>
   <div class="toolbar">
     <h2 style="margin:0">Організації</h2>
-    <span class="sec-summary muted">дозволено {{ org_on | length }} з {{ org_list | length }}</span>
+    <span class="sec-summary muted">дозволено {{ org_on | length }} з {{ org_list | length }}{% if org_accountants %} · призначено бухгалтерів: {{ org_accountants | length }}{% endif %}</span>
   </div>
-  <p class="muted" style="margin-top:0">Які організації ініціатор може вибрати в заявці. Список — з 1С (Power BI); помічені
-    на видалення не показуються. Нові організації, що з'являться в 1С, дозволені автоматично — їх можна вимкнути тут.
-    Вимкнена організація лишається в уже створених заявках і у фільтрах списків.</p>
+  <p class="muted" style="margin-top:0"><strong>Вибір</strong> — які організації ініціатор може вибрати в заявці (нові з 1С
+    дозволені автоматично; вимкнена лишається в уже створених заявках і у фільтрах).
+    <strong>Хто перевіряє</strong> — бухгалтер, якому йдуть заявки організації. «Автоматично»: готівка — бухгалтеру готівки,
+    безготівка — бухгалтеру резидентів чи нерезидентів за країною. Можна призначити інакше, напр. ФОП, якого веде бухгалтер
+    готівки, — «Бух. готівка» в обох колонках. Зміна діє й на заявки, що вже в роботі.</p>
   <div class="budget-deps-tools org-tools">
     <input type="search" id="org-search" placeholder="Пошук організації…" autocomplete="off">
     <button type="button" class="btn btn-sm" id="org-all">Дозволити всі</button>
     <button type="button" class="btn btn-sm" id="org-none">Зняти всі</button>
     <span class="muted" id="org-count"></span>
   </div>
-  <div class="org-list" id="org-list">
+  <div class="table-wrap org-wrap">
+  <table class="stack org-table" id="org-list">
+    <thead><tr><th class="chk" title="Можна вибирати в заявках">Вибір</th><th>Організація</th>
+      <th>Готівка — хто перевіряє</th><th>Безготівка — хто перевіряє</th></tr></thead>
+    <tbody>
     {% for o in org_list %}
-    <label class="org-item">
-      <input type="checkbox" name="allowed" value="{{ o.code }}" {{ 'checked' if o.code not in org_disabled }}>
-      <span class="org-name">{{ o.name }}</span>
-      <span class="muted org-meta">{{ o.code }}{{ ' · ' ~ o.country if o.country }}</span>
-      <span class="badge {{ 'green' if o.resident else 'grey' }}">{{ 'резидент' if o.resident else 'нерезидент' }}</span>
-    </label>
+    {% set acc = org_accountants.get(o.code, {}) %}
+    <tr class="org-item">
+      <td class="chk" data-label="Можна вибирати"><input type="checkbox" name="allowed" value="{{ o.code }}" {{ 'checked' if o.code not in org_disabled }}
+          aria-label="Можна вибирати: {{ o.name }}"></td>
+      <td data-label="Організація"><span class="org-name">{{ o.name }}</span>
+        <div class="muted org-meta">{{ o.code }}{{ ' · ' ~ o.country if o.country }} ·
+          <span class="badge {{ 'green' if o.resident else 'grey' }}">{{ 'резидент' if o.resident else 'нерезидент' }}</span></div></td>
+      {% for f, auto in [('cash', 'acc_cash'), ('bank', 'acc_resident' if o.resident else 'acc_nonresident')] %}
+      <td data-label="{{ 'Готівка' if f == 'cash' else 'Безготівка' }}">
+        <select name="acc_{{ f }}_{{ o.code }}" class="org-acc {{ 'is-active' if acc.get(f) }}" aria-label="{{ 'Готівка' if f == 'cash' else 'Безготівка' }} — {{ o.name }}">
+          <option value="">Автоматично ({{ ROLE_SHORT[auto] }})</option>
+          {% for r, label in ACCOUNTANT_ROLE_LIST %}<option value="{{ r }}" {{ 'selected' if acc.get(f) == r }}>{{ label }}</option>{% endfor %}
+        </select>
+      </td>
+      {% endfor %}
+    </tr>
     {% else %}
-    <div class="muted">Довідник організацій порожній — перевірте підключення в розділі «Довідники з 1С».</div>
+    <tr><td colspan="4" class="muted">Довідник організацій порожній — перевірте підключення в розділі «Довідники з 1С».</td></tr>
     {% endfor %}
+    </tbody>
+  </table>
   </div>
   <div class="form-actions" style="justify-content:flex-start">
     <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
@@ -168,10 +186,10 @@
   };
   document.getElementById('org-search').addEventListener('input', e => {
     const q = e.target.value.trim().toLowerCase();
-    list.querySelectorAll('.org-item').forEach(l => { l.hidden = q && !l.textContent.toLowerCase().includes(q); });
+    list.querySelectorAll('.org-item').forEach(l => { l.hidden = q && !l.querySelector('.org-name').parentNode.textContent.toLowerCase().includes(q); });
   });
   document.getElementById('org-search').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
-  const setAll = on => { boxes().forEach(b => { if (!b.closest('label').hidden) b.checked = on; }); count(); };
+  const setAll = on => { boxes().forEach(b => { if (!b.closest('tr').hidden) b.checked = on; }); count(); };
   document.getElementById('org-all').addEventListener('click', () => setAll(true));
   document.getElementById('org-none').addEventListener('click', () => setAll(false));
   list.addEventListener('change', count);
