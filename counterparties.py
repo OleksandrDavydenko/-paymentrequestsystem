@@ -41,6 +41,39 @@ FIRST_PENDING_ID = 100001
 RESIDENT_CODE_RE = re.compile(r"\d{8}|\d{10}")
 
 
+def edrpou_checksum_ok(code):
+    """Контрольна цифра коду ЄДРПОУ (8 цифр) за алгоритмом ДПС / Держстату."""
+    d = [int(c) for c in code]
+    n = int(code)
+    w = [1, 2, 3, 4, 5, 6, 7] if (n < 30000000 or n > 60000000) else [7, 1, 2, 3, 4, 5, 6]
+    s = sum(a * b for a, b in zip(d[:7], w)) % 11
+    if s == 10:  # другий прохід: ваги +2
+        s = sum(a * (b + 2) for a, b in zip(d[:7], w)) % 11
+        if s == 10:
+            s = 0
+    return s == d[7]
+
+
+def ipn_checksum_ok(code):
+    """Контрольна цифра РНОКПП (ІПН, 10 цифр) — ФОП і фізособи."""
+    d = [int(c) for c in code]
+    s = sum(a * b for a, b in zip(d[:9], (-1, 5, 7, 9, 4, 6, 10, 5, 7)))
+    return (s % 11) % 10 == d[9]
+
+
+def resident_code_error(code):
+    """Текст помилки для коду резидента або None, якщо код коректний."""
+    if not code:
+        return "Для резидента ЄДРПОУ обов'язковий: 8 цифр для юросіб, 10 цифр (ІПН) для ФОП і фізосіб"
+    if not RESIDENT_CODE_RE.fullmatch(code):
+        return "ЄДРПОУ — 8 цифр для юросіб, 10 цифр (ІПН) для ФОП і фізосіб"
+    if len(code) == 8 and not edrpou_checksum_ok(code):
+        return "Код ЄДРПОУ некоректний (не збігається контрольна цифра) — перевірте, чи немає одруківки"
+    if len(code) == 10 and not ipn_checksum_ok(code):
+        return "ІПН некоректний (не збігається контрольна цифра) — перевірте, чи немає одруківки"
+    return None
+
+
 def _norm_name(value):
     return re.sub(r"[\s«»\"'’ʼ`.,]+", " ", (value or "").lower()).strip()
 
@@ -122,10 +155,9 @@ def validate(data):
         errors["name"] = "Вкажіть назву контрагента"
     if clean["resident"]:
         clean["country"] = "Україна"
-        if not clean["edrpou"]:
-            errors["edrpou"] = "Для резидента ЄДРПОУ обов'язковий: 8 цифр для юросіб, 10 цифр (ІПН) для ФОП і фізосіб"
-        elif not RESIDENT_CODE_RE.fullmatch(clean["edrpou"]):
-            errors["edrpou"] = "ЄДРПОУ — 8 цифр для юросіб, 10 цифр (ІПН) для ФОП і фізосіб"
+        error = resident_code_error(clean["edrpou"])
+        if error:
+            errors["edrpou"] = error
     return clean, errors
 
 
@@ -264,6 +296,11 @@ def create_pending(data, user):
     """Внести тимчасового контрагента. Повертає (запис або None, помилки, дублікат або None)."""
     clean, errors = validate(data)
     if errors:
+        # Код не пройшов контрольну цифру, але такий контрагент уже є в 1С — запропонувати його
+        if set(errors) == {"edrpou"} and RESIDENT_CODE_RE.fullmatch(clean["edrpou"]):
+            known = find_duplicates(clean["edrpou"]) or find_onec_by_edrpou(clean["edrpou"])
+            if known:
+                return None, {}, known[0]
         return None, errors, None
     dupes = find_duplicates(clean["edrpou"], clean["name"])
     if not dupes and clean["edrpou"]:
