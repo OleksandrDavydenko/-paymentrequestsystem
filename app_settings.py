@@ -26,6 +26,8 @@ DEFAULTS = {
     "disabled_organizations": [],
     # Хто з бухгалтерів веде організацію: {код: {"cash": роль, "bank": роль}}; немає — автоматично за правилом
     "org_accountants": {},
+    # Бухгалтер обов'язково вибирає «Вид оплати» при погодженні (і перед оплатою), якщо йому є що вибрати
+    "require_payment_account": True,
 }
 
 _lock = threading.Lock()

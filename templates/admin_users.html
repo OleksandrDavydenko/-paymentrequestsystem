@@ -323,6 +323,20 @@
   {% endfor %}
   <div class="route-summary">Маршрут: <strong id="route-summary">{{ route_label(approval_mode.value, head_mode.value) }}</strong></div>
 
+  <div class="budget-section-title">Вид оплати</div>
+  <input type="hidden" name="require_payment_account_sent" value="1">
+  <label class="mode-option">
+    <input type="checkbox" name="require_payment_account" value="1" {{ 'checked' if require_payment_account }}>
+    <span>
+      <strong>Бухгалтер обов'язково вибирає «Вид оплати» при погодженні</strong>
+      <span class="muted">— і перед позначкою «Оплачено»</span>
+      <span class="mode-hint">«Вид оплати» — з чого платимо (види оплати з 1С). Його бачать і змінюють лише бухгалтери, фіндиректор
+        і адміністратор; ініціатор і учасники заявки не бачать. Бухгалтер вибирає з тих, до яких має доступ у 1С; якщо йому
+        не призначено жодного (або його не зв'язано з користувачем 1С) — поле не блокує погодження. Вимкніть, щоб вибір
+        був необов'язковим для всіх.</span>
+    </span>
+  </label>
+
   <div class="budget-section-title">Контрагент, якого ще немає в 1С</div>
   {% for code, label in PENDING_CP_MODES.items() %}
   <label class="mode-option">

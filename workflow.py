@@ -248,8 +248,8 @@ def in_queue(req, roles):
 
 
 def can_see_payment_account(roles):
-    """«Вид оплати» (з якого рахунку / каси платимо) бачать і змінюють лише бухгалтери й фіндиректор."""
-    return bool(roles & (ACCOUNTANT_ROLES | {"cfo"}))
+    """«Вид оплати» (з чого платимо) бачать і змінюють лише бухгалтери, фіндиректор і адміністратор."""
+    return bool(roles & (ACCOUNTANT_ROLES | {"cfo", "admin"}))
 
 
 def history_visible(entry, roles):

@@ -538,7 +538,8 @@ def request_card(request_id=None, *, context):
         account_options=payment_accounts.options_for(req, user, roles) if wf.can_see_payment_account(roles) else [],
         account_empty_hint=payment_accounts.no_options_hint(req, user, roles),
         account_required=wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES
-        and req["status"] in ("accountant", "approval") and bool(payment_accounts.options_for(req, user, roles)),
+        and req["status"] in ("accountant", "approval") and bool(payment_accounts.options_for(req, user, roles))
+        and bool(app_settings.get("require_payment_account")),
         can_link_cp=counterparties.is_pending(req.get("counterparty_id"))
         and bool(roles & (wf.ACCOUNTANT_ROLES | {"cfo", "admin"})),
         cp_suggested=next((m for p_, m in counterparties.auto_link_candidates(only_id=req.get("counterparty_id"))), None)
@@ -558,8 +559,8 @@ def _pay_guard(req):
     """Чи можна оплатити заявку з контрагентом, якого ще немає в 1С (параметр в адмінці)."""
     return {"cp_pending": counterparties.is_pending(req.get("counterparty_id")),
             "block_pending": app_settings.get("pending_cp_payment") == "block",
-            "account_required": bool(payment_accounts.options_for(req, getattr(g, "user", None),
-                                                                 getattr(g, "roles", frozenset())))}
+            "account_required": bool(app_settings.get("require_payment_account")) and bool(
+                payment_accounts.options_for(req, getattr(g, "user", None), getattr(g, "roles", frozenset())))}
 
 
 def _apply_payment_account(req, raw, user, roles):
@@ -586,7 +587,7 @@ def _route_settings(req):
 
 @app.route("/requests/<int:request_id>/payment-account", methods=["POST"])
 @auth.login_required
-@requires(*wf.ACCOUNTANT_ROLES, "cfo")
+@requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
 def request_payment_account(request_id, *, context):
     req = _load_visible(request_id)
     try:
@@ -1076,6 +1077,11 @@ def admin_settings(*, context):
         app_settings.set("dept_head_mode", head_mode, g.user["email"])
         flash(f"Маршрут: {wf.route_label(mode, head_mode)}. Діє для нових і повторно відправлених заявок.", "success")
         changed = True
+    require_acc = request.form.get("require_payment_account") == "1"
+    if "require_payment_account_sent" in request.form and require_acc != bool(app_settings.get("require_payment_account")):
+        app_settings.set("require_payment_account", require_acc, g.user["email"])
+        flash("«Вид оплати» при погодженні бухгалтером: " + ("обов'язковий" if require_acc else "необов'язковий"), "success")
+        changed = True
     if cp_mode != app_settings.get("pending_cp_payment"):
         app_settings.set("pending_cp_payment", cp_mode, g.user["email"])
         flash(f"Контрагент, якого ще немає в 1С: {PENDING_CP_MODES[cp_mode]}", "success")
@@ -1138,7 +1144,9 @@ def to_pay(*, context):
     return render_template(
         "to_pay.html",
         acc_filter=acc_filter,
-        account_options=sorted({r.get("payment_account_id") for r in all_rows if r.get("payment_account_id")}),
+        account_options=sorted({r.get("payment_account_id") for r in all_rows if r.get("payment_account_id")},
+                               key=lambda a: payment_accounts.label(a).lower()),
+        has_rows=bool(all_rows),
         account_totals=sorted(account_totals.items()),
         blocked=blocked,
         no_account=no_account,
@@ -1322,6 +1330,7 @@ def admin_users(*, context):
         head_mode=app_settings.info("dept_head_mode"),
         HEAD_MODES=wf.HEAD_MODES,
         pending_cp=app_settings.info("pending_cp_payment"),
+        require_payment_account=app_settings.get("require_payment_account"),
         PENDING_CP_MODES=PENDING_CP_MODES,
         pending_counterparties=counterparties.pending_items(),
         route_label=wf.route_label,

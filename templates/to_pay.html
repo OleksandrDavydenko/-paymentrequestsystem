@@ -24,7 +24,7 @@
         {% endfor %}
       </select>
       {% endif %}
-      {% if account_options %}
+      {% if has_rows %}
       <select name="acc" onchange="this.form.submit()" aria-label="Вид оплати" class="{{ 'is-active' if acc_filter }}">
         <option value="">Усі види оплати</option>
         {% for a in account_options %}
