@@ -73,6 +73,7 @@ def inject_refs():
     return {
         "ORGANIZATIONS": organizations.names(),
         "ORG_OPTIONS": organizations.options(),
+        "ORG_FILTER": organizations.filter_options(),
         "org_name": organizations.name,
         "COUNTERPARTIES": counterparties.names(),
         "cp_pending": counterparties.is_pending,
@@ -974,6 +975,23 @@ PENDING_CP_MODES = {
 }
 
 
+@app.route("/admin/organizations", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_organizations(*, context):
+    """Які організації можна вибирати в заявках. Зберігаємо вимкнені — нові з 1С дозволені автоматично."""
+    allowed = set(request.form.getlist("allowed"))
+    known = {o["code"] for o in organizations.get_all()}
+    if not allowed & known:
+        flash("Залиште дозволеною хоча б одну організацію — інакше заявку не можна буде створити", "error")
+        return redirect(url_for("admin_users") + "#organizations")
+    # Вимкнені, яких зараз немає в довіднику (напр. помічені на видалення), лишаються вимкненими
+    disabled = sorted((known - allowed) | (organizations.disabled_codes() - known))
+    app_settings.set("disabled_organizations", disabled, g.user["email"])
+    flash(f"Організації для вибору в заявках: дозволено {len(known & allowed)} з {len(known)}", "success")
+    return redirect(url_for("admin_users") + "#organizations")
+
+
 @app.route("/admin/settings", methods=["POST"])
 @auth.login_required
 @requires("admin")
@@ -1230,6 +1248,8 @@ def admin_users(*, context):
         departments_list=departments.get_departments(),
         departments_status=departments.status(),
         organizations_status=organizations.status(),
+        org_list=organizations.get_all(),
+        org_disabled=organizations.disabled_codes(),
         user_departments={uid: org_structure.department_of(uid) for uid in users},
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
         dept_rows=[{**d, **org_structure.staff(d["code"]), "members": org_structure.members_of(d["code"])}

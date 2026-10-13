@@ -126,6 +126,59 @@
   </div>
 </div>
 
+{% set org_on = org_list | rejectattr('code', 'in', org_disabled) | list %}
+<form method="post" action="{{ url_for('admin_organizations') }}" class="card organizations" id="organizations" data-collapsible>
+  <div class="toolbar">
+    <h2 style="margin:0">Організації</h2>
+    <span class="sec-summary muted">дозволено {{ org_on | length }} з {{ org_list | length }}</span>
+  </div>
+  <p class="muted" style="margin-top:0">Які організації ініціатор може вибрати в заявці. Список — з 1С (Power BI); помічені
+    на видалення не показуються. Нові організації, що з'являться в 1С, дозволені автоматично — їх можна вимкнути тут.
+    Вимкнена організація лишається в уже створених заявках і у фільтрах списків.</p>
+  <div class="budget-deps-tools org-tools">
+    <input type="search" id="org-search" placeholder="Пошук організації…" autocomplete="off">
+    <button type="button" class="btn btn-sm" id="org-all">Дозволити всі</button>
+    <button type="button" class="btn btn-sm" id="org-none">Зняти всі</button>
+    <span class="muted" id="org-count"></span>
+  </div>
+  <div class="org-list" id="org-list">
+    {% for o in org_list %}
+    <label class="org-item">
+      <input type="checkbox" name="allowed" value="{{ o.code }}" {{ 'checked' if o.code not in org_disabled }}>
+      <span class="org-name">{{ o.name }}</span>
+      <span class="muted org-meta">{{ o.code }}{{ ' · ' ~ o.country if o.country }}</span>
+      <span class="badge {{ 'green' if o.resident else 'grey' }}">{{ 'резидент' if o.resident else 'нерезидент' }}</span>
+    </label>
+    {% else %}
+    <div class="muted">Довідник організацій порожній — перевірте підключення в розділі «Довідники з 1С».</div>
+    {% endfor %}
+  </div>
+  <div class="form-actions" style="justify-content:flex-start">
+    <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+  </div>
+</form>
+<script>
+(function () {
+  const list = document.getElementById('org-list');
+  if (!list) return;
+  const boxes = () => [...list.querySelectorAll('input[name=allowed]')];
+  const count = () => {
+    const b = boxes();
+    document.getElementById('org-count').textContent = `Дозволено ${b.filter(x => x.checked).length} з ${b.length}`;
+  };
+  document.getElementById('org-search').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    list.querySelectorAll('.org-item').forEach(l => { l.hidden = q && !l.textContent.toLowerCase().includes(q); });
+  });
+  document.getElementById('org-search').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  const setAll = on => { boxes().forEach(b => { if (!b.closest('label').hidden) b.checked = on; }); count(); };
+  document.getElementById('org-all').addEventListener('click', () => setAll(true));
+  document.getElementById('org-none').addEventListener('click', () => setAll(false));
+  list.addEventListener('change', count);
+  count();
+})();
+</script>
+
 <div class="card mail-settings" id="mail-settings" data-collapsible>
   <div class="toolbar">
     <h2 style="margin:0">Email-сповіщення</h2>

@@ -705,3 +705,14 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .pay-account-inline { display: grid; gap: 6px; margin-bottom: 12px; padding: 10px 12px; background: #f6f8fa; border-radius: 8px; }
 .pay-account-inline select { max-width: 520px; }
 .pay-lock { cursor: help; font-size: 14px; }
+
+/* Організації, дозволені для вибору */
+.org-tools { margin-bottom: 8px; }
+.org-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 4px 16px; max-height: 420px;
+  overflow-y: auto; border: 1px solid #eaeef2; border-radius: 8px; padding: 8px 10px; }
+.org-item { display: flex; align-items: center; gap: 8px; padding: 5px 2px; cursor: pointer; min-width: 0; }
+.org-item input { width: 16px; height: 16px; flex-shrink: 0; }
+.org-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.org-meta { font-size: 12px; white-space: nowrap; }
+.org-item:has(input:not(:checked)) .org-name { color: var(--muted); text-decoration: line-through; }
+@media (max-width: 760px) { .org-list { grid-template-columns: 1fr; } .org-meta { display: none; } }

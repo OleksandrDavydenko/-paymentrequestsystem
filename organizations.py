@@ -5,6 +5,7 @@
 Резидентність: Country = Україна — резидент; порожня або будь-яка інша країна — нерезидент.
 Від резидентності залежить, який бухгалтер перевіряє безготівкові заявки.
 """
+import app_settings
 import pbi_cache
 
 UKRAINE = {"україна", "ukraine", "ua", "украина"}
@@ -61,8 +62,19 @@ def names():
     return {o["code"]: o["name"] for o in _table.items()}
 
 
+def disabled_codes():
+    """Коди організацій, які адмін заборонив вибирати в заявках."""
+    return set(app_settings.get("disabled_organizations") or [])
+
+
 def options():
-    """{код: назва} — для вибору в заявці (без помічених на видалення)."""
+    """{код: назва} — для вибору в заявці: без помічених на видалення й без вимкнених адміном."""
+    off = disabled_codes()
+    return {o["code"]: o["name"] for o in get_all() if o["code"] not in off}
+
+
+def filter_options():
+    """{код: назва} — для фільтрів у списках (усі чинні, зокрема вимкнені для вибору)."""
     return {o["code"]: o["name"] for o in get_all()}
 
 
