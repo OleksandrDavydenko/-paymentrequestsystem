@@ -10,6 +10,7 @@ from copy import deepcopy
 from datetime import date, datetime
 from decimal import Decimal
 
+import payment_accounts
 import workflow
 
 # ---------------------------------------------------------------- довідники
@@ -24,14 +25,7 @@ ORGANIZATIONS = {
 NONRESIDENT_ORGANIZATIONS = {4}
 workflow.NONRESIDENT_ORGANIZATIONS = NONRESIDENT_ORGANIZATIONS
 
-COUNTERPARTIES = {
-    1: "ТОВ «Нова Пошта»",
-    2: "ПрАТ «Київстар»",
-    3: "ТОВ «Епіцентр К»",
-    4: "ТОВ «Ю-Контрол»",
-    5: "Maersk A/S",
-    6: "ТОВ «Офісний Світ»",
-}
+# Контрагенти — у counterparties.py (з 1С + тимчасові, внесені в заявках)
 
 # Статті витрат — з Power BI (див. expense_items.py). Для мокових заявок — коди мокового довідника.
 _EXP = {1: "01.001", 2: "02.001", 3: "03.001", 4: "04.001", 5: "01.004", 6: "05.001", 7: "02.004"}
@@ -114,6 +108,9 @@ def _req(id_, author, pay_date, cp, org, exp, form, cur, amount, steps, note="",
             role = workflow.ACCOUNTANT_BY_CHANNEL[workflow.channel_of(req)]
         old = req["status"]
         new = workflow.WORKFLOW[old][1][action]
+        if action == "approve" and role in workflow.ACCOUNTANT_ROLES:
+            # бухгалтер при погодженні вибирає «Вид оплати»
+            req["payment_account_id"] = payment_accounts.options_for(req)[0]["id"]
         req["history"].append({
             "at": datetime.fromisoformat(at), "user_name": user[1], "user_email": user[0], "role": role,
             "action": action, "from_status": old, "to_status": new, "comment": comment,
@@ -182,6 +179,8 @@ def _parallel(req, day, approved_by=()):
     for user, role in approved_by:
         role = workflow.ACCOUNTANT_BY_CHANNEL[workflow.channel_of(req)] if role == "accountant" else role
         req["approvals"][role] = {"at": at, "user_name": user[1]}
+        if role in workflow.ACCOUNTANT_ROLES:
+            req["payment_account_id"] = payment_accounts.options_for(req)[0]["id"]
         req["history"].append({"at": at, "user_name": user[1], "user_email": user[0], "role": role,
                                "action": "approve", "from_status": "approval", "to_status": "approval",
                                "comment": ""})
@@ -262,6 +261,17 @@ def list_to_pay(roles):
     """Заявки «До оплати», видимі цим ролям; найближча дата оплати — першою."""
     rows = [r for r in _REQUESTS.values() if workflow.in_payments(r, roles)]
     return sorted(rows, key=lambda r: (r["pay_date"], r["id"]))
+
+
+def replace_counterparty(old_id, new_id, user, role, comment):
+    """Прив'язка тимчасового контрагента до 1С: усі заявки з old_id отримують new_id. Повертає кількість."""
+    count = 0
+    for r in _REQUESTS.values():
+        if r.get("counterparty_id") == old_id:
+            r["counterparty_id"] = new_id
+            workflow.add_history(r, "cp_link", user, role, comment, r["status"], r["status"])
+            count += 1
+    return count
 
 
 def get_request(request_id):

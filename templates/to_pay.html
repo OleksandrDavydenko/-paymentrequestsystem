@@ -24,6 +24,15 @@
         {% endfor %}
       </select>
       {% endif %}
+      {% if account_options %}
+      <select name="acc" onchange="this.form.submit()" aria-label="Вид оплати" class="{{ 'is-active' if acc_filter }}">
+        <option value="">Усі види оплати</option>
+        {% for a in account_options %}
+        <option value="{{ a }}" {{ 'selected' if acc_filter == a | string }}>{{ pay_account_label(a) }}</option>
+        {% endfor %}
+        <option value="none" {{ 'selected' if acc_filter == 'none' }}>Не вибрано</option>
+      </select>
+      {% endif %}
       {% include "_ref_filters.html" %}
     </div>
   </div>
@@ -33,6 +42,23 @@
 </form>
 
 {% include "_totals.html" %}
+
+{% if account_totals and view == "to_pay" %}
+<details class="card plan" id="by-account">
+  <summary><h2>За видом оплати</h2><span class="muted">скільки потрібно з кожного рахунку чи каси</span></summary>
+  <div class="table-wrap">
+  <table class="plan-table">
+    <thead><tr><th>Вид оплати</th><th class="num">Сума</th></tr></thead>
+    <tbody>
+      {% for label, sums in account_totals %}
+      <tr class="{{ 'overdue' if label == 'Не вибрано' }}"><td>{{ label }}</td>
+        <td class="num">{% for cur, v in sums.items() %}{{ v | money }} {{ cur }}{{ ' + ' if not loop.last }}{% endfor %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</details>
+{% endif %}
 
 {% if plan.days and view == "to_pay" %}
 <details class="card plan" open>
@@ -75,13 +101,14 @@
   <table class="stack sortable" id="{{ 'paid' if view == 'paid' else 'to-pay' }}">
     <thead>
       <tr>
-        {% if payable %}<th class="chk" data-nosort><input type="checkbox" id="check-all" aria-label="Вибрати всі"></th>{% endif %}
+        {% if payable or locked %}<th class="chk" data-nosort>{% if payable %}<input type="checkbox" id="check-all" aria-label="Вибрати всі">{% endif %}</th>{% endif %}
         <th>Номер</th>
         <th>Дата оплати</th>
         <th>Організація</th>
         <th>Контрагент</th>
         <th>Стаття витрат</th>
         <th>Форма оплати</th>
+        <th>Вид оплати</th>
         <th class="num">Сума</th>
         <th>Автор</th>
         {% if view == 'paid' %}<th>Оплачено</th>{% endif %}
@@ -92,11 +119,13 @@
       {% set overdue = view == 'to_pay' and r.pay_date < today %}
       {% set due_today = view == 'to_pay' and r.pay_date == today %}
       <tr class="clickable {{ 'overdue' if overdue }}" data-href="{{ url_for('request_card', request_id=r.id) }}">
-        {% if payable %}
+        {% if payable or locked %}
         <td class="chk">
           {% if r.id in payable %}
           <input type="checkbox" name="ids" value="{{ r.id }}" data-amount="{{ r.amount }}" data-cur="{{ r.currency }}"
                  aria-label="Вибрати заявку {{ r.number }}">
+          {% elif r.id in locked %}
+          <span class="pay-lock" title="{{ locked[r.id] }}" aria-label="{{ locked[r.id] }}">🔒</span>
           {% endif %}
         </td>
         {% endif %}
@@ -106,9 +135,11 @@
           {% if overdue %}<span class="badge red">прострочено</span>{% elif due_today %}<span class="badge amber">сьогодні</span>{% endif %}
         </td>
         <td data-label="Організація">{{ ORGANIZATIONS[r.organization_id] }}</td>
-        <td data-label="Контрагент">{{ COUNTERPARTIES[r.counterparty_id] }}</td>
+        <td data-label="Контрагент">{{ COUNTERPARTIES.get(r.counterparty_id, '') }}{% if cp_pending(r.counterparty_id) %}
+          <span class="badge amber" title="Контрагента ще немає в 1С{{ ' — оплату заблоковано' if pending_cp_mode == 'block' }}">новий</span>{% endif %}</td>
         <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
+        <td data-label="Вид оплати">{% if r.payment_account_id %}{{ pay_account_label(r.payment_account_id) }}{% else %}<span class="badge red">не вибрано</span>{% endif %}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
         <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
         {% if view == 'paid' %}
@@ -119,7 +150,7 @@
         {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="10" class="empty">{{ "Оплачених заявок немає" if view == "paid" else "Немає заявок, що чекають оплати" }}{{ " за вибраний період" if period or d_from or d_to }}</td></tr>
+      <tr><td colspan="11" class="empty">{{ "Оплачених заявок немає" if view == "paid" else "Немає заявок, що чекають оплати" }}{{ " за вибраний період" if period or d_from or d_to }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

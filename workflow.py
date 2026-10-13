@@ -148,7 +148,11 @@ ACTIONS = {
     "auto_skip": (None, "Крок пропущено", "grey", False),
     "participant_add": (None, "Додано учасника", "grey", False),
     "participant_remove": (None, "Прибрано учасника", "grey", False),
+    "cp_link": (None, "Контрагента прив'язано до 1С", "grey", False),
+    "pay_account": (None, "Вид оплати", "grey", False),  # бачать лише бухгалтери й фіндиректор
 }
+# Записи історії, які бачать лише ті, хто бачить «Вид оплати»
+PAYMENT_ACCOUNT_ACTIONS = {"pay_account"}
 
 # Режими погодження (налаштовуються в адмінці, запам'ятовуються в заявці при відправці)
 APPROVAL_MODES = {
@@ -232,6 +236,29 @@ def in_queue(req, roles):
     if actor == "dept_head":
         return heads_department(req, roles)
     return req["status"] != "to_pay" and actor in APPROVER_ROLES and actor in roles
+
+
+def can_see_payment_account(roles):
+    """«Вид оплати» (з якого рахунку / каси платимо) бачать і змінюють лише бухгалтери й фіндиректор."""
+    return bool(roles & (ACCOUNTANT_ROLES | {"cfo"}))
+
+
+def history_visible(entry, roles):
+    return entry["action"] not in PAYMENT_ACCOUNT_ACTIONS or can_see_payment_account(roles)
+
+
+def visible_history(req, roles):
+    return [h for h in req.get("history") or [] if history_visible(h, roles)]
+
+
+def set_payment_account(req, account_id, account_label, old_label, user, role):
+    """Змінити «Вид оплати» із записом в історії (видно лише бухгалтерам і фіндиректору)."""
+    if (req.get("payment_account_id") or None) == (account_id or None):
+        return False
+    req["payment_account_id"] = account_id or None
+    add_history(req, "pay_account", user, role, f"{old_label or '—'} → {account_label or '—'}",
+                req["status"], req["status"])
+    return True
 
 
 def can_see_payments(roles):
@@ -393,12 +420,13 @@ def history_role(req, roles, user_email):
                 "initiator")
 
 
-def apply_action(req, action, roles, user, comment="", mode="sequential", head_mode="view", heads=()):
+def apply_action(req, action, roles, user, comment="", mode="sequential", head_mode="view", heads=(), guard=None):
     """Виконати дію процесу над заявкою (змінює req). Кидає WorkflowError.
 
     mode / head_mode — режим погодження і роль керівника відділу з налаштувань; враховуються
     лише при відправці (submit) і запам'ятовуються в заявці, щоб зміна налаштувань не ламала
     заявки в процесі. heads — пошта керівників відділу заявки (для submit).
+    guard — {"cp_pending": контрагента ще немає в 1С, "block_pending": тоді не можна оплатити}.
     """
     comment = (comment or "").strip()
     role = acting_role(req, roles, user["email"])
@@ -406,6 +434,14 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
         raise WorkflowError("Ця дія недоступна для вашої ролі на поточному етапі")
     if ACTIONS[action][3] and not comment:
         raise WorkflowError("Вкажіть коментар — що саме потрібно виправити або чому заявку відхилено")
+    if action == "approve" and role in ACCOUNTANT_ROLES and not req.get("payment_account_id"):
+        raise WorkflowError("Перед погодженням оберіть «Вид оплати» — з якого рахунку чи каси платимо")
+    if action == "pay":
+        if not req.get("payment_account_id"):
+            raise WorkflowError("Оберіть «Вид оплати» — з якого рахунку чи каси платимо")
+        if guard and guard.get("cp_pending") and guard.get("block_pending"):
+            raise WorkflowError("Контрагента ще немає в 1С — заведіть його в 1С і прив'яжіть у заявці, "
+                                "тоді заявку можна буде позначити оплаченою")
     old = req["status"]
     new = WORKFLOW[old][1][action]
     if action == "submit":

@@ -9,7 +9,7 @@
 </select>
 <select name="cp" onchange="this.form.submit()" aria-label="Контрагент" class="{{ 'is-active' if refs.cp }}">
   <option value="">Усі контрагенти</option>
-  {% for key, label in COUNTERPARTIES.items() | sort(attribute='1') %}
+  {% for key, label in cp_filter_options.items() | sort(attribute='1') %}
   <option value="{{ key }}" {{ 'selected' if key == refs.cp }}>{{ label }}</option>
   {% endfor %}
 </select>

@@ -15,9 +15,21 @@
   {% if errors[name] %}<span class="err">{{ errors[name] }}</span>{% endif %}
 {%- endmacro %}
 
+{% macro account_select(name='payment_account_id', id='pay-account') -%}
+  <select name="{{ name }}" id="{{ id }}" class="pay-account-select">
+    <option value="">— не вибрано —</option>
+    {% for a in account_options %}
+    <option value="{{ a.id }}" {{ 'selected' if a.id == req.payment_account_id }}>{{ a.name }} · {{ a.currency }}{{ ' · ' ~ a.iban if a.iban }}</option>
+    {% endfor %}
+    {% if req.payment_account_id and req.payment_account_id not in account_options | map(attribute='id') | list %}
+    <option value="{{ req.payment_account_id }}" selected>{{ pay_account_label(req.payment_account_id) }}</option>
+    {% endif %}
+  </select>
+{%- endmacro %}
+
 {% block content %}
 {% set st = STATUSES[req.status] %}
-{% set last = req.history[-1] if req.history else none %}
+{% set last = history[-1] if history else none %}
 
 <div class="card">
   <div class="title-row">
@@ -110,11 +122,7 @@
       {{ err('pay_date') }}
     </div>
 
-    <div class="field">
-      <label for="counterparty_id">Контрагент</label>
-      {{ select_ref('counterparty_id', COUNTERPARTIES, req.counterparty_id, '— оберіть контрагента —') }}
-      {{ err('counterparty_id') }}
-    </div>
+    {% include "_counterparty_picker.html" %}
     <div class="field">
       <label for="organization_id">Організація</label>
       {{ select_ref('organization_id', ORGANIZATIONS, req.organization_id, '— оберіть організацію —') }}
@@ -211,15 +219,77 @@
 </form>
 
 {% if actions %}
+
+
 <form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision">
   <h2>Рішення — {{ ROLES[acting_role] }}</h2>
+  {% if account_required %}
+  <div class="pay-account-inline">
+    <label for="pay-account-decision"><strong>Вид оплати</strong> — з якого рахунку чи каси платимо
+      <span class="muted">(обов'язково для погодження; бачать лише бухгалтери й фіндиректор)</span></label>
+    {{ account_select(id='pay-account-decision') }}
+    {% if not account_options %}<span class="err">Для цієї організації немає {{ 'кас' if req.payment_form == 'cash' else 'рахунків' }} у довіднику</span>{% endif %}
+  </div>
+  {% endif %}
+  {% if 'pay' in actions and pay_blocked %}
+  <div class="callout red">Контрагента ще немає в 1С — заявку не можна позначити оплаченою, доки його не заведуть у 1С
+    і не прив'яжуть нижче (параметр «Контрагент, якого ще немає в 1С» в адмінці).</div>
+  {% elif 'pay' in actions and cp and cp.status == 'pending' %}
+  <div class="callout orange">Увага: контрагента ще немає в 1С.</div>
+  {% endif %}
   <textarea name="comment" placeholder="Коментар (обов'язковий, якщо повертаєте або відхиляєте — напр. «Додайте договір та рахунок у PDF»)">{{ draft_comment }}</textarea>
   <div class="decision-buttons">
     {% for a in actions %}
-    <button type="submit" name="action" value="{{ a }}" class="btn btn-{{ ACTIONS[a][2] }}">{{ ACTIONS[a][0] }}</button>
+    <button type="submit" name="action" value="{{ a }}" class="btn btn-{{ ACTIONS[a][2] }}"
+            {{ 'disabled' if a == 'pay' and pay_blocked }}>{{ ACTIONS[a][0] }}</button>
     {% endfor %}
   </div>
 </form>
+{% endif %}
+
+{% if can_see_account and req.id and not account_required %}
+<form method="post" action="{{ url_for('request_payment_account', request_id=req.id) }}" class="card pay-account" id="payment-account">
+  <div class="section-head">
+    <h2>Вид оплати</h2>
+    <span class="muted">бачать і змінюють лише бухгалтери й фіндиректор</span>
+  </div>
+  <div class="pay-account-row">
+    {{ account_select() }}
+    <button type="submit" class="btn btn-sm">Зберегти</button>
+  </div>
+  <p class="muted" style="margin:6px 0 0">З якого рахунку ({{ 'каси' if req.payment_form == 'cash' else 'банку' }}) організації
+    «{{ ORGANIZATIONS.get(req.organization_id, '') }}» платимо. Ініціатор цього поля не бачить.</p>
+</form>
+{% endif %}
+
+{% if can_link_cp %}
+<div class="card cp-link" id="cp-link">
+  <div class="section-head">
+    <h2>Контрагента потрібно завести в 1С</h2>
+    <span class="badge amber">новий</span>
+  </div>
+  <p class="muted" style="margin-top:0">Ініціатор вніс контрагента, якого ще немає в 1С ({{ cp.created_by }}, {{ cp.created_at.replace('T', ' ')[:16] }}).
+    Заведіть його в 1С і прив'яжіть тут — або система прив'яже сама під час оновлення довідника за ЄДРПОУ.</p>
+  <dl class="cp-requisites">
+    {% for label, value in [('Назва', cp.name), (('ЄДРПОУ / ІПН' if cp.resident else 'Реєстраційний номер'), cp.edrpou),
+                            ('Країна', cp.country), ('IBAN', cp.iban), ('Банк', cp.bank), ('Коментар', cp.note)] if value %}
+    <dt>{{ label }}</dt>
+    <dd><span>{{ value }}</span> <button type="button" class="btn-link cp-copy" data-copy="{{ value }}" title="Скопіювати">⧉</button></dd>
+    {% endfor %}
+  </dl>
+  <form method="post" action="{{ url_for('counterparty_link', cp_id=cp.id) }}" class="cp-link-form">
+    <input type="hidden" name="next" value="{{ url_for('request_card', request_id=req.id) }}">
+    <label for="cp-link-select">Прив'язати до контрагента з 1С</label>
+    <select name="onec_id" id="cp-link-select" required>
+      <option value="">— оберіть —</option>
+      {% for c in onec_counterparties %}
+      <option value="{{ c.id }}" {{ 'selected' if c.id == cp_suggested }}>{{ c.name }}{{ ' · ' ~ c.edrpou if c.edrpou }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-primary btn-sm">Прив'язати</button>
+    {% if cp_suggested %}<span class="muted">Знайдено збіг за ЄДРПОУ / IBAN — перевірте й підтвердьте</span>{% endif %}
+  </form>
+</div>
 {% endif %}
 
 {% if 'admin' in roles and req.id %}
@@ -290,11 +360,11 @@
 </form>
 {% endif %}
 
-{% if req.history %}
+{% if history %}
 <div class="card" id="history">
   <h2 class="card-title">Історія погодження</h2>
   <ul class="timeline">
-    {% for h in req.history | reverse %}
+    {% for h in history | reverse %}
     <li class="{{ ACTIONS[h.action][2] }}">
       <div class="tl-head">
         <span class="badge {{ ACTIONS[h.action][2] }}">{{ ACTIONS[h.action][1] }}</span>
@@ -399,15 +469,15 @@ const dlg = document.getElementById('invoice-dialog');
 if (document.getElementById('add-line')) {
   document.getElementById('add-line').onclick = () => addLine().querySelector('input').focus();
   document.getElementById('pick-invoices').onclick = () => {
-    const cpSelect = document.getElementById('counterparty_id');
-    const cp = Number(cpSelect.value);
-    if (!cp) { alert('Спочатку оберіть контрагента'); cpSelect.focus(); return; }
+    const cpHidden = document.getElementById('counterparty_id');
+    const cp = Number(cpHidden.value);
+    if (!cp) { alert('Спочатку оберіть контрагента'); document.getElementById('cp-input').focus(); return; }
     const added = new Set(rows().map(tr => tr.querySelector('[name$="-invoice"]').value));
     const list = INVOICES.filter(inv => inv.counterparty_id === cp);
-    document.getElementById('dlg-cp').textContent = '— ' + cpSelect.selectedOptions[0].text;
+    document.getElementById('dlg-cp').textContent = '— ' + document.getElementById('cp-input').value;
     const tbody = document.getElementById('dlg-rows');
     tbody.innerHTML = '';
-    if (!list.length) tbody.innerHTML = '<tr><td colspan="6" class="empty">Рахунків цього контрагента немає</td></tr>';
+    if (!list.length) tbody.innerHTML = '<tr><td colspan="6" class="empty">Рахунків цього контрагента в 1С немає — додайте рядок вручну</td></tr>';
     list.forEach(inv => {
       const tr = document.createElement('tr');
       const dis = added.has(inv.number);
@@ -432,6 +502,11 @@ if (document.getElementById('add-line')) {
 }
 
 refresh();
+
+document.querySelectorAll('.cp-copy').forEach(b => b.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✓'; setTimeout(() => { b.textContent = '⧉'; }, 1200); }
+  catch (e) { /* без доступу до буфера */ }
+}));
 </script>
 {% if can_manage_participants %}<script src="{{ url_for('static', filename='participants.js') }}"></script>{% endif %}
 {% endblock %}

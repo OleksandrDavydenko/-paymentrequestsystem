@@ -1,0 +1,111 @@
+{# Вибір контрагента: поле з підказками + вікно довідника з пошуком, фільтрами й «+ Новий контрагент».
+   Очікує req, errors, editable, cp (поточний контрагент або None), cp_items (список для вибору). #}
+<div class="field">
+  <label for="cp-input">Контрагент</label>
+  {% if editable %}
+  <div class="exp-picker cp-picker {{ 'invalid' if errors.counterparty_id }}" id="cp-picker"
+       data-initial-name="{{ cp.name if cp else '' }}">
+    <input type="hidden" name="counterparty_id" id="counterparty_id" value="{{ req.counterparty_id or '' }}">
+    <div class="exp-input-wrap">
+      <input type="text" id="cp-input" autocomplete="off" spellcheck="false"
+             placeholder="Назва, ЄДРПОУ або IBAN…" role="combobox" aria-autocomplete="list"
+             aria-expanded="false" aria-controls="cp-suggest">
+      <span class="cp-new-chip" id="cp-chip" hidden title="Цього контрагента ще немає в 1С">новий</span>
+      <button type="button" class="exp-clear" id="cp-clear" title="Очистити" aria-label="Очистити" hidden>✕</button>
+      <button type="button" class="exp-open" id="cp-open" title="Відкрити довідник контрагентів"
+              aria-label="Відкрити довідник контрагентів">
+        <svg viewBox="0 0 20 20" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor"
+             stroke-width="1.7" stroke-linecap="round"><path d="M3 5h2M3 10h2M3 15h2M8 5h9M8 10h9M8 15h9"/></svg>
+      </button>
+    </div>
+    <ul class="exp-suggest" id="cp-suggest" role="listbox" hidden></ul>
+  </div>
+  {% else %}
+  <div class="exp-readonly">
+    {% if cp %}
+    <span class="exp-readonly-name">{{ cp.name }}</span>
+    {% if cp.status == 'pending' %}<span class="badge amber" title="Внесено в заявці, ще немає в 1С">новий — ще немає в 1С</span>{% endif %}
+    {% elif req.counterparty_id %}<span class="muted">#{{ req.counterparty_id }} — немає в довіднику</span>
+    {% else %}<span class="muted">—</span>{% endif %}
+  </div>
+  {% endif %}
+  {% if errors.counterparty_id %}<span class="err">{{ errors.counterparty_id }}</span>{% endif %}
+</div>
+
+{% if editable %}
+<dialog id="cp-dialog" class="exp-dialog cp-dialog" aria-labelledby="cp-dialog-title">
+  <div class="dlg-head">
+    <span id="cp-dialog-title">Контрагенти</span>
+    <button type="button" class="exp-dialog-close" id="cp-dialog-close" aria-label="Закрити">✕</button>
+  </div>
+
+  <div id="cp-list-view">
+    <div class="exp-dialog-search">
+      <input type="search" id="cp-dialog-input" autocomplete="off" spellcheck="false"
+             placeholder="Пошук: назва, ЄДРПОУ або IBAN…" aria-controls="cp-dialog-list">
+      <span class="muted" id="cp-dialog-count"></span>
+    </div>
+    <div class="exp-kind-filter" role="radiogroup" aria-label="Тип контрагента">
+      <button type="button" class="chip active" data-filter="">Усі</button>
+      <button type="button" class="chip" data-filter="resident">Резиденти</button>
+      <button type="button" class="chip" data-filter="nonresident">Нерезиденти</button>
+      <button type="button" class="chip" data-filter="pending">Нові — ще немає в 1С</button>
+    </div>
+    <div class="dlg-body exp-dialog-body">
+      <div class="exp-recent" id="cp-recent" hidden>
+        <div class="exp-section-title">Нещодавні</div>
+        <div class="exp-recent-list" id="cp-recent-list"></div>
+      </div>
+      <div class="exp-table" role="listbox" id="cp-dialog-list" aria-label="Контрагенти"></div>
+    </div>
+    <div class="dlg-foot exp-dialog-foot">
+      <button type="button" class="btn" id="cp-new-open">+ Новий контрагент</button>
+      <span class="muted exp-keys">↑↓ — вибір · Enter — підтвердити · Esc — закрити</span>
+      <button type="button" class="btn" id="cp-dialog-cancel">Скасувати</button>
+    </div>
+  </div>
+
+  {# Новий контрагент — поля без name, щоб не потрапити у форму заявки; надсилаються окремим запитом #}
+  <div id="cp-new-view" hidden>
+    <div class="dlg-body cp-new-body">
+      <p class="muted cp-new-intro">Якщо контрагента ще немає в 1С — внесіть його реквізити. Заявку можна відправити одразу;
+        бухгалтер заведе контрагента в 1С{{ ' — до того заявку не можна буде позначити оплаченою' if pending_cp_block }}.</p>
+      <div class="cp-new-kind" role="radiogroup" aria-label="Резидентність">
+        <label><input type="radio" name="cp-new-resident" value="1" checked> Резидент України</label>
+        <label><input type="radio" name="cp-new-resident" value="0"> Нерезидент</label>
+      </div>
+      <div class="cp-new-grid">
+        <label for="cp-new-edrpou" id="cp-new-edrpou-label">ЄДРПОУ / ІПН</label>
+        <div><input type="text" id="cp-new-edrpou" inputmode="numeric" autocomplete="off" placeholder="8 цифр (ФОП — 10)">
+          <span class="err" data-err="edrpou"></span></div>
+        <label for="cp-new-country" class="cp-nonres" hidden>Країна</label>
+        <div class="cp-nonres" hidden><input type="text" id="cp-new-country" autocomplete="off" placeholder="напр. DK або Данія">
+          <span class="err" data-err="country"></span></div>
+        <label for="cp-new-name">Назва</label>
+        <div><input type="text" id="cp-new-name" autocomplete="off" placeholder="ТОВ «Назва»">
+          <span class="err" data-err="name"></span></div>
+        <label for="cp-new-iban">IBAN</label>
+        <div><input type="text" id="cp-new-iban" autocomplete="off" spellcheck="false" placeholder="UA00 0000 0000 0000 0000 0000 0000 0">
+          <span class="err" data-err="iban"></span>
+          <span class="muted cp-hint">Необов'язково, але бухгалтеру буде простіше</span></div>
+        <label for="cp-new-bank">Банк</label>
+        <div><input type="text" id="cp-new-bank" autocomplete="off"></div>
+        <label for="cp-new-note">Коментар для бухгалтера</label>
+        <div><textarea id="cp-new-note" rows="2" placeholder="Напр. договір у документах заявки"></textarea></div>
+      </div>
+      <div class="cp-duplicate" id="cp-duplicate" hidden>
+        <span id="cp-duplicate-text"></span>
+        <button type="button" class="btn btn-sm btn-primary" id="cp-duplicate-pick">Вибрати його</button>
+      </div>
+      <div class="err" id="cp-new-error"></div>
+    </div>
+    <div class="dlg-foot">
+      <button type="button" class="btn btn-primary" id="cp-new-save">Зберегти й вибрати</button>
+      <button type="button" class="btn" id="cp-new-back">← До списку</button>
+    </div>
+  </div>
+</dialog>
+<script type="application/json" id="cp-items-data">{{ cp_items | tojson }}</script>
+<script>window.CP_NEW_URL = {{ url_for('counterparty_new') | tojson }};</script>
+<script src="{{ url_for('static', filename='counterparty-picker.js') }}"></script>
+{% endif %}

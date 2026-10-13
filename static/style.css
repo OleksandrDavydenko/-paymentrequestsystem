@@ -669,3 +669,39 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
   .uc-current { margin-left: 0; }
   .uc-deps th.c, .uc-deps td.c { width: auto; }
 }
+
+/* Вибір контрагента */
+.cp-new-chip { display: inline-block; background: #fff4d6; color: #8a5a00; border-radius: 999px; padding: 1px 8px;
+  font-size: 11px; font-weight: 700; white-space: nowrap; }
+.cp-picker .cp-new-chip { margin-right: 4px; }
+.cp-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+.cp-meta { font-size: 12px; white-space: nowrap; }
+.cp-new-body { padding: 14px 18px; }
+.cp-new-intro { margin-top: 0; }
+.cp-new-kind { display: flex; gap: 18px; margin-bottom: 12px; }
+.cp-new-kind label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+.cp-new-grid { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 8px 12px; align-items: start; }
+.cp-new-grid > label { padding-top: 8px; color: var(--muted); font-size: 14px; }
+.cp-new-grid input, .cp-new-grid textarea { width: 100%; }
+.cp-new-grid [hidden] { display: none; }
+.cp-hint { display: block; font-size: 12px; margin-top: 2px; }
+.cp-duplicate { margin-top: 12px; padding: 10px 12px; background: #fff4e5; border-left: 4px solid #d97706; display: flex;
+  gap: 10px; align-items: center; flex-wrap: wrap; }
+@media (max-width: 760px) { .cp-new-grid { grid-template-columns: 1fr; } .cp-new-grid > label { padding-top: 0; } }
+
+/* Тимчасовий контрагент: блок для бухгалтера */
+.cp-link { border-left: 4px solid #d97706; }
+.cp-requisites { display: grid; grid-template-columns: 170px minmax(0, 1fr); gap: 4px 12px; margin: 10px 0 14px; }
+.cp-requisites dt { color: var(--muted); }
+.cp-requisites dd { margin: 0; word-break: break-word; }
+.cp-copy { color: var(--primary); padding: 0 4px; }
+.cp-link-form { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.cp-link-form select { min-width: 0; max-width: 420px; flex: 1; }
+@media (max-width: 760px) { .cp-requisites { grid-template-columns: 1fr; } }
+
+/* Вид оплати */
+.pay-account-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.pay-account-select { min-width: 0; max-width: 520px; flex: 1; }
+.pay-account-inline { display: grid; gap: 6px; margin-bottom: 12px; padding: 10px 12px; background: #f6f8fa; border-radius: 8px; }
+.pay-account-inline select { max-width: 520px; }
+.pay-lock { cursor: help; font-size: 14px; }

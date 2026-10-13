@@ -20,7 +20,8 @@ DEFAULTS = {
     "smtp_username": "",
     "smtp_password": "",  # зашифрований (secret_box)
     "allow_custom_email": False,
-    "dept_head_mode": "view",  # керівник відділу: view — лише бачить заявки відділу, approve — погоджує першим  # користувачі можуть вказати іншу пошту для сповіщень
+    "dept_head_mode": "view",
+    "pending_cp_payment": "block",  # контрагент, якого ще немає в 1С: block — не можна «Оплачено», allow — з попередженням  # керівник відділу: view — лише бачить заявки відділу, approve — погоджує першим  # користувачі можуть вказати іншу пошту для сповіщень
 }
 
 _lock = threading.Lock()

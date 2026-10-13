@@ -13,8 +13,10 @@ import identity.flask
 import expense_items
 import app_settings
 import clock
+import counterparties
 import departments
 import org_structure
+import payment_accounts
 import graph
 import mailer
 import notifications
@@ -69,7 +71,11 @@ def fmt_datetime(value):
 def inject_refs():
     return {
         "ORGANIZATIONS": db.ORGANIZATIONS,
-        "COUNTERPARTIES": db.COUNTERPARTIES,
+        "COUNTERPARTIES": counterparties.names(),
+        "cp_pending": counterparties.is_pending,
+        # Фільтр «Контрагент»: ті, кого можна вибрати (без уже прив'язаних тимчасових)
+        "cp_filter_options": {c["id"]: c["name"] for c in counterparties.get_all()},
+        "pay_account_label": payment_accounts.label,
         "expense_name": expense_label,
         "expense_title": expense_items.get_name,
         # Фільтр «Стаття витрат»: лише статті, що трапляються в заявках
@@ -118,7 +124,8 @@ def parse_request_form(form, current=None, allowed_codes=None):
     """Повертає (дані заявки, словник помилок). Автор/дата/номер не з форми."""
     errors = {}
     data = {
-        "counterparty_id": _parse_ref(form.get("counterparty_id"), db.COUNTERPARTIES),
+        "counterparty_id": _parse_ref(form.get("counterparty_id"),
+                                      counterparties.selectable_ids() | {(current or {}).get("counterparty_id")}),
         "organization_id": _parse_ref(form.get("organization_id"), db.ORGANIZATIONS),
         "expense_code": (form.get("expense_code") or "").strip() or None,
         "payment_form": form.get("payment_form") if form.get("payment_form") in db.PAYMENT_FORMS else None,
@@ -319,7 +326,7 @@ def _load_visible(request_id):
 
 REF_FILTERS = {  # параметр запиту -> (поле заявки, довідник)
     "org": ("organization_id", db.ORGANIZATIONS),
-    "cp": ("counterparty_id", db.COUNTERPARTIES),
+    "cp": ("counterparty_id", counterparties.names),
     "exp": ("expense_code", None),  # код статті витрат (рядок)
     "dep": ("department", None),  # код відділу автора (рядок)
 }
@@ -327,7 +334,8 @@ REF_FILTERS = {  # параметр запиту -> (поле заявки, до
 
 def ref_filters(args):
     """Вибрані значення фільтрів довідників: {"org": 1, "cp": None, "exp": "01.001"}."""
-    selected = {key: _parse_ref(args.get(key), ref) for key, (_, ref) in REF_FILTERS.items() if ref is not None}
+    selected = {key: _parse_ref(args.get(key), ref() if callable(ref) else ref)
+                for key, (_, ref) in REF_FILTERS.items() if ref is not None}
     selected["exp"] = (args.get("exp") or "").strip() or None
     selected["dep"] = (args.get("dep") or "").strip() or None
     return selected
@@ -344,6 +352,13 @@ def apply_ref_filters(rows, selected):
 @auth.login_required
 @requires()
 def index(*, context):
+    return redirect(_home())
+
+
+@app.route("/home")
+@auth.login_required
+@requires()
+def _home_redirect(*, context):
     return redirect(_home())
 
 
@@ -429,6 +444,11 @@ def request_card(request_id=None, *, context):
             return redirect(url_for("request_card", request_id=request_id))
         data, errors = parse_request_form(request.form, existing, {i["code"] for i in budget_items})
         req = {**existing, **data}
+        if existing.get("payment_account_id") and (
+                data["organization_id"] != existing.get("organization_id")
+                or data["payment_form"] != existing.get("payment_form")):
+            wf.set_payment_account(req, None, "", payment_accounts.label(existing["payment_account_id"]) +
+                                   " (скинуто: змінено організацію або форму оплати)", user, "initiator")
         if not errors:
             for line in req["lines"]:
                 line.pop("amount_raw", None)
@@ -476,6 +496,20 @@ def request_card(request_id=None, *, context):
         parallel=req.get("route_mode") == "parallel",
         head_names=", ".join(h["name"] or h["email"] for h in org_structure.heads_of(req.get("department"))),
         participants=req.get("participants") or [],
+        history=wf.visible_history(req, roles),
+        cp=counterparties.get(req.get("counterparty_id")),
+        cp_items=counterparties.picker_items() if wf.can_edit(req, roles, user["email"]) else [],
+        can_see_account=wf.can_see_payment_account(roles),
+        account_options=payment_accounts.options_for(req) if wf.can_see_payment_account(roles) else [],
+        account_required=wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES
+        and req["status"] in ("accountant", "approval"),
+        can_link_cp=counterparties.is_pending(req.get("counterparty_id"))
+        and bool(roles & (wf.ACCOUNTANT_ROLES | {"cfo", "admin"})),
+        onec_counterparties=sorted(counterparties.onec_items(), key=lambda c: c["name"].lower()),
+        cp_suggested=next((m["id"] for p_, m in counterparties.auto_link_candidates()
+                           if p_["id"] == req.get("counterparty_id")), None),
+        pay_blocked=_pay_guard(req)["cp_pending"] and _pay_guard(req)["block_pending"],
+        pending_cp_block=app_settings.get("pending_cp_payment") == "block",
         can_manage_participants=req["id"] is not None and wf.can_manage_participants(req, roles, user["email"]),
         approvals=req.get("approvals") or {},
         pending_roles=wf.pending_roles(req) if req["status"] == "approval" else [],
@@ -485,6 +519,25 @@ def request_card(request_id=None, *, context):
     )
 
 
+def _pay_guard(req):
+    """Чи можна оплатити заявку з контрагентом, якого ще немає в 1С (параметр в адмінці)."""
+    return {"cp_pending": counterparties.is_pending(req.get("counterparty_id")),
+            "block_pending": app_settings.get("pending_cp_payment") == "block"}
+
+
+def _apply_payment_account(req, raw, user, roles):
+    """Зберегти «Вид оплати» з форми (лише бухгалтер / фіндиректор). Кидає WorkflowError."""
+    if not wf.can_see_payment_account(roles) or raw is None:
+        return False
+    raw = raw.strip()
+    if raw and not payment_accounts.valid_for(req, raw):
+        raise wf.WorkflowError("Такого рахунку чи каси немає в організації заявки — оберіть зі списку")
+    new_id = int(raw) if raw else None
+    old_label = payment_accounts.label(req.get("payment_account_id")) if req.get("payment_account_id") else ""
+    return wf.set_payment_account(req, new_id, payment_accounts.label(new_id) if new_id else "", old_label,
+                                  user, wf.history_role(req, roles, user["email"]))
+
+
 def _route_settings(req):
     """Налаштування маршруту для відправки заявки: режим, роль керівника, керівники відділу автора."""
     return {
@@ -492,6 +545,73 @@ def _route_settings(req):
         "head_mode": app_settings.get("dept_head_mode"),
         "heads": [h["email"] for h in org_structure.heads_of(req.get("department")) if h["email"]],
     }
+
+
+@app.route("/requests/<int:request_id>/payment-account", methods=["POST"])
+@auth.login_required
+@requires(*wf.ACCOUNTANT_ROLES, "cfo")
+def request_payment_account(request_id, *, context):
+    req = _load_visible(request_id)
+    try:
+        changed = _apply_payment_account(req, request.form.get("payment_account_id", ""), g.user, g.roles)
+    except wf.WorkflowError as e:
+        flash(str(e), "error")
+        return redirect(url_for("request_card", request_id=request_id) + "#payment-account")
+    if changed:
+        db.save_request(req)
+        label = payment_accounts.label(req.get("payment_account_id")) or "не вибрано"
+        flash(f"Вид оплати: {label}", "success")
+    else:
+        flash("Змін немає", "success")
+    return redirect(url_for("request_card", request_id=request_id) + "#payment-account")
+
+
+@app.route("/counterparties/search")
+@auth.login_required
+@requires()
+def counterparties_search(*, context):
+    return {"items": [{"id": c["id"], "name": c["name"], "edrpou": c.get("edrpou", ""), "pending": c["status"] == "pending"}
+                      for c in counterparties.search(request.args.get("q", ""))]}
+
+
+@app.route("/counterparties/new", methods=["POST"])
+@auth.login_required
+@requires("initiator")
+def counterparty_new(*, context):
+    """Новий (тимчасовий) контрагент, якого ще немає в 1С. JSON: {item} | {errors} | {duplicate}."""
+    data = request.get_json(silent=True) or request.form
+    item, errors, duplicate = counterparties.create_pending(data, g.user)
+    if errors:
+        return {"errors": errors}, 400
+    if duplicate:
+        return {"duplicate": {"id": duplicate["id"], "name": duplicate["name"], "edrpou": duplicate.get("edrpou", ""),
+                              "pending": duplicate["status"] == "pending"}}, 409
+    return {"item": {"id": item["id"], "name": item["name"], "edrpou": item["edrpou"], "country": item["country"],
+                     "resident": item["resident"], "iban": item["iban"], "pending": True}}
+
+
+def _link_counterparty(pending_id, onec_id, user, role):
+    """Прив'язати тимчасового контрагента до запису з 1С і перевести на нього всі заявки."""
+    pending, target = counterparties.link(pending_id, onec_id, user)
+    return pending, target, db.replace_counterparty(pending["id"], target["id"], user, role,
+                                                    f"{pending['name']} → {target['name']} (з 1С)")
+
+
+@app.route("/counterparties/<int:cp_id>/link", methods=["POST"])
+@auth.login_required
+@requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
+def counterparty_link(cp_id, *, context):
+    nxt = request.form.get("next") or ""
+    # Лише відносна адреса всередині системи (без переходу на сторонні сайти)
+    back = nxt if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt else url_for("_home_redirect")
+    try:
+        role = next((r for r in (*sorted(wf.ACCOUNTANT_ROLES), "cfo", "admin") if r in g.roles), "admin")
+        pending, target, count = _link_counterparty(cp_id, request.form.get("onec_id") or 0, g.user, role)
+    except (ValueError, TypeError) as e:
+        flash(str(e) or "Оберіть контрагента з 1С", "error")
+        return redirect(back)
+    flash(f"Контрагента «{pending['name']}» прив'язано до «{target['name']}» з 1С (заявок: {count})", "success")
+    return redirect(back)
 
 
 @app.route("/users/search")
@@ -540,7 +660,9 @@ def request_action(request_id, *, context):
     req = _load_visible(request_id)
     action = request.form.get("action")
     try:
-        wf.apply_action(req, action, g.roles, g.user, request.form.get("comment"), **_route_settings(req))
+        _apply_payment_account(req, request.form.get("payment_account_id"), g.user, g.roles)
+        wf.apply_action(req, action, g.roles, g.user, request.form.get("comment"), **_route_settings(req),
+                        guard=_pay_guard(req))
     except wf.WorkflowError as e:
         flash(str(e), "error")
         session["draft_comment"] = request.form.get("comment", "")
@@ -826,19 +948,33 @@ def admin_mail_test(*, context):
     return redirect(url_for("admin_users") + "#mail-settings")
 
 
+PENDING_CP_MODES = {
+    "block": "заборонити позначати «Оплачено», доки контрагента не прив'язано до 1С",
+    "allow": "дозволити оплату з попередженням",
+}
+
+
 @app.route("/admin/settings", methods=["POST"])
 @auth.login_required
 @requires("admin")
 def admin_settings(*, context):
     mode = request.form.get("approval_mode")
     head_mode = request.form.get("dept_head_mode", app_settings.get("dept_head_mode"))
-    if mode not in wf.APPROVAL_MODES or head_mode not in wf.HEAD_MODES:
+    cp_mode = request.form.get("pending_cp_payment", app_settings.get("pending_cp_payment"))
+    if mode not in wf.APPROVAL_MODES or head_mode not in wf.HEAD_MODES or cp_mode not in PENDING_CP_MODES:
         flash("Невідомий режим погодження", "error")
-    elif mode != app_settings.get("approval_mode") or head_mode != app_settings.get("dept_head_mode"):
+        return redirect(url_for("admin_users") + "#process-settings")
+    changed = False
+    if mode != app_settings.get("approval_mode") or head_mode != app_settings.get("dept_head_mode"):
         app_settings.set("approval_mode", mode, g.user["email"])
         app_settings.set("dept_head_mode", head_mode, g.user["email"])
         flash(f"Маршрут: {wf.route_label(mode, head_mode)}. Діє для нових і повторно відправлених заявок.", "success")
-    else:
+        changed = True
+    if cp_mode != app_settings.get("pending_cp_payment"):
+        app_settings.set("pending_cp_payment", cp_mode, g.user["email"])
+        flash(f"Контрагент, якого ще немає в 1С: {PENDING_CP_MODES[cp_mode]}", "success")
+        changed = True
+    if not changed:
         flash("Змін немає", "success")
     return redirect(url_for("admin_users") + "#process-settings")
 
@@ -880,12 +1016,27 @@ def to_pay(*, context):
         entry = wf.paid_entry(r) if view == "paid" else None
         return entry["at"].date() if entry else r["pay_date"]
 
+    acc_filter = request.args.get("acc", "")
     rows = [r for r in apply_ref_filters(all_rows, refs)
             if (not form_filter or wf.channel_of(r) == form_filter)
+            and (not acc_filter or str(r.get("payment_account_id") or "none") == acc_filter)
             and _in_period(period_date(r), d_from, d_to)]
+    account_totals = {}
+    for r in rows:
+        key = payment_accounts.label(r.get("payment_account_id")) if r.get("payment_account_id") else "Не вибрано"
+        t = account_totals.setdefault(key, {})
+        t[r["currency"]] = t.get(r["currency"], Decimal(0)) + r["amount"]
+    blocked = {r["id"] for r in rows if _pay_guard(r)["cp_pending"] and _pay_guard(r)["block_pending"]}
+    no_account = {r["id"] for r in rows if not r.get("payment_account_id")}
 
     return render_template(
         "to_pay.html",
+        acc_filter=acc_filter,
+        account_options=sorted({r.get("payment_account_id") for r in all_rows if r.get("payment_account_id")}),
+        account_totals=sorted(account_totals.items()),
+        blocked=blocked,
+        no_account=no_account,
+        pending_cp_mode=app_settings.get("pending_cp_payment"),
         user_name=g.user["name"],
         view=view,
         paid_entry=wf.paid_entry,
@@ -901,7 +1052,13 @@ def to_pay(*, context):
         presets=date_presets(today),
         # Фільтр за формою оплати має сенс, якщо видно більше однієї форми
         visible_forms=[f for f in wf.CHANNELS if any(wf.channel_of(r) == f for r in all_rows)],
-        payable={r["id"] for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])},
+        payable={r["id"] for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
+                 and r["id"] not in blocked and r["id"] not in no_account},
+        # Мої заявки до оплати, які зараз не можна оплатити, — з причиною
+        locked={r["id"]: ("Контрагента ще немає в 1С — оплату заблоковано" if r["id"] in blocked
+                          else "Не вибрано «Вид оплати» — відкрийте заявку й виберіть рахунок або касу")
+                for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
+                and (r["id"] in blocked or r["id"] in no_account)},
     )
 
 
@@ -943,7 +1100,7 @@ def _requests_overview(source, title, table_id, **extra):
             return False
         if q:
             haystack = " ".join([r["number"], r["author_name"], r["author_email"], r.get("note") or "",
-                                 db.COUNTERPARTIES.get(r["counterparty_id"], ""),
+                                 counterparties.names().get(r["counterparty_id"], ""),
                                  departments.get_name(r.get("department"))]).lower()
             return q in haystack
         return True
@@ -982,7 +1139,7 @@ def to_pay_bulk(*, context):
         if not req:
             continue
         try:
-            wf.apply_action(req, "pay", g.roles, g.user, comment)
+            wf.apply_action(req, "pay", g.roles, g.user, comment, guard=_pay_guard(req))
         except wf.WorkflowError:
             skipped.append(req["number"])
             continue
@@ -992,7 +1149,9 @@ def to_pay_bulk(*, context):
     if paid:
         flash(f"Позначено оплаченими: {', '.join('№ ' + n for n in paid)}", "success")
     if skipped:
-        flash(f"Не можна оплатити (не ваша форма оплати або вже змінено статус): {', '.join(skipped)}", "error")
+        flash("Не можна оплатити: " + ", ".join(skipped) +
+              " — не ваша форма оплати, вже змінено статус, не вибрано «Вид оплати» або контрагента ще немає в 1С",
+              "error")
     if not paid and not skipped:
         flash("Оберіть заявки галочками", "error")
     return redirect(url_for("to_pay", **{k: v for k, v in request.args.items()}))
@@ -1044,6 +1203,9 @@ def admin_users(*, context):
         approval_mode=app_settings.info("approval_mode"),
         head_mode=app_settings.info("dept_head_mode"),
         HEAD_MODES=wf.HEAD_MODES,
+        pending_cp=app_settings.info("pending_cp_payment"),
+        PENDING_CP_MODES=PENDING_CP_MODES,
+        pending_counterparties=counterparties.pending_items(),
         route_label=wf.route_label,
         departments_list=departments.get_departments(),
         departments_status=departments.status(),
@@ -1073,6 +1235,10 @@ def admin_users(*, context):
 @auth.login_required
 @requires("admin")
 def admin_expense_refresh(*, context):
+    for pending, target in counterparties.auto_link_candidates():
+        _, _, count = _link_counterparty(pending["id"], target["id"], wf.SYSTEM_USER, "admin")
+        flash(f"Контрагента «{pending['name']}» автоматично прив'язано до «{target['name']}» з 1С (заявок: {count})",
+              "success")
     if expense_items.refresh():
         st = expense_items.status()
         flash(f"Довідник статей витрат оновлено: {st['count']} статей", "success")
@@ -1350,6 +1516,12 @@ def url_with(changes):
         else:
             args[key] = value
     return url_for(request.endpoint, **args)
+
+
+@app.template_global()
+def visible_history(req):
+    """Історія заявки без записів, які поточному користувачу не призначені (напр. «Вид оплати»)."""
+    return wf.visible_history(req, getattr(g, "roles", set()))
 
 
 @app.template_filter("filesize")
