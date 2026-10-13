@@ -369,13 +369,18 @@ def requests_list(*, context):
     status = request.args.get("status") if request.args.get("status") in db.STATUSES else ""
     refs = ref_filters(request.args)
     participating = db.list_participating(g.user["email"])
-    view = "participant" if request.args.get("view") == "participant" or "initiator" not in g.roles else "mine"
+    view = request.args.get("view") if request.args.get("view") in ("participant", "paid") else "mine"
+    if "initiator" not in g.roles:
+        view = "participant"
     if view == "participant" and not participating and "initiator" not in g.roles:
         return redirect(_home())
     if view == "participant":
         source = [r for r in participating if not status or r["status"] == status]
-    else:
-        source = db.list_requests(g.user["email"], status or None)
+    elif view == "paid":  # оплачені — окремою вкладкою, найсвіжіша оплата першою
+        source = sorted(db.list_requests(g.user["email"], "paid"),
+                        key=lambda r: (wf.paid_entry(r) or {}).get("at") or r["created_at"], reverse=True)
+    else:  # «Створені мною» — заявки в роботі, без оплачених
+        source = [r for r in db.list_requests(g.user["email"], status or None) if r["status"] != "paid"]
     return render_template(
         "requests_list.html",
         user_name=g.user["name"],
@@ -384,6 +389,7 @@ def requests_list(*, context):
         refs=refs,
         view=view,
         participating_total=len(participating),
+        paid_entry=wf.paid_entry,
         show_dep_filter=False,
     )
 
@@ -587,7 +593,7 @@ def counterparty_new(*, context):
         return {"duplicate": {"id": duplicate["id"], "name": duplicate["name"], "edrpou": duplicate.get("edrpou", ""),
                               "pending": duplicate["status"] == "pending"}}, 409
     return {"item": {"id": item["id"], "name": item["name"], "edrpou": item["edrpou"], "country": item["country"],
-                     "resident": item["resident"], "iban": item["iban"], "pending": True}}
+                     "resident": item["resident"], "pending": True}}
 
 
 def _link_counterparty(pending_id, onec_id, user, role):

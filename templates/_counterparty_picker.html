@@ -8,7 +8,7 @@
     <input type="hidden" name="counterparty_id" id="counterparty_id" value="{{ req.counterparty_id or '' }}">
     <div class="exp-input-wrap">
       <input type="text" id="cp-input" autocomplete="off" spellcheck="false"
-             placeholder="Назва, ЄДРПОУ або IBAN…" role="combobox" aria-autocomplete="list"
+             placeholder="Назва або ЄДРПОУ…" role="combobox" aria-autocomplete="list"
              aria-expanded="false" aria-controls="cp-suggest">
       <span class="cp-new-chip" id="cp-chip" hidden title="Цього контрагента ще немає в 1С">новий</span>
       <button type="button" class="exp-clear" id="cp-clear" title="Очистити" aria-label="Очистити" hidden>✕</button>
@@ -42,7 +42,7 @@
   <div id="cp-list-view">
     <div class="exp-dialog-search">
       <input type="search" id="cp-dialog-input" autocomplete="off" spellcheck="false"
-             placeholder="Пошук: назва, ЄДРПОУ або IBAN…" aria-controls="cp-dialog-list">
+             placeholder="Пошук: назва або ЄДРПОУ…" aria-controls="cp-dialog-list">
       <span class="muted" id="cp-dialog-count"></span>
     </div>
     <div class="exp-kind-filter" role="radiogroup" aria-label="Тип контрагента">
@@ -84,12 +84,6 @@
         <label for="cp-new-name">Назва</label>
         <div><input type="text" id="cp-new-name" autocomplete="off" placeholder="ТОВ «Назва»">
           <span class="err" data-err="name"></span></div>
-        <label for="cp-new-iban">IBAN</label>
-        <div><input type="text" id="cp-new-iban" autocomplete="off" spellcheck="false" placeholder="UA00 0000 0000 0000 0000 0000 0000 0">
-          <span class="err" data-err="iban"></span>
-          <span class="muted cp-hint">Необов'язково, але бухгалтеру буде простіше</span></div>
-        <label for="cp-new-bank">Банк</label>
-        <div><input type="text" id="cp-new-bank" autocomplete="off"></div>
         <label for="cp-new-note">Коментар для бухгалтера</label>
         <div><textarea id="cp-new-note" rows="2" placeholder="Напр. договір у документах заявки"></textarea></div>
       </div>

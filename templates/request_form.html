@@ -272,7 +272,7 @@
     Заведіть його в 1С і прив'яжіть тут — або система прив'яже сама під час оновлення довідника за ЄДРПОУ.</p>
   <dl class="cp-requisites">
     {% for label, value in [('Назва', cp.name), (('ЄДРПОУ / ІПН' if cp.resident else 'Реєстраційний номер'), cp.edrpou),
-                            ('Країна', cp.country), ('IBAN', cp.iban), ('Банк', cp.bank), ('Коментар', cp.note)] if value %}
+                            ('Країна', cp.country), ('Коментар', cp.note)] if value %}
     <dt>{{ label }}</dt>
     <dd><span>{{ value }}</span> <button type="button" class="btn-link cp-copy" data-copy="{{ value }}" title="Скопіювати">⧉</button></dd>
     {% endfor %}
@@ -287,7 +287,7 @@
       {% endfor %}
     </select>
     <button type="submit" class="btn btn-primary btn-sm">Прив'язати</button>
-    {% if cp_suggested %}<span class="muted">Знайдено збіг за ЄДРПОУ / IBAN — перевірте й підтвердьте</span>{% endif %}
+    {% if cp_suggested %}<span class="muted">Знайдено збіг за ЄДРПОУ — перевірте й підтвердьте</span>{% endif %}
   </form>
 </div>
 {% endif %}

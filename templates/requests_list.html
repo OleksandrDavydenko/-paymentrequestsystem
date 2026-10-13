@@ -6,15 +6,19 @@
 
 {% block content %}
 {% set as_participant = view == 'participant' %}
-{% if 'initiator' in roles and participating_total %}
+{% set as_paid = view == 'paid' %}
+{% if 'initiator' in roles %}
 <nav class="tabs" aria-label="Розділи">
-  <a href="{{ url_for('requests_list') }}" class="tab {{ 'active' if not as_participant }}">Створені мною</a>
+  <a href="{{ url_for('requests_list') }}" class="tab {{ 'active' if view == 'mine' }}">Створені мною</a>
+  <a href="{{ url_for('requests_list', view='paid') }}" class="tab {{ 'active' if as_paid }}">Оплачені</a>
+  {% if participating_total %}
   <a href="{{ url_for('requests_list', view='participant') }}" class="tab {{ 'active' if as_participant }}">Я учасник</a>
+  {% endif %}
 </nav>
 {% endif %}
 <div class="card">
   <div class="toolbar">
-    <h1 style="margin:0">{{ 'Заявки, де я учасник' if as_participant else 'Мої заявки на оплату' }}</h1>
+    <h1 style="margin:0">{{ 'Заявки, де я учасник' if as_participant else ('Мої оплачені заявки' if as_paid else 'Мої заявки на оплату') }}</h1>
     <span class="spacer"></span>
     {% if 'initiator' in roles %}
     <a class="btn btn-primary" href="{{ url_for('request_card') }}">+ Створити заявку</a>
@@ -24,13 +28,15 @@
   <p class="muted" style="margin-top:0">Заявки колег, до яких вас додали учасником: ви бачите їх, можете коментувати й додавати файли, листи про їхній рух надходять вам так само, як автору.</p>
   {% endif %}
   <form method="get" class="filters filters-row">
-    {% if as_participant %}<input type="hidden" name="view" value="participant">{% endif %}
+    {% if as_participant or as_paid %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
+    {% if not as_paid %}
     <select name="status" onchange="this.form.submit()" aria-label="Статус" class="{{ 'is-active' if status_filter }}">
       <option value="">Усі статуси</option>
-      {% for code, (label, _) in STATUSES.items() %}
+      {% for code, (label, _) in STATUSES.items() if as_participant or code != 'paid' %}
       <option value="{{ code }}" {{ 'selected' if code == status_filter }}>{{ label }}</option>
       {% endfor %}
     </select>
+    {% endif %}
     {% include "_ref_filters.html" %}
   </form>
 
@@ -46,7 +52,7 @@
         <th>Контрагент</th>
         <th>Стаття витрат</th>
         <th class="num">Сума</th>
-        <th>Статус</th>
+        <th>{{ 'Оплачено' if as_paid else 'Статус' }}</th>
       </tr>
     </thead>
     <tbody>
@@ -61,10 +67,15 @@
         <td data-label="Контрагент">{{ COUNTERPARTIES.get(r.counterparty_id, '') }}{% if cp_pending(r.counterparty_id) %} <span class="badge amber" title="Контрагента ще немає в 1С">новий</span>{% endif %}</td>
         <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}">{{ r.amount | money }} {{ r.currency }}</td>
+        {% if as_paid %}
+        {% set p = paid_entry(r) %}
+        <td data-label="Оплачено" data-sort="{{ p.at.isoformat() if p }}">{% if p %}{{ p.at | d }}<div class="muted">{{ p.user_name }}</div>{% else %}<span class="badge {{ st[1] }}">{{ st[0] }}</span>{% endif %}</td>
+        {% else %}
         <td data-label="Статус"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
+        {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="{{ 9 if as_participant else 8 }}" class="empty">{{ "Нічого не знайдено за вибраними фільтрами" if request.args | reject('equalto', 'view') | list else ("Вас ще не додали учасником жодної заявки" if as_participant else "Заявок ще немає") }}</td></tr>
+      <tr><td colspan="{{ 9 if as_participant else 8 }}" class="empty">{{ "Нічого не знайдено за вибраними фільтрами" if request.args | reject('equalto', 'view') | list else ("Вас ще не додали учасником жодної заявки" if as_participant else ("Оплачених заявок ще немає" if as_paid else "Заявок у роботі немає — оплачені на вкладці «Оплачені»")) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

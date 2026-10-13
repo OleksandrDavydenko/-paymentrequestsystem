@@ -1,5 +1,5 @@
 // Вибір контрагента в картці заявки.
-// 1) Поле з підказками: назва, ЄДРПОУ або IBAN — до 10 збігів, ↑↓/Enter/Esc.
+// 1) Поле з підказками: назва або ЄДРПОУ — до 10 збігів, ↑↓/Enter/Esc.
 // 2) «☰» — вікно довідника: пошук, фільтри, «Нещодавні», «+ Новий контрагент» (якого ще немає в 1С).
 (function () {
   const ITEMS = JSON.parse(document.getElementById('cp-items-data').textContent || '[]');
@@ -15,8 +15,8 @@
   const listView = $('cp-list-view'), newView = $('cp-new-view');
 
   const norm = s => (s || '').toLowerCase().replace(/[ʼ’`]/g, "'").replace(/[«»"]/g, '').replace(/\s+/g, ' ').trim();
-  const compact = s => (s || '').replace(/\s+/g, '').toUpperCase();
-  const index = i => { i._name = norm(i.name); i._iban = compact(i.iban); };
+  const compact = s => (s || '').replace(/\s+/g, '');
+  const index = i => { i._name = norm(i.name); };
   ITEMS.forEach(index);
   const byId = id => ITEMS.find(i => String(i.id) === String(id));
   const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -31,7 +31,6 @@
     for (const i of rows) {
       let rank = 9;
       if (i.edrpou && i.edrpou === qc) rank = 0;
-      else if (qc.length > 4 && i._iban.includes(qc)) rank = 1;
       else if (i.edrpou && qc.length > 2 && i.edrpou.startsWith(qc)) rank = 2;
       else if (tokens.every(t => i._name.includes(t))) rank = i._name.startsWith(q) ? 3 : 4;
       if (rank < 9) found.push([rank, i]);
@@ -40,8 +39,8 @@
     return found.slice(0, limit).map(f => f[1]);
   }
 
-  const meta = i => [i.edrpou ? (i.resident ? 'ЄДРПОУ ' : '№ ') + esc(i.edrpou) : '', !i.resident && i.country ? esc(i.country) : '',
-    i.iban ? '…' + esc(i.iban.slice(-4)) : ''].filter(Boolean).join(' · ');
+  const meta = i => [i.edrpou ? (i.resident ? 'ЄДРПОУ ' : '№ ') + esc(i.edrpou) : '', !i.resident && i.country ? esc(i.country) : '']
+    .filter(Boolean).join(' · ');
   const badge = i => i.pending ? '<span class="cp-new-chip">новий</span>' : (i.resident ? '' : '<span class="exp-kind exp-kind-allocated">нерезидент</span>');
 
   // ---------- вибір ----------
@@ -204,7 +203,7 @@
   let duplicate = null;
   $('cp-duplicate-pick').addEventListener('click', () => {
     let item = duplicate && byId(duplicate.id);
-    if (!item && duplicate) { item = { ...duplicate, resident: true, iban: '', country: '' }; index(item); ITEMS.push(item); }
+    if (!item && duplicate) { item = { ...duplicate, resident: true, country: '' }; index(item); ITEMS.push(item); }
     if (item) choose(item);
   });
   $('cp-new-save').addEventListener('click', async () => {
@@ -215,7 +214,7 @@
       const resp = await fetch(window.CP_NEW_URL, {
         method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
         body: JSON.stringify({ resident: isResident() ? '1' : '0', edrpou: f('edrpou').value, country: f('country').value,
-          name: f('name').value, iban: f('iban').value, bank: f('bank').value, note: f('note').value }),
+          name: f('name').value, note: f('note').value }),
       });
       const data = await resp.json();
       if (data.errors) {
@@ -228,7 +227,7 @@
       } else if (data.item) {
         index(data.item);
         ITEMS.push(data.item);
-        ['edrpou', 'country', 'name', 'iban', 'bank', 'note'].forEach(k => { f(k).value = ''; });
+        ['edrpou', 'country', 'name', 'note'].forEach(k => { f(k).value = ''; });
         choose(data.item);
       }
     } catch (e) {
