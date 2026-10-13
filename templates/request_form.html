@@ -19,7 +19,7 @@
   <select name="{{ name }}" id="{{ id }}" class="pay-account-select">
     <option value="">— не вибрано —</option>
     {% for a in account_options %}
-    <option value="{{ a.id }}" {{ 'selected' if a.id == req.payment_account_id }}>{{ a.name }} · {{ a.currency }}{{ ' · ' ~ a.iban if a.iban }}</option>
+    <option value="{{ a.id }}" {{ 'selected' if a.id == req.payment_account_id }}>{{ a.name }}{{ ' · ' ~ a.currency if a.currency }}{{ ' · ' ~ a.iban if a.iban }}</option>
     {% endfor %}
     {% if req.payment_account_id and req.payment_account_id not in account_options | map(attribute='id') | list %}
     <option value="{{ req.payment_account_id }}" selected>{{ pay_account_label(req.payment_account_id) }}</option>
@@ -228,7 +228,7 @@
     <label for="pay-account-decision"><strong>Вид оплати</strong> — з якого рахунку чи каси платимо
       <span class="muted">(обов'язково для погодження; бачать лише бухгалтери й фіндиректор)</span></label>
     {{ account_select(id='pay-account-decision') }}
-    {% if not account_options %}<span class="err">Для цієї організації немає {{ 'кас' if req.payment_form == 'cash' else 'рахунків' }} у довіднику</span>{% endif %}
+    {% if not account_options %}<span class="err">{{ account_empty_hint }}</span>{% endif %}
   </div>
   {% endif %}
   {% if 'pay' in actions and pay_blocked %}
@@ -257,9 +257,9 @@
     {{ account_select() }}
     <button type="submit" class="btn btn-sm">Зберегти</button>
   </div>
-  {% if not account_options %}<p class="muted" style="margin:6px 0 0">Для цієї організації в довіднику ще немає {{ 'кас' if req.payment_form == 'cash' else 'рахунків' }} — поле поки не обов'язкове.</p>{% endif %}
-  <p class="muted" style="margin:6px 0 0">З якого рахунку ({{ 'каси' if req.payment_form == 'cash' else 'банку' }}) організації
-    «{{ org_name(req.organization_id) }}» платимо. Ініціатор цього поля не бачить.</p>
+  {% if not account_options %}<p class="muted" style="margin:6px 0 0">{{ account_empty_hint }} — поле поки не обов'язкове.</p>{% endif %}
+  <p class="muted" style="margin:6px 0 0">З чого платимо — вид оплати (бачать лише бухгалтери й фіндиректор: бухгалтер — ті,
+    до яких має доступ у 1С, фіндиректор — усі). Ініціатор цього поля не бачить.</p>
 </form>
 {% endif %}
 

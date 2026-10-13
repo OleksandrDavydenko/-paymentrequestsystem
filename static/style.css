@@ -715,3 +715,4 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .org-table .org-acc { width: 100%; min-width: 170px; font-size: 13px; padding: 4px 6px; }
 .org-table .org-acc.is-active { border-color: var(--primary); background: #f3f8fd; }
 .org-table tr.org-item:has(input[name=allowed]:not(:checked)) .org-name { color: var(--muted); text-decoration: line-through; }
+.uc-suggest { color: #8a5a00; }

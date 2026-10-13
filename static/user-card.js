@@ -34,6 +34,21 @@
     sync();
   });
 
+  // Пункт 5: які види оплати має вибраний користувач 1С
+  const onec = document.getElementById('uc-onec');
+  const onecTypes = document.getElementById('onec-types');
+  if (onec && onecTypes) {
+    const TYPES = JSON.parse(onecTypes.textContent || '{}');
+    const box = document.getElementById('uc-onec-types');
+    const show = () => {
+      const list = TYPES[onec.value] || [];
+      box.textContent = !onec.value ? "Без зв'язку з 1С бухгалтер не бачитиме видів оплати (поле «Вид оплати» буде необов'язковим)."
+        : list.length ? `Види оплати в 1С (${list.length}): ${list.join(', ')}` : 'У цього користувача 1С немає видів оплати.';
+    };
+    onec.addEventListener('change', show);
+    show();
+  }
+
   // Незбережені зміни
   const dirty = document.getElementById('uc-dirty');
   let changed = false, submitting = false;

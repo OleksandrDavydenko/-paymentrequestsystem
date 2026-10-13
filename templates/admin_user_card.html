@@ -132,6 +132,28 @@
     </div>
   </section>
 
+  <section class="card uc-section" id="uc-onec-section">
+    <div class="uc-title"><span class="uc-num">5</span><h2>Користувач 1С</h2></div>
+    <p class="uc-explain">Хто ця людина в 1С. Від цього залежить, які «Види оплати» бухгалтер бачить у заявках — ті самі, що на
+      вкладці «Виды оплаты» в його картці користувача 1С{{ '' if is_accountant_or_cfo else ' (потрібно лише бухгалтерам; фіндиректор бачить усі види оплати)' }}.
+      Пошта і логін 1С різні, тому зв'язок задається тут один раз.</p>
+    {% set selected = onec_link.guid if onec_link else (onec_suggested.guid if onec_suggested else '') %}
+    <select name="onec_user" id="uc-onec" class="uc-select">
+      <option value="">— не зв'язано —</option>
+      {% for u in onec_users %}
+      <option value="{{ u.guid }}" {{ 'selected' if u.guid == selected }}>{{ u.name }}</option>
+      {% endfor %}
+      {% if onec_link and onec_link.guid not in onec_users | map(attribute='guid') | list %}
+      <option value="{{ onec_link.guid }}" selected>{{ onec_link.name or onec_link.guid }} (немає в 1С)</option>
+      {% endif %}
+    </select>
+    {% if onec_suggested and not onec_link %}
+    <div class="uc-note uc-suggest">Підібрано за схожістю імені: <strong>{{ onec_suggested.name }}</strong> — перевірте й натисніть «Зберегти».</div>
+    {% endif %}
+    <div class="uc-note" id="uc-onec-types"></div>
+    <script type="application/json" id="onec-types">{{ onec_types | tojson }}</script>
+  </section>
+
   <section class="card uc-section uc-info">
     <div class="uc-title"><span class="uc-num">✉</span><h2>Сповіщення</h2></div>
     <p class="uc-explain" style="margin-bottom:0">Листи надходять на <strong>{{ delivery }}</strong>{{ ' (підтверджена інша адреса)' if delivery != person.email }}.

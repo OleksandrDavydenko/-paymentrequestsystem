@@ -102,7 +102,7 @@ def _req(id_, author, pay_date, cp, org, exp, form, cur, amount, steps, note="",
         new = workflow.WORKFLOW[old][1][action]
         if action == "approve" and role in workflow.ACCOUNTANT_ROLES:
             # бухгалтер при погодженні вибирає «Вид оплати»
-            req["payment_account_id"] = payment_accounts.options_for(req)[0]["id"]
+            req["payment_account_id"] = payment_accounts.mock_options_for(req)[0]["id"]
         req["history"].append({
             "at": datetime.fromisoformat(at), "user_name": user[1], "user_email": user[0], "role": role,
             "action": action, "from_status": old, "to_status": new, "comment": comment,
@@ -172,7 +172,7 @@ def _parallel(req, day, approved_by=()):
         role = workflow.accountant_role(req) if role == "accountant" else role
         req["approvals"][role] = {"at": at, "user_name": user[1]}
         if role in workflow.ACCOUNTANT_ROLES:
-            req["payment_account_id"] = payment_accounts.options_for(req)[0]["id"]
+            req["payment_account_id"] = payment_accounts.mock_options_for(req)[0]["id"]
         req["history"].append({"at": at, "user_name": user[1], "user_email": user[0], "role": role,
                                "action": "approve", "from_status": "approval", "to_status": "approval",
                                "comment": ""})

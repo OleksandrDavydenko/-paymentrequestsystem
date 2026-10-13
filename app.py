@@ -18,6 +18,8 @@ import departments
 import org_structure
 import organizations
 import payment_accounts
+import payment_types
+import user_onec
 import graph
 import mailer
 import notifications
@@ -533,9 +535,10 @@ def request_card(request_id=None, *, context):
         cp_brief=counterparties.brief(counterparties.get(req["counterparty_id"]))
         if counterparties.get(req.get("counterparty_id")) else None,
         can_see_account=wf.can_see_payment_account(roles),
-        account_options=payment_accounts.options_for(req) if wf.can_see_payment_account(roles) else [],
+        account_options=payment_accounts.options_for(req, user, roles) if wf.can_see_payment_account(roles) else [],
+        account_empty_hint=payment_accounts.no_options_hint(req, user, roles),
         account_required=wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES
-        and req["status"] in ("accountant", "approval") and bool(payment_accounts.options_for(req)),
+        and req["status"] in ("accountant", "approval") and bool(payment_accounts.options_for(req, user, roles)),
         can_link_cp=counterparties.is_pending(req.get("counterparty_id"))
         and bool(roles & (wf.ACCOUNTANT_ROLES | {"cfo", "admin"})),
         cp_suggested=next((m for p_, m in counterparties.auto_link_candidates(only_id=req.get("counterparty_id"))), None)
@@ -555,7 +558,8 @@ def _pay_guard(req):
     """Чи можна оплатити заявку з контрагентом, якого ще немає в 1С (параметр в адмінці)."""
     return {"cp_pending": counterparties.is_pending(req.get("counterparty_id")),
             "block_pending": app_settings.get("pending_cp_payment") == "block",
-            "account_required": bool(payment_accounts.options_for(req))}
+            "account_required": bool(payment_accounts.options_for(req, getattr(g, "user", None),
+                                                                 getattr(g, "roles", frozenset())))}
 
 
 def _apply_payment_account(req, raw, user, roles):
@@ -563,9 +567,9 @@ def _apply_payment_account(req, raw, user, roles):
     if not wf.can_see_payment_account(roles) or raw is None:
         return False
     raw = raw.strip()
-    if raw and not payment_accounts.valid_for(req, raw):
-        raise wf.WorkflowError("Такого рахунку чи каси немає в організації заявки — оберіть зі списку")
-    new_id = int(raw) if raw else None
+    if raw and raw != str(req.get("payment_account_id") or "") and not payment_accounts.valid_for(req, raw, user, roles):
+        raise wf.WorkflowError("Такого виду оплати немає серед доступних вам — оберіть зі списку")
+    new_id = raw or None
     old_label = payment_accounts.label(req.get("payment_account_id")) if req.get("payment_account_id") else ""
     return wf.set_payment_account(req, new_id, payment_accounts.label(new_id) if new_id else "", old_label,
                                   user, wf.history_role(req, roles, user["email"]))
@@ -1325,11 +1329,13 @@ def admin_users(*, context):
         departments_status=departments.status(),
         organizations_status=organizations.status(),
         counterparties_status=counterparties.status(),
+        payment_types_status=payment_types.status(),
         org_list=organizations.get_all(),
         org_disabled=organizations.disabled_codes(),
         org_accountants=organizations.accountant_overrides(),
         ACCOUNTANT_ROLE_LIST=[(r, wf.ROLE_SHORT[r]) for r in ("acc_cash", "acc_resident", "acc_nonresident")],
         user_departments={uid: org_structure.department_of(uid) for uid in users},
+        onec_links=user_onec.all_links(),
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
         dept_rows=[{**d, **org_structure.staff(d["code"]), "members": org_structure.members_of(d["code"])}
                    for d in departments.get_departments()],
@@ -1355,6 +1361,8 @@ def admin_users(*, context):
 @auth.login_required
 @requires("admin")
 def admin_expense_refresh(*, context):
+    if not payment_types.refresh():
+        flash("Не вдалося оновити види оплати з 1С: " + (payment_types.status()["error"] or "невідома помилка"), "error")
     if not counterparties.refresh():
         flash("Не вдалося оновити довідник контрагентів: " + (counterparties.status()["error"] or "невідома помилка"), "error")
     for pending, target in counterparties.auto_link_candidates():
@@ -1442,6 +1450,12 @@ def admin_user_card(user_id, *, context):
         budget_items=[{"k": i["kind"], "d": i["departments"]} for i in expense_items.get_items()],
         expense_status=expense_items.status(),
         delivery=user_prefs.delivery_address(person["email"], allow_alt),
+        onec_link=user_onec.get(user_id),
+        onec_users=payment_types.onec_users(),
+        onec_suggested=None if user_onec.get(user_id) else payment_types.suggest_user(person["name"], person["email"]),
+        onec_types={u["guid"]: [t["name"] for t in payment_types.types_for_user(u["guid"])]
+                    for u in payment_types.onec_users()},
+        is_accountant_or_cfo=bool(set(person["roles"]) & (wf.ACCOUNTANT_ROLES | {"cfo"})),
     )
 
 
@@ -1482,6 +1496,15 @@ def _save_user_card(token, person):
         changes.append("бачить заявки: " + (", ".join(departments.get_name(d) for d in sorted(views)) or "жодного відділу"))
         for code, prev in replaced:
             changes.append(f"у відділі «{departments.get_name(code)}» замінено керівника {prev['name']}")
+
+    # Користувач 1С (для «Видів оплати»)
+    if "onec_user" in f:
+        guid = (f.get("onec_user") or "").strip()
+        known_onec = {u["guid"]: u["name"] for u in payment_types.onec_users()}
+        current_link = user_onec.guid_for(uid)
+        if guid != (current_link or "") and (not guid or guid in known_onec):
+            user_onec.set_link(uid, email, guid, known_onec.get(guid, ""), who)
+            changes.append("користувач 1С — " + (known_onec[guid] if guid else "не зв'язано"))
 
     # Статті бюджету
     mode = f.get("mode")
