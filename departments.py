@@ -56,6 +56,15 @@ def get_name(code):
     return get_map().get(code) or f"{code} (немає в довіднику)"
 
 
+def legacy_mapping():
+    """{тестовий код: код з 1С} для тестових відділів, назви яких точно є в довіднику 1С."""
+    current = _table.items()
+    codes = {d["code"] for d in current}
+    by_name = {d["name"].strip().lower(): d["code"] for d in current}
+    return {old: by_name[name.strip().lower()] for old, name in MOCK_DEPARTMENTS.items()
+            if old not in codes and name.strip().lower() in by_name}
+
+
 def refresh():
     return _table.refresh()
 

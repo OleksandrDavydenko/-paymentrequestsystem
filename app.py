@@ -483,7 +483,8 @@ def request_card(request_id=None, *, context):
             if req["id"] is None:
                 req["created_at"] = clock.now()
                 wf.add_history(req, "create", user, "initiator", to_status="draft")
-            if not req.get("department"):  # заявки, створені до появи відділів
+            if not req.get("department") or req["department"] not in departments.get_map():
+                # заявки, створені до появи відділів, або з відділом, якого вже немає в довіднику
                 req["department"] = org_structure.department_of(user["oid"])
             if action == "submit":
                 wf.apply_action(req, "submit", roles, user, **_route_settings(req))
@@ -1273,10 +1274,21 @@ def _group_users(token):
     return users, error
 
 
+def _migrate_legacy_departments():
+    """Тестові відділи з тими самими назвами, що й у 1С, — на коди з 1С (одноразово, повторно — без змін)."""
+    if departments.status()["source"] not in ("powerbi", "copy"):
+        return
+    mapping = departments.legacy_mapping()
+    if mapping and (org_structure.remap_departments(mapping, g.user["email"]) + db.remap_departments(mapping)):
+        flash("Відділи з тими самими назвами, що й у 1С, переведено на довідник 1С: "
+              + ", ".join(departments.get_name(v) for v in mapping.values()), "success")
+
+
 @app.route("/admin/users")
 @auth.login_required(scopes=graph.ADMIN_SCOPES)
 @requires("admin")
 def admin_users(*, context):
+    _migrate_legacy_departments()
     users, error = _group_users(context["access_token"])
     groups = _configured_groups()
     return render_template(

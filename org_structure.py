@@ -197,6 +197,31 @@ def set_person_assignments(person, head_deps, view_deps, updated_by):
     return replaced
 
 
+def remap_departments(mapping, updated_by="system"):
+    """Замінити старі коди відділів новими ({старий: новий}) у співробітників і в розділі «Відділи».
+    Повертає кількість змінених записів."""
+    if not mapping:
+        return 0
+    changed = 0
+    with _lock:
+        d = _load()
+        for u in d["users"].values():
+            if u.get("department") in mapping:
+                u["department"] = mapping[u["department"]]
+                changed += 1
+        for old, new in mapping.items():
+            if old in d["departments"]:
+                entry = d["departments"].pop(old)
+                if new in d["departments"]:  # у новому вже є призначення — не перезаписуємо
+                    continue
+                d["departments"][new] = {**entry, "updated_by": updated_by,
+                                         "updated_at": clock.now().isoformat(timespec="seconds")}
+                changed += 1
+        if changed:
+            _write()
+    return changed
+
+
 def is_head_of(email, department):
     """Чи очолює людина з цією поштою відділ (для «автор — керівник відділу»)."""
     head = head_of(department)

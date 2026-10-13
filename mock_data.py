@@ -255,6 +255,16 @@ def list_to_pay(roles):
     return sorted(rows, key=lambda r: (r["pay_date"], r["id"]))
 
 
+def remap_departments(mapping):
+    """Замінити старі коди відділів у заявках ({старий: новий}). Повертає кількість заявок."""
+    count = 0
+    for r in _REQUESTS.values():
+        if r.get("department") in mapping:
+            r["department"] = mapping[r["department"]]
+            count += 1
+    return count
+
+
 def replace_counterparty(old_id, new_id, user, role, comment):
     """Прив'язка тимчасового контрагента до 1С: усі заявки з old_id отримують new_id. Повертає кількість."""
     count = 0
