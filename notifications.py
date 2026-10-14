@@ -41,6 +41,9 @@ SUBJECTS = {
     "task_new": "чекає вашого рішення",
     "participant_add": "вас додано учасником",
     "dept_new": "нова заявка відділу",
+    "pay_handover": "готівку видано — підтвердіть передачу підряднику",
+    "handover": "готівку передано підряднику",
+    "handover_reminder": "нагадування — підтвердіть передачу готівки підряднику",
 }
 
 # Склад груп ролей: role -> [{"email", "name"}]. Встановлюється з app.py (через Graph, з кешем).
@@ -137,7 +140,8 @@ def _notify(event, req, actor, comment, target=None):
 
     # 1. Автор заявки і учасники (отримують ті самі події, що й автор)
     if event in AUTHOR_EVENTS:
-        add(req["author_email"], AUTHOR_EVENTS[event], "ви автор цієї заявки", SUBJECTS[event])
+        add(req["author_email"], AUTHOR_EVENTS[event], "ви автор цієї заявки",
+            SUBJECTS["pay_handover"] if event == "pay" and wf.needs_handover(req) else SUBJECTS[event])
         for p in req.get("participants") or []:
             add(p["email"], AUTHOR_EVENTS[event], "ви учасник цієї заявки", SUBJECTS[event])
 
@@ -157,6 +161,12 @@ def _notify(event, req, actor, comment, target=None):
         for w in org_structure.watchers_of(req["department"]):
             add(w["email"], "dept_new", f"ви бачите заявки відділу «{dep_name}»", SUBJECTS["dept_new"])
 
+    # 2в. Автор підтвердив передачу готівки — бухгалтеру заявки (якщо ввімкнув у налаштуваннях)
+    if event == "handover":
+        role = wf.accountant_role(req)
+        for m in cached_role_members(role) if role else []:
+            add(m["email"], "handover_done", f"ви — {wf.ROLES.get(role, role).lower()}", SUBJECTS["handover"])
+
     # 3. Коментар — учасникам-погоджувачам, які вже ухвалювали рішення
     if event == "comment":
         for h in req.get("history", []):
@@ -164,16 +174,46 @@ def _notify(event, req, actor, comment, target=None):
                 add(h.get("user_email"), "comment_participant", "ви погоджували цю заявку", SUBJECTS["comment"])
 
     for email, (pref, reason, subject_tail) in recipients.items():
+        handover_ask = event == "pay" and wf.needs_handover(req) and email == req["author_email"].lower()
         _send(email, f"Заявка № {req['number']}: {subject_tail}", {
             "req": req,
             "event": event,
+            "handover_ask": handover_ask,
+            "handover_days": 0,
             "actor": actor,
             "comment": comment or last.get("comment") or "",
             "status": wf.STATUSES.get(req["status"], (req["status"],))[0],
             "headline": subject_tail[:1].upper() + subject_tail[1:],
             "reason": reason,
-            "link": _link(req),
+            "link": _link(req) + ("#handover" if handover_ask else ""),
             "settings_link": (os.environ.get("APP_BASE_URL", "").rstrip("/") + url_for("notification_settings"))
             if os.environ.get("APP_BASE_URL") else url_for("notification_settings", _external=True),
         })
     return list(recipients)
+
+
+def send_handover_reminder(req, days):
+    """Нагадування автору: підтвердіть, що передали готівку підряднику. Лише автору й без особистих
+    налаштувань (це контроль, його вимикає тільки адмін). Потрібен контекст запиту Flask (для посилань).
+    Повертає True, якщо лист поставлено в чергу."""
+    if not enabled():
+        return False
+    try:
+        _send(req["author_email"], f"Заявка № {req['number']}: {SUBJECTS['handover_reminder']}", {
+            "req": req,
+            "event": "handover_reminder",
+            "handover_ask": True,
+            "handover_days": days,
+            "actor": wf.SYSTEM_USER,
+            "comment": "",
+            "status": wf.STATUSES[req["status"]][0],
+            "headline": "Підтвердіть передачу готівки підряднику",
+            "reason": "ви автор заявки й отримали готівку, щоб передати її підряднику",
+            "link": _link(req) + "#handover",
+            "settings_link": (os.environ.get("APP_BASE_URL", "").rstrip("/") + url_for("notification_settings"))
+            if os.environ.get("APP_BASE_URL") else url_for("notification_settings", _external=True),
+        })
+    except Exception:
+        logger.exception("Не вдалося підготувати нагадування про передачу готівки")
+        return False
+    return True

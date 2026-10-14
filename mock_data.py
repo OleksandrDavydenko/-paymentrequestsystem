@@ -196,6 +196,38 @@ def _at_head(req, day):
 
 _at_head(_req(19, _OTHER, "2026-10-20", 1, 1, 1, "bank", "UAH", "7600.00", [], "Перевезення, жовтень"), 8)
 
+# Готівка: хто отримує гроші в касі (підрядник сам або автор, який передає підряднику)
+for _id, _who in {6: "contractor", 8: "author", 14: "author", 18: "contractor"}.items():
+    _REQUESTS[_id]["cash_receiver"] = _who
+
+
+def _cash_paid(req, paid_on, confirmed_on=None, reminders=0):
+    """Мокова оплачена готівкова заявка, де автор передає гроші підряднику сам."""
+    req["cash_receiver"] = "author"
+    paid_at = datetime.fromisoformat(f"{paid_on}T15:00:00")
+    req["history"].append({"at": paid_at, "user_name": _ACC[1], "user_email": _ACC[0],
+                           "role": workflow.accountant_role(req), "action": "pay", "from_status": "to_pay",
+                           "to_status": "paid", "comment": "Видано з каси"})
+    req["status"] = "paid"
+    since = paid_at.date()
+    req["handover"] = {"status": "pending", "since": since, "reminders": reminders,
+                       "last_reminder": date.fromordinal(since.toordinal() + reminders) if reminders else None}
+    if confirmed_on:
+        when = date.fromisoformat(confirmed_on)
+        req["handover"].update({"status": "done", "date": when, "by_name": req["author_name"],
+                                "by_email": req["author_email"], "at": paid_at, "comment": "", "on_behalf": False})
+        req["history"].append({"at": datetime.fromisoformat(f"{confirmed_on}T17:40:00"),
+                               "user_name": req["author_name"], "user_email": req["author_email"],
+                               "role": "initiator", "action": "handover", "from_status": "paid", "to_status": "paid",
+                               "comment": f"Передано {when:%d.%m.%Y}"})
+    _REQUESTS[req["id"]] = req
+
+
+_cash_paid(_req(20, _ME, "2026-10-10", 6, 3, 4, "cash", "UAH", "5200.00",
+                _route(6, _SUBMIT, _ACC_OK, _CFO_OK), "Монтаж стелажів на складі"), "2026-10-10", reminders=2)
+_cash_paid(_req(21, _OTHER, "2026-10-07", 3, 1, 6, "cash", "UAH", "2750.00",
+                _route(3, _SUBMIT, _ACC_OK, _CFO_OK), "Дрібний ремонт офісу"), "2026-10-07", confirmed_on="2026-10-07")
+
 
 # Учасники (спостерігачі) для демонстрації
 def _participant(req_id, person, added_by):

@@ -337,6 +337,29 @@
     </span>
   </label>
 
+  <div class="budget-section-title">Готівка через автора заявки</div>
+  <input type="hidden" name="cash_handover_sent" value="1">
+  <label class="mode-option">
+    <input type="checkbox" name="cash_handover_confirm" value="1" {{ 'checked' if cash_handover_confirm }}>
+    <span>
+      <strong>Автор підтверджує, що передав готівку підряднику</strong>
+      <span class="muted">— після «Оплачено»</span>
+      <span class="mode-hint">У заявці з формою «Готівка» ініціатор вказує, хто отримує гроші в касі: підрядник сам або він
+        (і передає підряднику). У другому випадку після «Оплачено» заявка чекає підтвердження автора — дата передачі й
+        коментар, документ не потрібен. Статус «Оплачено» й проведення в 1С не змінюються. Непідтверджені видачі бачить
+        бухгалтер по готівці на вкладці «До оплати → Готівка не підтверджена».</span>
+    </span>
+  </label>
+  <label class="mode-option">
+    <span>
+      <strong>Нагадувати автору кожні
+        <input type="number" name="cash_handover_remind_days" value="{{ cash_handover_remind_days }}" min="0" max="30"
+               style="width:64px" aria-label="Кожні N днів"> дн.</strong>
+      <span class="mode-hint">Лист лише автору заявки, доки він не підтвердить передачу, — не більше {{ handover_max_reminders }}
+        нагадувань. 0 — не нагадувати. Вимкнути ці листи в особистих налаштуваннях не можна.</span>
+    </span>
+  </label>
+
   <div class="budget-section-title">Контрагент, якого ще немає в 1С</div>
   {% for code, label in PENDING_CP_MODES.items() %}
   <label class="mode-option">

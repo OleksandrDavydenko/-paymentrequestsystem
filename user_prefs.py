@@ -23,6 +23,7 @@ EVENTS = {
     "participant_added": ("Мене додали учасником заявки", "author", True),
     "task_new": ("Нова заявка чекає мого рішення або оплати", "approver", True),
     "comment_participant": ("Коментар до заявки, яку я погоджував", "approver", False),
+    "handover_done": ("Автор підтвердив, що передав готівку підряднику", "cash", False),
     "dept_new": ("Нова заявка у відділі, заявки якого я бачу", "department", False),
 }
 

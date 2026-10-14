@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ "Оплачені" if view == "paid" else "До оплати" }}{% endblock %}
+{% block title %}{{ "Оплачені" if view == "paid" else ("Готівка не підтверджена" if view == "handover" else "До оплати") }}{% endblock %}
 
 {% block main_class %}wide{% endblock %}
 
@@ -8,7 +8,15 @@
 <nav class="tabs" aria-label="Розділи">
   <a href="{{ url_for('to_pay') }}" class="tab {{ 'active' if view == 'to_pay' }}">До оплати{% if payments_count %} <span class="count">{{ payments_count }}</span>{% endif %}</a>
   <a href="{{ url_for('to_pay', view='paid') }}" class="tab {{ 'active' if view == 'paid' }}">Оплачені</a>
+  {% if show_handover_tab %}
+  <a href="{{ url_for('to_pay', view='handover') }}" class="tab {{ 'active' if view == 'handover' }}"
+     title="Готівку видано автору, але передачу підряднику ще не підтверджено">Готівка не підтверджена{% if handover_tab_count %} <span class="count">{{ handover_tab_count }}</span>{% endif %}</a>
+  {% endif %}
 </nav>
+
+{% if view == 'handover' %}
+{% include "_handover_list.html" %}
+{% else %}
 
 <form method="get" class="card filters-card">
   {% if view == 'paid' %}<input type="hidden" name="view" value="paid">{% endif %}
@@ -194,4 +202,5 @@ document.getElementById('pay-form').addEventListener('submit', e => {
   if (!confirm(`Позначити оплаченими ${n} заявок(и)?`)) e.preventDefault();
 });
 </script>
+{% endif %}
 {% endblock %}

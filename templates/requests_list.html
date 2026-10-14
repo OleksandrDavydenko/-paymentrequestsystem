@@ -10,7 +10,7 @@
 {% if 'initiator' in roles %}
 <nav class="tabs" aria-label="Розділи">
   <a href="{{ url_for('requests_list') }}" class="tab {{ 'active' if view == 'mine' }}">Створені мною</a>
-  <a href="{{ url_for('requests_list', view='paid') }}" class="tab {{ 'active' if as_paid }}">Оплачені</a>
+  <a href="{{ url_for('requests_list', view='paid') }}" class="tab {{ 'active' if as_paid }}">Оплачені{% if handover_count %} <span class="count" title="Чекають вашого підтвердження передачі готівки">⏳ {{ handover_count }}</span>{% endif %}</a>
   {% if participating_total %}
   <a href="{{ url_for('requests_list', view='participant') }}" class="tab {{ 'active' if as_participant }}">Я учасник</a>
   {% endif %}
@@ -69,9 +69,10 @@
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}">{{ r.amount | money }} {{ r.currency }}</td>
         {% if as_paid %}
         {% set p = paid_entry(r) %}
-        <td data-label="Оплачено" data-sort="{{ p.at.isoformat() if p }}">{% if p %}{{ p.at | d }}<div class="muted">{{ p.user_name }}</div>{% else %}<span class="badge {{ st[1] }}">{{ st[0] }}</span>{% endif %}</td>
+        <td data-label="Оплачено" data-sort="{{ p.at.isoformat() if p }}">{% if p %}{{ p.at | d }}<div class="muted">{{ p.user_name }}</div>{% else %}<span class="badge {{ st[1] }}">{{ st[0] }}</span>{% endif %}
+          {% if needs_handover(r) %}<a href="{{ url_for('request_card', request_id=r.id) }}#handover" class="badge amber">⏳ підтвердіть передачу</a>{% endif %}</td>
         {% else %}
-        <td data-label="Статус"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
+        <td data-label="Статус"><span class="badge {{ st[1] }}">{{ st[0] }}</span>{% if needs_handover(r) %} <span class="badge amber">⏳ передачу не підтверджено</span>{% endif %}</td>
         {% endif %}
       </tr>
       {% else %}

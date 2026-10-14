@@ -74,7 +74,7 @@
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}">{{ r.amount | money }} {{ r.currency }}</td>
         <td data-label="Дата оплати" data-sort="{{ r.pay_date.isoformat() }}">{{ r.pay_date | d }}</td>
-        <td data-label="Статус"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
+        <td data-label="Статус"><span class="badge {{ st[1] }}">{{ st[0] }}</span>{% if needs_handover(r) %} <span class="badge amber" title="Автор ще не підтвердив, що передав готівку підряднику">⏳ передачу не підтверджено</span>{% endif %}</td>
         <td data-label="Остання дія" data-sort="{{ last.at.isoformat() }}">
           {{ ACTIONS[last.action][1] }}<div class="muted">{{ last.user_name }}, {{ last.at | dt }}</div>
         </td>

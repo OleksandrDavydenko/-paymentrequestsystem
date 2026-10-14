@@ -35,6 +35,8 @@
   <div class="title-row">
     <h1>Заявка на оплату витрат № {{ req.number }} від {{ req.created_at | dt }}</h1>
     <span class="badge {{ st[1] }}">{{ st[0] }}</span>
+    {% if handover_pending %}<a href="#handover" class="badge amber" title="Автор ще не підтвердив, що передав готівку підряднику">⏳ передачу готівки не підтверджено</a>
+    {% elif handover_done %}<span class="badge green" title="Передано {{ handover.date | d }}">✓ готівку передано підряднику</span>{% endif %}
   </div>
 
   {% if req.id %}
@@ -139,6 +141,18 @@
       </div>
       {{ err('payment_form') }}
       <span class="route-hint" id="route-hint"></span>
+      {% if handover_enabled %}
+      <div class="cash-receiver" id="cash-receiver-field" {{ 'hidden' if req.payment_form != 'cash' }}>
+        <div class="cash-receiver-label">Хто отримує готівку в касі?</div>
+        <div class="radio-group radio-stack {{ 'invalid' if errors.cash_receiver }}">
+          {% for code, label in CASH_RECEIVERS.items() %}
+          <label><input type="radio" name="cash_receiver" value="{{ code }}" {{ 'checked' if code == req.cash_receiver }}> {{ label }}</label>
+          {% endfor %}
+        </div>
+        {{ err('cash_receiver') }}
+        <span class="route-hint">Якщо отримуєте ви — після видачі підтвердите в заявці, що передали гроші підряднику</span>
+      </div>
+      {% endif %}
     </div>
 
     <div class="field">
@@ -237,12 +251,77 @@
   {% elif 'pay' in actions and cp and cp.status == 'pending' %}
   <div class="callout orange">Увага: контрагента ще немає в 1С.</div>
   {% endif %}
+  {% if 'pay' in actions and handover_enabled and req.payment_form == 'cash' and req.cash_receiver == 'author' %}
+  <div class="callout blue">Готівку отримує автор ({{ req.author_name }}) і передає підряднику сам — після «Оплачено» він
+    має підтвердити передачу в заявці (непідтверджені — на вкладці «Готівка не підтверджена»).</div>
+  {% endif %}
   <textarea name="comment" placeholder="Коментар (обов'язковий, якщо повертаєте або відхиляєте — напр. «Додайте договір та рахунок у PDF»)">{{ draft_comment }}</textarea>
   <div class="decision-buttons">
     {% for a in actions %}
     <button type="submit" name="action" value="{{ a }}" class="btn btn-{{ ACTIONS[a][2] }}"
             {{ 'disabled' if a == 'pay' and pay_blocked }}>{{ ACTIONS[a][0] }}</button>
     {% endfor %}
+  </div>
+</form>
+{% endif %}
+
+{% if handover_pending or handover_done %}
+{% set mine = req.author_email | lower == current_email | lower %}
+<div class="card handover {{ 'handover-pending' if handover_pending }}" id="handover">
+  <div class="section-head">
+    <h2>Передача готівки підряднику</h2>
+    {% if handover_pending %}<span class="badge {{ 'red' if handover_days > 1 else 'amber' }}">очікує підтвердження{{ ' · ' ~ handover_days ~ ' дн.' if handover_days }}</span>
+    {% else %}<span class="badge green">передано</span>{% endif %}
+  </div>
+  {% if handover_pending %}
+  <p style="margin-top:0">
+    {% if mine %}Ви отримали <strong>{{ req.amount | money }} {{ req.currency }}</strong> готівкою {{ handover.since | d }}, щоб передати
+      «{{ cp_name(req.counterparty_id) }}». Коли передасте — підтвердіть тут.
+    {% else %}{{ req.author_name }} отримав(-ла) <strong>{{ req.amount | money }} {{ req.currency }}</strong> готівкою {{ handover.since | d }}
+      для «{{ cp_name(req.counterparty_id) }}» і ще не підтвердив(-ла) передачу підряднику.{% endif %}
+    {% if handover.reminders %}<span class="muted">Нагадувань надіслано: {{ handover.reminders }}.</span>{% endif %}
+  </p>
+  {% if can_confirm_handover %}
+  <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form">
+    <label>Дата передачі
+      <input type="date" name="date" value="{{ today.isoformat() }}" min="{{ handover.since.isoformat() }}" max="{{ today.isoformat() }}" required></label>
+    <input type="text" name="comment" maxlength="2000" aria-label="Коментар"
+           placeholder="Коментар (необов'язково), напр. «передав частину, решту повернув у касу»">
+    <button type="submit" class="btn btn-green">{{ 'Готівку передано' if mine else 'Підтвердити за автора' }}</button>
+  </form>
+  {% if not mine %}<p class="muted" style="margin:6px 0 0">Якщо автор повідомив про передачу усно — в історії буде видно, що підтвердили ви.</p>{% endif %}
+  {% endif %}
+  {% else %}
+  <p style="margin:0">Передано <strong>{{ handover.date | d }}</strong> — підтвердив(-ла) {{ handover.by_name }}{{ ' за автора' if handover.on_behalf }}.
+    {% if handover.comment %}<span class="muted">«{{ handover.comment }}»</span>{% endif %}</p>
+  {% if 'admin' in roles %}
+  <details class="handover-undo">
+    <summary class="muted">Адміністратор: скасувати підтвердження</summary>
+    <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form">
+      <input type="hidden" name="action" value="undo">
+      <input type="text" name="comment" required maxlength="2000" placeholder="Причина (обов'язково)" aria-label="Причина">
+      <button type="submit" class="btn btn-purple btn-sm">Скасувати підтвердження</button>
+    </form>
+  </details>
+  {% endif %}
+  {% endif %}
+</div>
+{% endif %}
+
+{% if can_change_cash_receiver %}
+<form method="post" action="{{ url_for('request_cash_receiver', request_id=req.id) }}" class="card pay-account" id="cash-receiver">
+  <div class="section-head">
+    <h2>Хто отримує готівку</h2>
+    <span class="muted">бухгалтер може виправити до оплати</span>
+  </div>
+  <div class="pay-account-row">
+    <select name="cash_receiver" class="pay-account-select" aria-label="Хто отримує готівку">
+      {% if not req.cash_receiver %}<option value="">— не вказано —</option>{% endif %}
+      {% for code, label in CASH_RECEIVERS.items() %}
+      <option value="{{ code }}" {{ 'selected' if code == req.cash_receiver }}>{{ label | replace('Я отримую', 'Автор отримує') }}</option>
+      {% endfor %}
+    </select>
+    <button type="submit" class="btn btn-sm">Зберегти</button>
   </div>
 </form>
 {% endif %}
@@ -430,6 +509,10 @@ function updateRouteHint() {
   hint.textContent = 'Заявку перевірить: ' + (assigned || CHANNEL_ROLES[channel]);
 }
 document.querySelectorAll('input[name=payment_form]').forEach(r => r.addEventListener('change', updateRouteHint));
+const cashReceiver = document.getElementById('cash-receiver-field');
+if (cashReceiver) document.querySelectorAll('input[name=payment_form]').forEach(r => r.addEventListener('change', () => {
+  cashReceiver.hidden = document.querySelector('input[name=payment_form]:checked')?.value !== 'cash';
+}));
 document.getElementById('organization_id').addEventListener('change', updateRouteHint);
 updateRouteHint();
 const body = document.getElementById('lines-body');

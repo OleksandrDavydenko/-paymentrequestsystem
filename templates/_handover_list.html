@@ -1,0 +1,83 @@
+{# Вкладка «Готівка не підтверджена» розділу «До оплати»: видана авторам готівка, передачу якої
+   підряднику ще не підтверджено. Бачить бухгалтер по готівці (бухгалтер цих заявок). #}
+<form method="get" class="card filters-card">
+  <input type="hidden" name="view" value="handover">
+  <div class="toolbar" style="margin-bottom:12px">
+    <h1 style="margin:0">Готівка не підтверджена</h1>
+    <span class="spacer"></span>
+    <div class="filters">{% include "_ref_filters.html" %}</div>
+  </div>
+  {% set period_label = 'Дата видачі' %}
+  {% set hide_overdue = true %}
+  {% include "_period.html" %}
+</form>
+
+<p class="muted page-note">Готівку видано авторам заявок, щоб вони передали її підрядникам, але передачу ще не підтверджено.
+  Автор підтверджує в картці заявки; якщо він повідомив вам усно — підтвердіть за нього тут.
+  Нагадування автору надходять автоматично (налаштовує адміністратор, не більше {{ max_reminders }}).</p>
+
+{% if by_author %}
+<details class="card plan" open id="by-author">
+  <summary><h2>У кого скільки готівки</h2><span class="muted">видано, але передачу не підтверджено</span></summary>
+  <div class="table-wrap">
+  <table class="plan-table">
+    <thead><tr><th>Автор</th><th class="num">Заявок</th><th class="num">Сума</th></tr></thead>
+    <tbody>
+      {% for a in by_author %}
+      <tr><td>{{ a.name }}</td><td class="num">{{ a.count }}</td>
+        <td class="num">{% for cur, v in a.sums.items() %}{{ v | money }} {{ cur }}{{ ' + ' if not loop.last }}{% endfor %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</details>
+{% endif %}
+
+<div class="card">
+  <div class="table-wrap">
+  <table class="stack sortable" id="handover">
+    <thead>
+      <tr>
+        <th>Номер</th>
+        <th>Видано</th>
+        <th class="num">Днів</th>
+        <th>Автор</th>
+        <th>Організація</th>
+        <th>Контрагент</th>
+        <th class="num">Сума</th>
+        <th class="num">Нагадувань</th>
+        <th data-nosort>Підтвердити за автора</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in requests %}
+      {% set days = days_waiting(r) %}
+      {% set p = paid_entry(r) %}
+      <tr class="{{ 'overdue' if days >= overdue_days }}">
+        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('request_card', request_id=r.id) }}#handover">{{ r.number }}</a></td>
+        <td data-label="Видано" data-sort="{{ r.handover.since.isoformat() }}">{{ r.handover.since | d }}
+          {% if p %}<div class="muted">{{ p.user_name }}</div>{% endif %}</td>
+        <td data-label="Днів" class="num" data-sort="{{ '%05d' % days }}"><span class="{{ 'days-late' if days >= overdue_days }}">{{ days }}</span></td>
+        <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
+        <td data-label="Організація">{{ org_name(r.organization_id) }}</td>
+        <td data-label="Контрагент">{{ cp_name(r.counterparty_id) }}</td>
+        <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
+        <td data-label="Нагадувань" class="num">{{ r.handover.reminders or 0 }}</td>
+        <td data-label="Підтвердити">
+          <form method="post" action="{{ url_for('request_handover', request_id=r.id) }}" class="handover-confirm"
+                data-msg="Підтвердити за автора, що готівку за заявкою № {{ r.number }} передано підряднику?"
+                onsubmit="return confirm(this.dataset.msg)">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <input type="date" name="date" value="{{ today.isoformat() }}" min="{{ r.handover.since.isoformat() }}"
+                   max="{{ today.isoformat() }}" required aria-label="Дата передачі">
+            <button type="submit" class="btn btn-sm btn-green">Передано</button>
+          </form>
+        </td>
+      </tr>
+      {% else %}
+      <tr><td colspan="9" class="empty">Усю видану готівку підтверджено{{ " (за вибраними фільтрами)" if request.args | reject('equalto', 'view') | list }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>

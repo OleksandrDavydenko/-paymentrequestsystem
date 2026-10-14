@@ -10,8 +10,16 @@
           <div style="font-size:13px;color:#57606a;">Заявка № {{ req.number }}</div>
           <div style="font-size:20px;font-weight:700;margin:4px 0 12px;">{{ headline }}</div>
           <div style="font-size:14px;margin-bottom:16px;">
-            {{ actor.name }}{% if event == 'comment' %} залишив(-ла) коментар{% elif event == 'participant_add' %} додав(-ла) вас учасником заявки: ви бачите її, можете коментувати й додавати файли, а листи про її рух надходитимуть вам так само, як автору{% elif event == 'submit' %} відправив(-ла) заявку на погодження{% endif %}.
+            {% if event == 'handover_reminder' %}
+            Ви отримали готівку в касі {{ handover_days }} дн. тому, щоб передати підряднику, — але ще не підтвердили передачу.
+            Якщо вже передали, натисніть кнопку нижче й підтвердіть у заявці.
+            {% elif handover_ask %}
+            {{ actor.name }} видав(-ла) вам готівку. <strong>Коли передасте її підряднику — підтвердіть це в заявці</strong>
+            (кнопка нижче). Бухгалтерія бачить, які видачі ще не підтверджено.
+            {% else %}
+            {{ actor.name }}{% if event == 'comment' %} залишив(-ла) коментар{% elif event == 'participant_add' %} додав(-ла) вас учасником заявки: ви бачите її, можете коментувати й додавати файли, а листи про її рух надходитимуть вам так само, як автору{% elif event == 'submit' %} відправив(-ла) заявку на погодження{% elif event == 'handover' %} підтвердив(-ла), що готівку передано підряднику{% endif %}.
             Поточний статус: <strong>{{ status }}</strong>.
+            {% endif %}
           </div>
           {% if comment %}
           <div style="background:#f6f8fa;border-left:4px solid #0f6cbd;border-radius:4px;padding:10px 14px;font-size:14px;white-space:pre-wrap;margin-bottom:16px;">{{ comment }}</div>
@@ -25,7 +33,7 @@
             <tr><td style="color:#57606a;padding:3px 12px 3px 0;">Дата оплати</td><td>{{ req.pay_date | d }}</td></tr>
             <tr><td style="color:#57606a;padding:3px 12px 3px 0;">Автор</td><td>{{ req.author_name }}</td></tr>
           </table>
-          <a href="{{ link }}" style="display:inline-block;background:#0f6cbd;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:6px;font-weight:600;font-size:14px;">Відкрити заявку</a>
+          <a href="{{ link }}" style="display:inline-block;background:#0f6cbd;color:#ffffff;text-decoration:none;padding:10px 20px;border-radius:6px;font-weight:600;font-size:14px;">{{ 'Підтвердити передачу' if handover_ask else 'Відкрити заявку' }}</a>
         </td></tr>
         <tr><td style="padding:14px 24px;border-top:1px solid #eaeef2;font-size:12px;color:#57606a;">
           Ви отримали цей лист, бо {{ reason }}.

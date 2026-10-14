@@ -83,6 +83,12 @@ PAYMENT_FORMS = {
     "cash": "Готівка",
     "bank": "Безготівка",
 }
+# Хто отримує готівку в касі (для форми «Готівка», якщо в адмінці ввімкнено підтвердження передачі)
+CASH_RECEIVERS = {
+    "contractor": "Підрядник отримує сам у касі",
+    "author": "Я отримую й передаю підряднику",
+}
+HANDOVER_MAX_REMINDERS = 5
 # Канал оплати = форма оплати + резидентність організації. Він визначає,
 # який бухгалтер перевіряє й проводить оплату заявки.
 CHANNELS = {
@@ -159,6 +165,9 @@ ACTIONS = {
     "participant_remove": (None, "Прибрано учасника", "grey", False),
     "cp_link": (None, "Контрагента прив'язано до 1С", "grey", False),
     "pay_account": (None, "Вид оплати", "grey", False),  # бачать лише бухгалтери й фіндиректор
+    "cash_receiver": (None, "Хто отримує готівку", "grey", False),
+    "handover": (None, "Готівку передано підряднику", "green", False),
+    "handover_undo": (None, "Підтвердження передачі скасовано", "purple", True),
 }
 # Записи історії, які бачать лише ті, хто бачить «Вид оплати»
 PAYMENT_ACCOUNT_ACTIONS = {"pay_account"}
@@ -303,8 +312,9 @@ def paid_entry(req):
                  if h.get("to_status") == "paid"), None)
 
 
-def admin_set_status(req, new_status, user, comment):
-    """Адміністратор вручну змінює статус будь-якої заявки. Коментар обов'язковий."""
+def admin_set_status(req, new_status, user, comment, handover=False):
+    """Адміністратор вручну змінює статус будь-якої заявки. Коментар обов'язковий.
+    handover — чи ввімкнено підтвердження передачі готівки (для переходу в «Оплачено»)."""
     comment = (comment or "").strip()
     if new_status not in STATUSES:
         raise WorkflowError("Невідомий статус")
@@ -322,7 +332,123 @@ def admin_set_status(req, new_status, user, comment):
         req["route_mode"] = "parallel"
     elif new_status in ("accountant", "cfo"):
         req["route_mode"] = "sequential"
+    start_handover(req, handover and new_status == "paid")
     add_history(req, "admin_status", user, "admin", comment, old, new_status)
+
+
+# ---------------------------------------------------------------- готівка через автора заявки
+
+def handover_applies(req):
+    """Готівку отримує автор і сам передає підряднику — після оплати потрібне його підтвердження."""
+    return req.get("payment_form") == "cash" and req.get("cash_receiver") == "author"
+
+
+def start_handover(req, enabled):
+    """Після «Оплачено»: заявка чекає підтвердження передачі (або не чекає, якщо не потрібно)."""
+    req.pop("handover", None)
+    if enabled and req["status"] == "paid" and handover_applies(req):
+        req["handover"] = {"status": "pending", "since": clock.today(), "reminders": 0, "last_reminder": None}
+
+
+def needs_handover(req):
+    return req.get("status") == "paid" and (req.get("handover") or {}).get("status") == "pending"
+
+
+def handover_done(req):
+    return req.get("status") == "paid" and (req.get("handover") or {}).get("status") == "done"
+
+
+def handover_days(req, today=None):
+    """Скільки днів минуло від видачі готівки."""
+    h = req.get("handover") or {}
+    return ((today or clock.today()) - h["since"]).days if h.get("since") else 0
+
+
+def is_handover_accountant(req, roles):
+    """Бухгалтер, який оплачує цю готівкову заявку (по готівці або призначений організації)."""
+    return accountant_role(req) in roles
+
+
+def can_confirm_handover(req, roles, user_email):
+    """Підтвердити передачу: автор, а за нього — бухгалтер цієї заявки або адміністратор."""
+    return needs_handover(req) and (is_author(req, user_email) or is_handover_accountant(req, roles)
+                                    or "admin" in roles)
+
+
+def can_change_cash_receiver(req, roles):
+    """Виправити «Хто отримує готівку» до оплати: бухгалтер цієї заявки або адміністратор."""
+    return (req.get("payment_form") == "cash" and req["status"] not in ("draft", "paid", "rejected")
+            and (is_handover_accountant(req, roles) or "admin" in roles))
+
+
+def set_cash_receiver(req, value, user, role):
+    if value not in CASH_RECEIVERS:
+        raise WorkflowError("Оберіть, хто отримує готівку")
+    if req.get("cash_receiver") == value:
+        return False
+    old = CASH_RECEIVERS.get(req.get("cash_receiver"), "—")
+    req["cash_receiver"] = value
+    add_history(req, "cash_receiver", user, role, f"{old} → {CASH_RECEIVERS[value]}", req["status"], req["status"])
+    return True
+
+
+def confirm_handover(req, user, roles, when, comment=""):
+    """Автор (або за нього бухгалтер / адмін) підтверджує, що передав готівку підряднику. Кидає WorkflowError."""
+    if not needs_handover(req):
+        raise WorkflowError("Ця заявка не чекає підтвердження передачі готівки")
+    if not can_confirm_handover(req, roles, user["email"]):
+        raise WorkflowError("Підтвердити передачу може автор заявки, бухгалтер по готівці або адміністратор")
+    comment = (comment or "").strip()
+    if len(comment) > MAX_COMMENT:
+        raise WorkflowError(f"Коментар задовгий (максимум {MAX_COMMENT} символів)")
+    h = req["handover"]
+    if when is None:
+        raise WorkflowError("Вкажіть дату передачі")
+    if when < h["since"]:
+        raise WorkflowError(f"Дата передачі не може бути раніше видачі готівки ({h['since']:%d.%m.%Y})")
+    if when > clock.today():
+        raise WorkflowError("Дата передачі не може бути в майбутньому")
+    if is_author(req, user["email"]):
+        role = "initiator"
+    elif is_handover_accountant(req, roles):
+        role = accountant_role(req)
+    else:
+        role = "admin"
+    h.update({"status": "done", "date": when, "by_name": user["name"], "by_email": user["email"],
+              "at": clock.now(), "comment": comment, "on_behalf": role != "initiator"})
+    text = f"Передано {when:%d.%m.%Y}"
+    if role != "initiator":
+        text += " (підтверджено за автора)"
+    add_history(req, "handover", user, role, text + (f". {comment}" if comment else ""), "paid", "paid")
+
+
+def undo_handover(req, user, comment):
+    """Адміністратор скасовує підтвердження (помилково натиснули). Коментар обов'язковий."""
+    comment = (comment or "").strip()
+    if not handover_done(req):
+        raise WorkflowError("Передачу готівки ще не підтверджено")
+    if not comment:
+        raise WorkflowError("Вкажіть причину скасування — вона буде видна в історії заявки")
+    h = req["handover"]
+    h.update({"status": "pending", "date": None, "last_reminder": clock.today()})
+    add_history(req, "handover_undo", user, "admin", comment, "paid", "paid")
+
+
+def handover_reminder_due(req, every_days, today=None):
+    """Чи час нагадати автору підтвердити передачу (кожні every_days днів, не більше HANDOVER_MAX_REMINDERS)."""
+    if not needs_handover(req) or not every_days or every_days <= 0:
+        return False
+    h = req["handover"]
+    if h.get("reminders", 0) >= HANDOVER_MAX_REMINDERS:
+        return False
+    last = h.get("last_reminder") or h["since"]
+    return ((today or clock.today()) - last).days >= every_days
+
+
+def mark_reminded(req, today=None):
+    h = req["handover"]
+    h["reminders"] = h.get("reminders", 0) + 1
+    h["last_reminder"] = today or clock.today()
 
 
 def add_comment(req, user, role, text):
@@ -436,7 +562,8 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
     лише при відправці (submit) і запам'ятовуються в заявці, щоб зміна налаштувань не ламала
     заявки в процесі. heads — пошта керівників відділу заявки (для submit).
     guard — {"cp_pending": контрагента ще немає в 1С, "block_pending": тоді не можна оплатити,
-             "account_required": чи обов'язковий «Вид оплати» (є рахунки / каси організації в довіднику)}.
+             "account_required": чи обов'язковий «Вид оплати» (є рахунки / каси організації в довіднику),
+             "handover": чи ввімкнено підтвердження передачі готівки підряднику (для pay)}.
     """
     comment = (comment or "").strip()
     role = acting_role(req, roles, user["email"])
@@ -467,6 +594,8 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
     elif action in ("rework", "reject"):
         req["approvals"] = {}
     req["status"] = new
+    if action == "pay":
+        start_handover(req, (guard or {}).get("handover", False))
     add_history(req, action, user, role, comment, old, new)
 
 

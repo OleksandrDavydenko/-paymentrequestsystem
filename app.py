@@ -1,5 +1,8 @@
+import logging
 import os
 import re
+import threading
+import time
 import uuid
 from functools import wraps
 from datetime import date, timedelta
@@ -98,6 +101,7 @@ def inject_refs():
         "dep_options": lambda: sorted({r["department"] for r in db.list_all() if r.get("department")},
                                       key=lambda c: departments.get_name(c).lower()),
         "STATUSES": db.STATUSES,
+        "needs_handover": wf.needs_handover,
     }
 
 
@@ -149,6 +153,7 @@ def parse_request_form(form, current=None, allowed_codes=None):
                                        set(organizations.options()) | {(current or {}).get("organization_id")}),
         "expense_code": (form.get("expense_code") or "").strip() or None,
         "payment_form": form.get("payment_form") if form.get("payment_form") in db.PAYMENT_FORMS else None,
+        "cash_receiver": form.get("cash_receiver") if form.get("cash_receiver") in wf.CASH_RECEIVERS else None,
         "currency": form.get("currency") if form.get("currency") in db.CURRENCIES else None,
         "note": (form.get("note") or "").strip(),
         "amount": _parse_amount(form.get("amount")),
@@ -170,6 +175,12 @@ def parse_request_form(form, current=None, allowed_codes=None):
     for field, message in required.items():
         if data[field] is None:
             errors[field] = message
+    if data["payment_form"] != "cash":
+        data["cash_receiver"] = None
+    elif not app_settings.get("cash_handover_confirm"):
+        data["cash_receiver"] = data["cash_receiver"] or (current or {}).get("cash_receiver")
+    elif data["cash_receiver"] is None:
+        errors["cash_receiver"] = "Вкажіть, хто отримує готівку"
     if data["expense_code"] and data["expense_code"] != (current or {}).get("expense_code"):
         # Стаття має бути в довіднику і в бюджеті автора (стара стаття цієї ж заявки — приймається)
         if expense_items.get_name(data["expense_code"]) is None:
@@ -412,6 +423,7 @@ def requests_list(*, context):
         refs=refs,
         view=view,
         participating_total=len(participating),
+        handover_count=sum(1 for r in db.list_requests(g.user["email"], "paid") if wf.needs_handover(r)),
         paid_entry=wf.paid_entry,
         show_dep_filter=False,
     )
@@ -545,6 +557,16 @@ def request_card(request_id=None, *, context):
         cp_suggested=next((m for p_, m in counterparties.auto_link_candidates(only_id=req.get("counterparty_id"))), None)
         if counterparties.is_pending(req.get("counterparty_id")) else None,
         pay_blocked=_pay_guard(req)["cp_pending"] and _pay_guard(req)["block_pending"],
+        CASH_RECEIVERS=wf.CASH_RECEIVERS,
+        handover_enabled=bool(app_settings.get("cash_handover_confirm")),
+        handover=req.get("handover"),
+        handover_pending=wf.needs_handover(req),
+        handover_done=wf.handover_done(req),
+        handover_days=wf.handover_days(req),
+        can_confirm_handover=wf.can_confirm_handover(req, roles, user["email"]),
+        can_change_cash_receiver=req["id"] is not None and bool(app_settings.get("cash_handover_confirm"))
+        and wf.can_change_cash_receiver(req, roles),
+        today=clock.today(),
         pending_cp_block=app_settings.get("pending_cp_payment") == "block",
         can_manage_participants=req["id"] is not None and wf.can_manage_participants(req, roles, user["email"]),
         approvals=req.get("approvals") or {},
@@ -559,6 +581,7 @@ def _pay_guard(req):
     """Чи можна оплатити заявку з контрагентом, якого ще немає в 1С (параметр в адмінці)."""
     return {"cp_pending": counterparties.is_pending(req.get("counterparty_id")),
             "block_pending": app_settings.get("pending_cp_payment") == "block",
+            "handover": bool(app_settings.get("cash_handover_confirm")),
             "account_required": bool(app_settings.get("require_payment_account")) and bool(
                 payment_accounts.options_for(req, getattr(g, "user", None), getattr(g, "roles", frozenset())))}
 
@@ -602,6 +625,59 @@ def request_payment_account(request_id, *, context):
     else:
         flash("Змін немає", "success")
     return redirect(url_for("request_card", request_id=request_id) + "#payment-account")
+
+
+@app.route("/requests/<int:request_id>/handover", methods=["POST"])
+@auth.login_required
+@requires()
+def request_handover(request_id, *, context):
+    """Підтвердження передачі готівки підряднику (автор, а за нього — бухгалтер по готівці чи адмін)."""
+    req = _load_visible(request_id)
+    back = request.form.get("next")
+    back = back if back and back.startswith("/") and not back.startswith("//") else \
+        url_for("request_card", request_id=request_id) + "#handover"
+    try:
+        if request.form.get("action") == "undo":
+            if "admin" not in g.roles:
+                abort(403)
+            wf.undo_handover(req, g.user, request.form.get("comment"))
+            message = "Підтвердження передачі скасовано — заявка знову чекає підтвердження"
+        else:
+            if not wf.can_confirm_handover(req, g.roles, g.user["email"]):
+                abort(403)
+            wf.confirm_handover(req, g.user, g.roles, _parse_date(request.form.get("date")),
+                                request.form.get("comment"))
+            message = f"Заявка № {req['number']}: передачу готівки підряднику підтверджено"
+    except wf.WorkflowError as e:
+        flash(str(e), "error")
+        return redirect(back)
+    db.save_request(req)
+    if request.form.get("action") != "undo":
+        notifications.notify("handover", req, g.user)
+    flash(message, "success")
+    return redirect(back)
+
+
+@app.route("/requests/<int:request_id>/cash-receiver", methods=["POST"])
+@auth.login_required
+@requires(*wf.ACCOUNTANT_ROLES, "admin")
+def request_cash_receiver(request_id, *, context):
+    """Бухгалтер заявки або адмін виправляє «Хто отримує готівку» до оплати."""
+    req = _load_visible(request_id)
+    if not app_settings.get("cash_handover_confirm") or not wf.can_change_cash_receiver(req, g.roles):
+        abort(403)
+    try:
+        changed = wf.set_cash_receiver(req, request.form.get("cash_receiver"), g.user,
+                                       wf.history_role(req, g.roles, g.user["email"]))
+    except wf.WorkflowError as e:
+        flash(str(e), "error")
+        return redirect(url_for("request_card", request_id=request_id) + "#cash-receiver")
+    if changed:
+        db.save_request(req)
+        flash(f"Хто отримує готівку: {wf.CASH_RECEIVERS[req['cash_receiver']]}", "success")
+    else:
+        flash("Змін немає", "success")
+    return redirect(url_for("request_card", request_id=request_id) + "#cash-receiver")
 
 
 @app.route("/counterparties/search")
@@ -856,6 +932,8 @@ def notification_settings(*, context):
         groups.append("approver")
     if g.roles & {"dept_head", "dept_viewer"}:
         groups.append("department")
+    if g.roles & wf.ACCOUNTANT_ROLES and app_settings.get("cash_handover_confirm"):
+        groups.append("cash")
     events = [(code, label, group) for code, (label, group, _) in user_prefs.EVENTS.items() if group in groups]
     if request.method == "POST":
         enabled = request.form.get("enabled") == "1"
@@ -1082,6 +1160,21 @@ def admin_settings(*, context):
         app_settings.set("require_payment_account", require_acc, g.user["email"])
         flash("«Вид оплати» при погодженні бухгалтером: " + ("обов'язковий" if require_acc else "необов'язковий"), "success")
         changed = True
+    if "cash_handover_sent" in request.form:
+        handover_on = request.form.get("cash_handover_confirm") == "1"
+        try:
+            remind_days = max(0, min(int(request.form.get("cash_handover_remind_days") or 0), 30))
+        except ValueError:
+            remind_days = app_settings.get("cash_handover_remind_days")
+        if handover_on != bool(app_settings.get("cash_handover_confirm")):
+            app_settings.set("cash_handover_confirm", handover_on, g.user["email"])
+            flash("Підтвердження передачі готівки підряднику: " + ("увімкнено" if handover_on else "вимкнено"), "success")
+            changed = True
+        if remind_days != app_settings.get("cash_handover_remind_days"):
+            app_settings.set("cash_handover_remind_days", remind_days, g.user["email"])
+            flash(f"Нагадування про передачу готівки: кожні {remind_days} дн." if remind_days
+                  else "Нагадування про передачу готівки вимкнено", "success")
+            changed = True
     if cp_mode != app_settings.get("pending_cp_payment"):
         app_settings.set("pending_cp_payment", cp_mode, g.user["email"])
         flash(f"Контрагент, якого ще немає в 1С: {PENDING_CP_MODES[cp_mode]}", "success")
@@ -1100,7 +1193,8 @@ def admin_change_status(request_id, *, context):
         abort(404)
     new_status = request.form.get("status", "")
     try:
-        wf.admin_set_status(req, new_status, g.user, request.form.get("comment"))
+        wf.admin_set_status(req, new_status, g.user, request.form.get("comment"),
+                            handover=bool(app_settings.get("cash_handover_confirm")))
         db.save_request(req)
         notifications.notify("admin_status", req, g.user)
     except wf.WorkflowError as e:
@@ -1117,7 +1211,10 @@ def admin_change_status(request_id, *, context):
 def to_pay(*, context):
     roles = g.roles
     today = clock.today()
-    view = "paid" if request.args.get("view") == "paid" else "to_pay"
+    view = request.args.get("view") if request.args.get("view") in ("paid", "handover") else "to_pay"
+    handover_rows = _handover_rows(roles)
+    if view == "handover":
+        return _handover_view(handover_rows, today)
     all_rows = db.list_paid(roles) if view == "paid" else db.list_to_pay(roles)
     form_filter = request.args.get("form") if request.args.get("form") in wf.CHANNELS else ""
     refs = ref_filters(request.args)
@@ -1143,6 +1240,7 @@ def to_pay(*, context):
 
     return render_template(
         "to_pay.html",
+        **_handover_tab(handover_rows),
         acc_filter=acc_filter,
         account_options=sorted({r.get("payment_account_id") for r in all_rows if r.get("payment_account_id")},
                                key=lambda a: payment_accounts.label(a).lower()),
@@ -1173,6 +1271,53 @@ def to_pay(*, context):
                           else "Не вибрано «Вид оплати» — відкрийте заявку й виберіть рахунок або касу")
                 for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
                 and (r["id"] in blocked or r["id"] in no_account)},
+    )
+
+
+def _handover_rows(roles):
+    """Оплачені готівкові заявки, де автор ще не підтвердив передачу, — для бухгалтера цих заявок."""
+    if not app_settings.get("cash_handover_confirm"):
+        return []
+    rows = [r for r in db.list_all() if wf.needs_handover(r) and wf.is_handover_accountant(r, roles)]
+    return sorted(rows, key=lambda r: (r["handover"]["since"], r["id"]))
+
+
+def _handover_tab(rows):
+    # Вкладка — у бухгалтера по готівці (і в того, кому готівку організації призначено в адмінці)
+    return {"show_handover_tab": bool(app_settings.get("cash_handover_confirm"))
+            and ("acc_cash" in g.roles or bool(rows)), "handover_tab_count": len(rows)}
+
+
+def _handover_view(all_rows, today):
+    refs = ref_filters(request.args)
+    period, d_from, d_to = _date_filter(request.args, today)
+    rows = [r for r in apply_ref_filters(all_rows, refs) if _in_period(r["handover"]["since"], d_from, d_to)]
+    by_author = {}
+    for r in rows:
+        a = by_author.setdefault(r["author_email"].lower(), {"name": r["author_name"], "count": 0, "sums": {}})
+        a["count"] += 1
+        a["sums"][r["currency"]] = a["sums"].get(r["currency"], Decimal(0)) + r["amount"]
+    remind_days = app_settings.get("cash_handover_remind_days") or 0
+    tab = _handover_tab(all_rows)
+    if not tab["show_handover_tab"]:
+        abort(403)
+    return render_template(
+        "to_pay.html",
+        **tab,
+        view="handover",
+        user_name=g.user["name"],
+        requests=rows,
+        by_author=sorted(by_author.values(), key=lambda a: a["name"].lower()),
+        days_waiting=lambda r: wf.handover_days(r, today),
+        overdue_days=remind_days or 1,
+        max_reminders=wf.HANDOVER_MAX_REMINDERS,
+        today=today,
+        refs=refs,
+        period=period,
+        d_from=d_from,
+        d_to=d_to,
+        presets=date_presets(today),
+        paid_entry=wf.paid_entry,
     )
 
 
@@ -1331,6 +1476,9 @@ def admin_users(*, context):
         HEAD_MODES=wf.HEAD_MODES,
         pending_cp=app_settings.info("pending_cp_payment"),
         require_payment_account=app_settings.get("require_payment_account"),
+        cash_handover_confirm=app_settings.get("cash_handover_confirm"),
+        cash_handover_remind_days=app_settings.get("cash_handover_remind_days"),
+        handover_max_reminders=wf.HANDOVER_MAX_REMINDERS,
         PENDING_CP_MODES=PENDING_CP_MODES,
         pending_counterparties=counterparties.pending_items(),
         route_label=wf.route_label,
@@ -1684,6 +1832,64 @@ def visible_history(req):
 @app.template_filter("filesize")
 def filesize(n):
     return f"{n / 1024 / 1024:.1f} МБ" if n >= 1024 * 1024 else f"{max(1, round(n / 1024))} КБ"
+
+
+# ---------------------------------------------------------------- нагадування про передачу готівки
+
+REMINDER_INTERVAL = 3600  # перевірка раз на годину
+_last_base_url = None
+_reminders_started = False
+_reminders_lock = threading.Lock()
+
+
+def _public_base_url():
+    """Адреса сайту для посилань у листах, які надсилаються не у відповідь на запит."""
+    if os.environ.get("APP_BASE_URL"):
+        return os.environ["APP_BASE_URL"].rstrip("/")
+    if os.environ.get("WEBSITE_HOSTNAME"):  # App Service задає сам
+        return "https://" + os.environ["WEBSITE_HOSTNAME"]
+    return _last_base_url or "http://localhost:5000"
+
+
+def run_handover_reminders(today=None):
+    """Нагадати авторам, які не підтвердили передачу готівки. Повертає номери заявок, яким надіслано."""
+    every = app_settings.get("cash_handover_remind_days") or 0
+    if not app_settings.get("cash_handover_confirm") or every <= 0:
+        return []
+    sent = []
+    for r in db.list_all():
+        if not wf.handover_reminder_due(r, every, today):
+            continue
+        req = db.get_request(r["id"])
+        with app.test_request_context(base_url=_public_base_url()):
+            if not notifications.send_handover_reminder(req, wf.handover_days(req, today)):
+                continue  # розсилку вимкнено — нагадаємо, коли ввімкнуть
+        wf.mark_reminded(req, today)
+        db.save_request(req)
+        sent.append(req["number"])
+    return sent
+
+
+def _reminder_loop():
+    time.sleep(60)
+    while True:
+        try:
+            run_handover_reminders()
+        except Exception:
+            logging.getLogger(__name__).exception("Помилка нагадувань про передачу готівки")
+        time.sleep(REMINDER_INTERVAL)
+
+
+@app.before_request
+def _start_background():
+    global _last_base_url, _reminders_started
+    _last_base_url = request.host_url.rstrip("/")
+    if _reminders_started or not (os.environ.get("WEBSITE_SITE_NAME") or os.environ.get("HANDOVER_REMINDERS") == "1"):
+        return
+    with _reminders_lock:
+        if not _reminders_started:
+            _reminders_started = True
+            threading.Thread(target=_reminder_loop, name="handover-reminders", daemon=True).start()
 
 
 @app.route("/health")
