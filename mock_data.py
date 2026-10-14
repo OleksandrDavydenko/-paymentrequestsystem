@@ -24,7 +24,7 @@ import workflow
 # Статті витрат — з Power BI (див. expense_items.py). Для мокових заявок — коди мокового довідника.
 _EXP = {1: "01.001", 2: "02.001", 3: "03.001", 4: "04.001", 5: "01.004", 6: "05.001", 7: "02.004"}
 
-CURRENCIES = ["UAH", "USD", "EUR"]
+# Валюти — у currencies.py (з 1С через Power BI); у заявці — буквений код (UAH, USD, EUR…)
 
 PAYMENT_FORMS = workflow.PAYMENT_FORMS
 

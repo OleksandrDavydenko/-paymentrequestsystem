@@ -17,6 +17,7 @@ import expense_items
 import app_settings
 import clock
 import counterparties
+import currencies
 import db_sql
 import departments
 import org_structure
@@ -93,7 +94,8 @@ def inject_refs():
         # Фільтр «Стаття витрат»: лише статті, що трапляються в заявках
         "exp_options": lambda: sorted({r["expense_code"] for r in db.list_all() if r.get("expense_code")},
                                       key=lambda c: expense_label(c).lower()),
-        "CURRENCIES": db.CURRENCIES,
+        "CURRENCIES": currencies.codes(),
+        "CURRENCY_NAMES": currencies.full_names(),
         "PAYMENT_FORMS": db.PAYMENT_FORMS,
         "CHANNELS": wf.CHANNELS,
         "channel_of": wf.channel_of,
@@ -145,6 +147,12 @@ def expense_label(code):
     return f"{code} — {name}" if name else f"{code} — немає в довіднику"
 
 
+def _parse_currency(raw, current=None):
+    """Валюта з довідника 1С; стара валюта цієї ж заявки (навіть якщо її вже прибрали з довідника) — приймається."""
+    raw = (raw or "").strip().upper()
+    return raw if raw and (currencies.is_valid(raw) or raw == current) else None
+
+
 def parse_request_form(form, current=None, allowed_codes=None):
     """Повертає (дані заявки, словник помилок). Автор/дата/номер не з форми."""
     errors = {}
@@ -154,7 +162,7 @@ def parse_request_form(form, current=None, allowed_codes=None):
                                        set(organizations.options()) | {(current or {}).get("organization_id")}),
         "expense_code": (form.get("expense_code") or "").strip() or None,
         "payment_form": form.get("payment_form") if form.get("payment_form") in db.PAYMENT_FORMS else None,
-        "currency": form.get("currency") if form.get("currency") in db.CURRENCIES else None,
+        "currency": _parse_currency(form.get("currency"), (current or {}).get("currency")),
         "note": (form.get("note") or "").strip(),
         "amount": _parse_amount(form.get("amount")),
         "pay_date": None,
@@ -194,7 +202,8 @@ def parse_request_form(form, current=None, allowed_codes=None):
             "invoice": (form.get(f"lines-{i}-invoice") or "").strip(),
             "amount_raw": form.get(f"lines-{i}-amount", ""),
             "amount": _parse_amount(form.get(f"lines-{i}-amount")),
-            "currency": form.get(f"lines-{i}-currency") if form.get(f"lines-{i}-currency") in db.CURRENCIES else data["currency"],
+            "currency": _parse_currency(form.get(f"lines-{i}-currency"), (current or {}).get("currency"))
+            or data["currency"],
             "deal": (form.get(f"lines-{i}-deal") or "").strip(),
         }
         if not line["invoice"] and line["amount"] is None and not line["deal"]:
@@ -914,7 +923,7 @@ def date_presets(today):
 
 
 def _currency_order(cur):
-    return db.CURRENCIES.index(cur) if cur in db.CURRENCIES else 99
+    return currencies.order_key(cur)
 
 
 def currency_totals(rows, today):
@@ -1572,6 +1581,7 @@ def admin_users(*, context):
         departments_list=departments.get_departments(),
         departments_status=departments.status(),
         organizations_status=organizations.status(),
+        currencies_status=currencies.status(),
         counterparties_status=counterparties.status(),
         payment_types_status=payment_types.status(),
         org_list=organizations.get_all(),
@@ -1613,7 +1623,7 @@ def admin_expense_refresh(*, context):
         _, _, count = _link_counterparty(pending["id"], target["id"], wf.SYSTEM_USER, "admin")
         flash(f"Контрагента «{pending['name']}» автоматично прив'язано до «{target['name']}» з 1С (заявок: {count})",
               "success")
-    for name, ref in (("організацій", organizations), ("відділів", departments)):
+    for name, ref in (("організацій", organizations), ("відділів", departments), ("валют", currencies)):
         if not ref.refresh():
             flash(f"Не вдалося оновити довідник {name}: " + (ref.status()["error"] or "невідома помилка"), "error")
     if expense_items.refresh():

@@ -443,6 +443,7 @@
     {% for title, st, note in [('Контрагенти', counterparties_status, 'пошук на сервері; нових, ще не заведених у 1С: ' ~ counterparties_status.pending),
                                ('Види оплати', payment_types_status, 'з доступами бухгалтерів (UserPaymentTypes): користувачів 1С — ' ~ payment_types_status.users),
                                ('Організації', organizations_status, 'резидент — країна Україна; порожня чи інша країна — нерезидент'),
+                               ('Валюти', currencies_status, 'буквений код (Name) — у заявках; UAH, USD, EUR — першими'),
                                ('Відділи співробітників', departments_status, "окремий довідник оргструктури, не пов'язаний з відділами статей")] %}
     <dt>{{ title }}</dt>
     <dd>{{ SRC.get(st.source, st.source) }} · {{ st.active }}{% if st.count != st.active %} <span class="muted">(+{{ st.count - st.active }} помічених на видалення)</span>{% endif %}

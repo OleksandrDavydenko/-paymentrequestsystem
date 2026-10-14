@@ -151,8 +151,9 @@
       <label for="currency">Валюта</label>
       <select id="currency" name="currency" class="{{ 'invalid' if errors.currency }}">
         {% for c in CURRENCIES %}
-        <option value="{{ c }}" {{ 'selected' if c == req.currency }}>{{ c }}</option>
+        <option value="{{ c }}" {{ 'selected' if c == req.currency }} title="{{ CURRENCY_NAMES.get(c, '') }}">{{ c }}</option>
         {% endfor %}
+        {% if req.currency and req.currency not in CURRENCIES %}<option value="{{ req.currency }}" selected>{{ req.currency }} (немає в довіднику)</option>{% endif %}
       </select>
       {{ err('currency') }}
     </div>
@@ -186,7 +187,7 @@
           <td><input type="text" inputmode="decimal" name="lines-{{ loop.index0 }}-amount" value="{{ line.amount_raw if line.amount_raw is defined else line.amount }}" style="text-align:right"></td>
           <td>
             <select name="lines-{{ loop.index0 }}-currency">
-              {% for c in CURRENCIES %}<option {{ 'selected' if c == line.currency }}>{{ c }}</option>{% endfor %}
+              {% for c in CURRENCIES %}<option {{ 'selected' if c == line.currency }}>{{ c }}</option>{% endfor %}{% if line.currency and line.currency not in CURRENCIES %}<option selected>{{ line.currency }}</option>{% endif %}
             </select>
           </td>
           <td><input type="text" name="lines-{{ loop.index0 }}-deal" value="{{ line.deal }}"></td>
