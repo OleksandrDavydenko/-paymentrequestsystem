@@ -26,8 +26,10 @@
         До оплати{% if payments_count %} <span class="count">{{ payments_count }}</span>{% endif %}
       </a>
       {% endif %}
-      {% if 'admin' in roles %}
+      {% if sees_all_requests %}
       <a href="{{ url_for('admin_requests') }}" class="{{ 'active' if request.endpoint == 'admin_requests' }}">Усі заявки</a>
+      {% endif %}
+      {% if 'admin' in roles %}
       <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin_users') }}">Адміністрування</a>
       {% endif %}
     </nav>

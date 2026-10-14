@@ -139,6 +139,7 @@ header .count { background: #fff; color: var(--primary); border-radius: 999px; p
 .callout.orange { background: #fff4e5; border-color: #d97706; }
 .callout.red { background: #fdecea; border-color: #cf222e; }
 .callout.blue { background: #eef5fc; border-color: #0f6cbd; }
+.approval-order:has(input:disabled) { opacity: .55; cursor: not-allowed; }
 .callout-text { margin-top: 4px; white-space: pre-wrap; }
 
 /* Панель рішення */

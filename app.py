@@ -303,6 +303,7 @@ def _role_members(role):
 
 
 notifications.role_members = _role_members
+notifications.admin_emails = lambda: sorted(ADMIN_EMAILS)
 
 
 @app.context_processor
@@ -317,6 +318,7 @@ def inject_roles():
         "participating_count": len(db.list_participating(g.user["email"])) if getattr(g, "user", None) else 0,
         "queue_count": len(db.list_queue(roles)) if roles & wf.APPROVER_ROLES else 0,
         "can_see_payments": wf.can_see_payments(roles),
+        "sees_all_requests": _sees_all_requests(roles),
         "payments_count": len(db.list_to_pay(roles)) if wf.can_see_payments(roles) else 0,
     }
 
@@ -326,7 +328,15 @@ def _deciding_roles(roles):
     deciding = set(roles & wf.APPROVER_ROLES)
     if app_settings.get("dept_head_mode") != "approve":
         deciding.discard("dept_head")
+    # Фіндиректор-спостерігач — без черги (крім заявок, відправлених ще з його кроком)
+    if "cfo" in deciding and app_settings.get("cfo_mode") == "observe" and not db.list_queue(frozenset({"cfo"})):
+        deciding.discard("cfo")
     return deciding
+
+
+def _sees_all_requests(roles):
+    """«Усі заявки»: адміністратор і фіндиректор (лише перегляд)."""
+    return bool(roles & {"admin", "cfo"})
 
 
 def _home():
@@ -334,7 +344,7 @@ def _home():
         return url_for("approvals")
     if "initiator" not in g.roles and g.roles & {"dept_head", "dept_viewer"}:
         return url_for("department_requests")
-    if g.roles == {"admin"}:
+    if g.roles == {"admin"} or ("initiator" not in g.roles and "cfo" in g.roles):
         return url_for("admin_requests")
     return url_for("requests_list")
 
@@ -545,8 +555,10 @@ def request_card(request_id=None, *, context):
         account_required=wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES
         and req["status"] in ("accountant", "approval") and bool(payment_accounts.options_for(req, user, roles))
         and bool(app_settings.get("require_payment_account")),
-        can_link_cp=counterparties.is_pending(req.get("counterparty_id"))
-        and bool(roles & (wf.ACCOUNTANT_ROLES | {"cfo", "admin"})),
+        can_link_cp=counterparties.is_pending(req.get("counterparty_id")) and _can_link_cp(roles),
+        # Бухгалтер бачить, що нового контрагента заводить адміністратор
+        cp_owner_note=counterparties.is_pending(req.get("counterparty_id")) and not _can_link_cp(roles)
+        and bool(roles & (wf.ACCOUNTANT_ROLES | {"cfo"})),
         cp_suggested=next((m for p_, m in counterparties.auto_link_candidates(only_id=req.get("counterparty_id"))), None)
         if counterparties.is_pending(req.get("counterparty_id")) else None,
         pay_blocked=_pay_guard(req)["cp_pending"] and _pay_guard(req)["block_pending"],
@@ -565,6 +577,13 @@ def request_card(request_id=None, *, context):
         back_url=url_for("requests_list") if wf.is_author(req, user["email"]) and "initiator" in roles
         else _home(),
     )
+
+
+def _can_link_cp(roles):
+    """Хто заводить нового контрагента в 1С і прив'язує його в заявці (параметр в адмінці)."""
+    if app_settings.get("cp_onec_owner") == "admin":
+        return "admin" in roles
+    return bool(roles & (wf.ACCOUNTANT_ROLES | {"cfo", "admin"}))
 
 
 def _pay_guard(req):
@@ -595,6 +614,7 @@ def _route_settings(req):
         "mode": app_settings.get("approval_mode"),
         "head_mode": app_settings.get("dept_head_mode"),
         "heads": [h["email"] for h in org_structure.heads_of(req.get("department")) if h["email"]],
+        "cfo_step": app_settings.get("cfo_mode") != "observe",
     }
 
 
@@ -703,6 +723,8 @@ def _link_counterparty(pending_id, onec_id, user, role):
 @requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
 def counterparty_check(cp_id, *, context):
     """«Перевірити в 1С зараз»: живий запит за ЄДРПОУ і автоприв'язка."""
+    if not _can_link_cp(g.roles):
+        abort(403)
     nxt = request.form.get("next") or ""
     back = nxt if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt else url_for("_home_redirect")
     role = next((r for r in (*sorted(wf.ACCOUNTANT_ROLES), "cfo", "admin") if r in g.roles), "admin")
@@ -723,6 +745,8 @@ def counterparty_check(cp_id, *, context):
 @auth.login_required
 @requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
 def counterparty_link(cp_id, *, context):
+    if not _can_link_cp(g.roles):
+        abort(403)
     nxt = request.form.get("next") or ""
     # Лише відносна адреса всередині системи (без переходу на сторонні сайти)
     back = nxt if nxt.startswith("/") and not nxt.startswith("//") and "\\" not in nxt else url_for("_home_redirect")
@@ -902,6 +926,8 @@ def notification_settings(*, context):
         groups.append("department")
     if g.roles & wf.ACCOUNTANT_ROLES and app_settings.get("cash_handover_confirm"):
         groups.append("cash")
+    if "admin" in g.roles and app_settings.get("cp_onec_owner") == "admin":
+        groups.append("admin")
     events = [(code, label, group) for code, (label, group, _) in user_prefs.EVENTS.items() if group in groups]
     if request.method == "POST":
         enabled = request.form.get("enabled") == "1"
@@ -1114,14 +1140,26 @@ def admin_settings(*, context):
     mode = request.form.get("approval_mode")
     head_mode = request.form.get("dept_head_mode", app_settings.get("dept_head_mode"))
     cp_mode = request.form.get("pending_cp_payment", app_settings.get("pending_cp_payment"))
-    if mode not in wf.APPROVAL_MODES or head_mode not in wf.HEAD_MODES or cp_mode not in PENDING_CP_MODES:
+    cfo_mode = request.form.get("cfo_mode", app_settings.get("cfo_mode"))
+    cp_owner = request.form.get("cp_onec_owner", app_settings.get("cp_onec_owner"))
+    mode = mode or app_settings.get("approval_mode")  # радіокнопки неактивні, поки фіндиректор спостерігає
+    if (mode not in wf.APPROVAL_MODES or head_mode not in wf.HEAD_MODES or cp_mode not in PENDING_CP_MODES
+            or cfo_mode not in wf.CFO_MODES or cp_owner not in wf.CP_OWNER_MODES):
         flash("Невідомий режим погодження", "error")
         return redirect(url_for("admin_users") + "#process-settings")
     changed = False
-    if mode != app_settings.get("approval_mode") or head_mode != app_settings.get("dept_head_mode"):
+    if (mode != app_settings.get("approval_mode") or head_mode != app_settings.get("dept_head_mode")
+            or cfo_mode != app_settings.get("cfo_mode")):
         app_settings.set("approval_mode", mode, g.user["email"])
         app_settings.set("dept_head_mode", head_mode, g.user["email"])
-        flash(f"Маршрут: {wf.route_label(mode, head_mode)}. Діє для нових і повторно відправлених заявок.", "success")
+        app_settings.set("cfo_mode", cfo_mode, g.user["email"])
+        flash(f"Маршрут: {wf.route_label(mode, head_mode, cfo_mode)}. Діє для нових і повторно відправлених заявок.",
+              "success")
+        changed = True
+    if cp_owner != app_settings.get("cp_onec_owner"):
+        app_settings.set("cp_onec_owner", cp_owner, g.user["email"])
+        flash("Нових контрагентів у 1С заводить: " + ("адміністратор" if cp_owner == "admin" else "бухгалтер"),
+              "success")
         changed = True
     require_acc = request.form.get("require_payment_account") == "1"
     if "require_payment_account_sent" in request.form and require_acc != bool(app_settings.get("require_payment_account")):
@@ -1291,7 +1329,7 @@ def _handover_view(all_rows, today):
 
 @app.route("/admin/requests")
 @auth.login_required
-@requires("admin")
+@requires("admin", "cfo")
 def admin_requests(*, context):
     return _requests_overview(db.list_all(), title="Усі заявки", table_id="all-requests")
 
@@ -1442,6 +1480,12 @@ def admin_users(*, context):
         approval_mode=app_settings.info("approval_mode"),
         head_mode=app_settings.info("dept_head_mode"),
         HEAD_MODES=wf.HEAD_MODES,
+        cfo_mode=app_settings.info("cfo_mode"),
+        CFO_MODES=wf.CFO_MODES,
+        cp_owner=app_settings.get("cp_onec_owner"),
+        CP_OWNER_MODES=wf.CP_OWNER_MODES,
+        pending_cp_requests={cid: next((r["id"] for r in db.list_all() if r.get("counterparty_id") == cid), None)
+                             for cid in [c["id"] for c in counterparties.pending_items()]},
         pending_cp=app_settings.info("pending_cp_payment"),
         require_payment_account=app_settings.get("require_payment_account"),
         cash_handover_confirm=app_settings.get("cash_handover_confirm"),

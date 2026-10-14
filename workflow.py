@@ -172,6 +172,16 @@ APPROVAL_MODES = {
     "sequential": "Послідовно: Бухгалтер → Фіндиректор → Оплата",
     "parallel": "Паралельно: бухгалтер і фіндиректор одночасно → Оплата",
 }
+# Роль фіндиректора (налаштовується в адмінці, запам'ятовується в заявці при відправці)
+CFO_MODES = {
+    "approve": "Погоджує: заявка після бухгалтера (або разом з ним) йде фіндиректору",
+    "observe": "Лише спостерігає: погоджує тільки бухгалтер, фіндиректор бачить усі заявки, але не погоджує",
+}
+# Хто заводить у 1С нового контрагента, внесеного ініціатором, і прив'язує його в заявці
+CP_OWNER_MODES = {
+    "accountant": "Бухгалтер: бухгалтери (і фіндиректор) заводять контрагента в 1С і прив'язують у заявці",
+    "admin": "Адміністратор: лише адміністратор заводить контрагента в 1С і прив'язує в заявці",
+}
 # Роль керівника відділу (налаштовується в адмінці, запам'ятовується в заявці при відправці)
 HEAD_MODES = {
     "view": "Лише бачить: керівник бачить усі заявки свого відділу, але не погоджує їх",
@@ -180,11 +190,18 @@ HEAD_MODES = {
 SYSTEM_USER = {"name": "Система", "email": ""}
 
 
-def route_label(mode, head_mode):
+def route_label(mode, head_mode, cfo_mode="approve"):
     """Підсумок маршруту для адмінки: «Керівник відділу → Бухгалтер → Фіндиректор → Оплата»."""
     steps = ["Керівник відділу"] if head_mode == "approve" else []
+    if cfo_mode == "observe":
+        return " → ".join(steps + ["Бухгалтер", "Оплата"]) + " · фіндиректор спостерігає"
     steps += ["Бухгалтер + Фіндиректор (одночасно)"] if mode == "parallel" else ["Бухгалтер", "Фіндиректор"]
     return " → ".join(steps + ["Оплата"])
+
+
+def has_cfo_step(req):
+    """Чи погоджує цю заявку фіндиректор (заявки, відправлені до появи налаштування, — так)."""
+    return req.get("cfo_step", True)
 MAX_COMMENT = 2000
 
 # статус -> (хто діє: "author", "accountant" (за формою оплати) або роль, {дія: новий статус})
@@ -219,7 +236,7 @@ def stage_actor(req):
 
 def parallel_roles(req):
     """Хто погоджує в паралельному режимі: бухгалтер каналу оплати і фіндиректор."""
-    return [r for r in (accountant_role(req), "cfo") if r]
+    return [r for r in (accountant_role(req), "cfo" if has_cfo_step(req) else None) if r]
 
 
 def pending_roles(req):
@@ -327,6 +344,8 @@ def admin_set_status(req, new_status, user, comment, handover=False):
         req["route_mode"] = "parallel"
     elif new_status in ("accountant", "cfo"):
         req["route_mode"] = "sequential"
+    if new_status in ("cfo", "approval"):
+        req["cfo_step"] = True
     start_handover(req, handover and new_status == "paid")
     add_history(req, "admin_status", user, "admin", comment, old, new_status)
 
@@ -533,7 +552,8 @@ def history_role(req, roles, user_email):
                 "initiator")
 
 
-def apply_action(req, action, roles, user, comment="", mode="sequential", head_mode="view", heads=(), guard=None):
+def apply_action(req, action, roles, user, comment="", mode="sequential", head_mode="view", heads=(), guard=None,
+                 cfo_step=True):
     """Виконати дію процесу над заявкою (змінює req). Кидає WorkflowError.
 
     mode / head_mode — режим погодження і роль керівника відділу з налаштувань; враховуються
@@ -562,10 +582,12 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
     old = req["status"]
     new = WORKFLOW[old][1][action]
     if action == "submit":
-        _submit(req, user, comment, mode, head_mode, heads)
+        _submit(req, user, comment, mode, head_mode, heads, cfo_step)
         return
     if old == "dept_head" and action == "approve":
         new = _after_head(req)
+    elif old == "accountant" and action == "approve" and not has_cfo_step(req):
+        new = "to_pay"  # фіндиректор лише спостерігає
     elif old == "approval" and action == "approve":
         req.setdefault("approvals", {})[role] = {"at": clock.now(), "user_name": user["name"]}
         new = "approval" if pending_roles(req) else "to_pay"
@@ -583,9 +605,11 @@ def _after_head(req):
     return "approval" if req.get("route_mode") == "parallel" else "accountant"
 
 
-def _submit(req, user, comment, mode, head_mode, heads):
+def _submit(req, user, comment, mode, head_mode, heads, cfo_step=True):
     old = req["status"]
-    req["route_mode"] = "parallel" if mode == "parallel" else "sequential"
+    req["cfo_step"] = bool(cfo_step)
+    # без фіндиректора погоджувач один — паралельний режим не має сенсу
+    req["route_mode"] = "parallel" if mode == "parallel" and cfo_step else "sequential"
     after = _after_head(req)
     req["head_step"] = False
     skip_reason = None
@@ -615,7 +639,7 @@ def stage_names(req):
     """Назви етапів для смуги маршруту; етап бухгалтера — за формою оплати."""
     accountant = ROLES.get(accountant_role(req), "Бухгалтер")
     return [(code, accountant if code == "accountant" else name) for code, name in STAGES
-            if code != "dept_head" or req.get("head_step")]
+            if (code != "dept_head" or req.get("head_step")) and (code != "cfo" or has_cfo_step(req))]
 
 
 def _role_stage(role):

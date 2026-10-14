@@ -11,6 +11,7 @@ import time
 from flask import render_template, url_for
 
 import app_settings
+import counterparties
 import departments
 import mailer
 import org_structure
@@ -44,15 +45,21 @@ SUBJECTS = {
     "pay_handover": "готівку видано — підтвердіть передачу підряднику",
     "handover": "готівку передано підряднику",
     "handover_reminder": "нагадування — підтвердіть передачу готівки підряднику",
+    "cp_new": "новий контрагент — потрібно завести в 1С",
 }
 
 # Склад груп ролей: role -> [{"email", "name"}]. Встановлюється з app.py (через Graph, з кешем).
 role_members = lambda role: []  # noqa: E731
+admin_emails = lambda: []  # noqa: E731  — ADMIN_EMAILS із app.py (адміністратори поза групою)
 _members_cache = {}
 MEMBERS_TTL = 600
 FAILED_TTL = 60  # після помилки пробуємо знову через хвилину, а не через 10
 MEMBERS_HINT = ("Щоб листи отримували погоджувачі, додатку потрібен дозвіл Microsoft Graph → "
                 "Application permissions → GroupMember.Read.All з Grant admin consent.")
+
+
+def cp_pending_check(cp_id):
+    return counterparties.is_pending(cp_id)
 
 
 def cached_role_members(role):
@@ -166,6 +173,12 @@ def _notify(event, req, actor, comment, target=None):
         role = wf.accountant_role(req)
         for m in cached_role_members(role) if role else []:
             add(m["email"], "handover_done", f"ви — {wf.ROLES.get(role, role).lower()}", SUBJECTS["handover"])
+
+    # 2г. Новий контрагент, якого заводить в 1С адміністратор (параметр в адмінці) — адміністраторам
+    if event == "submit" and app_settings.get("cp_onec_owner") == "admin" and cp_pending_check(req.get("counterparty_id")):
+        admins = [m["email"] for m in cached_role_members("admin")] + list(admin_emails())
+        for email in admins:
+            add(email, "cp_new", "нових контрагентів у 1С заводить адміністратор", SUBJECTS["cp_new"])
 
     # 3. Коментар — учасникам-погоджувачам, які вже ухвалювали рішення
     if event == "comment":

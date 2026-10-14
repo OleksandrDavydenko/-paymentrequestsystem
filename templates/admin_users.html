@@ -295,12 +295,26 @@
 <form method="post" action="{{ url_for('admin_settings') }}" class="card process-settings" id="process-settings" data-collapsible>
   <div class="toolbar">
     <h2 style="margin:0">Налаштування процесу</h2>
-    <span class="sec-summary muted">{{ route_label(approval_mode.value, head_mode.value) }}</span>
+    <span class="sec-summary muted">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value) }}</span>
   </div>
-  <div class="budget-section-title">Порядок погодження заявок</div>
-  {% for code, label in APPROVAL_MODES.items() %}
+  <div class="budget-section-title">Фіндиректор</div>
+  {% for code, label in CFO_MODES.items() %}
   <label class="mode-option">
-    <input type="radio" name="approval_mode" value="{{ code }}" {{ 'checked' if approval_mode.value == code }}>
+    <input type="radio" name="cfo_mode" value="{{ code }}" {{ 'checked' if cfo_mode.value == code }}>
+    <span>
+      <strong>{{ label.split(':')[0] }}</strong>{% if cfo_mode.value == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
+      <span class="mode-hint">{{ 'Погоджує після бухгалтера або одночасно з ним — за порядком нижче.' if code == 'approve'
+        else 'Після погодження бухгалтера заявка одразу йде до оплати. Фіндиректор не отримує заявок на рішення, але бачить «Усі заявки», «До оплати» й «Оплачені» та картку кожної заявки.' }}</span>
+    </span>
+  </label>
+  {% endfor %}
+
+  <div class="budget-section-title">Порядок погодження заявок</div>
+  <p class="muted cfo-off-note" id="cfo-off-note" {{ 'hidden' if cfo_mode.value != 'observe' }}>Не діє, поки фіндиректор лише спостерігає: погоджує один бухгалтер.</p>
+  {% for code, label in APPROVAL_MODES.items() %}
+  <label class="mode-option approval-order">
+    <input type="radio" name="approval_mode" value="{{ code }}" {{ 'checked' if approval_mode.value == code }} {{ 'disabled' if cfo_mode.value == 'observe' }}>
     <span>
       <strong>{{ label.split(':')[0] }}</strong>{% if approval_mode.value == code %}<span class="mode-saved">діє зараз</span>{% endif %}
       <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
@@ -321,7 +335,7 @@
     </span>
   </label>
   {% endfor %}
-  <div class="route-summary">Маршрут: <strong id="route-summary">{{ route_label(approval_mode.value, head_mode.value) }}</strong></div>
+  <div class="route-summary">Маршрут: <strong id="route-summary">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value) }}</strong></div>
 
   <div class="budget-section-title">Вид оплати</div>
   <input type="hidden" name="require_payment_account_sent" value="1">
@@ -370,8 +384,19 @@
     </span>
   </label>
   {% endfor %}
+  <div class="budget-section-title">Хто заводить нового контрагента в 1С</div>
+  {% for code, label in CP_OWNER_MODES.items() %}
+  <label class="mode-option">
+    <input type="radio" name="cp_onec_owner" value="{{ code }}" {{ 'checked' if cp_owner == code }}>
+    <span>
+      <strong>{{ label.split(':')[0] }}</strong>{% if cp_owner == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
+      <span class="mode-hint">{% if code == 'accountant' %}У картці заявки бухгалтер бачить реквізити нового контрагента, кнопки «Перевірити в 1С зараз» і «Прив'язати».{% else %}Блок прив'язки бачить лише адміністратор; бухгалтер бачить примітку. Адміністратори отримують лист, коли надходить заявка з новим контрагентом.{% endif %}</span>
+    </span>
+  </label>
+  {% endfor %}
   {% if pending_counterparties %}
-  <p class="muted">Зараз чекають на заведення в 1С: {% for c in pending_counterparties %}<strong>{{ c.name }}</strong>{{ ' (' ~ c.edrpou ~ ')' if c.edrpou }}{{ ', ' if not loop.last }}{% endfor %}.</p>
+  <p class="muted">Зараз чекають на заведення в 1С: {% for c in pending_counterparties %}{% set rid = pending_cp_requests.get(c.id) %}{% if rid %}<a href="{{ url_for('request_card', request_id=rid) }}#cp-link"><strong>{{ c.name }}</strong></a>{% else %}<strong>{{ c.name }}</strong>{% endif %}{{ ' (' ~ c.edrpou ~ ')' if c.edrpou }}{{ ', ' if not loop.last }}{% endfor %}.</p>
   {% endif %}
   <p class="muted">Зміна діє на нові та повторно відправлені заявки; ті, що вже на погодженні, проходять своїм маршрутом.
     {% if head_mode.updated_by and (not approval_mode.updated_at or head_mode.updated_at > approval_mode.updated_at) %}{% set approval_mode = head_mode %}{% endif %}

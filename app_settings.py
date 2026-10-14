@@ -31,6 +31,8 @@ DEFAULTS = {
     # Готівка через автора заявки: після «Оплачено» автор підтверджує, що передав гроші підряднику
     "cash_handover_confirm": True,
     "cash_handover_remind_days": 1,  # нагадувати автору кожні N днів (0 — не нагадувати)
+    "cfo_mode": "approve",  # фіндиректор: approve — погоджує, observe — лише спостерігає (погоджує тільки бухгалтер)
+    "cp_onec_owner": "accountant",  # хто заводить нового контрагента в 1С і прив'язує в заявці: accountant | admin
 }
 
 _lock = threading.Lock()

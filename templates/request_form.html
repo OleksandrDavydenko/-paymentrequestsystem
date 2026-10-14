@@ -312,6 +312,10 @@
 </form>
 {% endif %}
 
+{% if cp_owner_note %}
+<div class="callout orange" id="cp-link">Контрагента ще немає в 1С. Нових контрагентів у 1С заводить і прив'язує адміністратор
+  — після цього назва в заявці зміниться на назву з 1С.</div>
+{% endif %}
 {% if can_link_cp %}
 <div class="card cp-link" id="cp-link">
   <div class="section-head">
