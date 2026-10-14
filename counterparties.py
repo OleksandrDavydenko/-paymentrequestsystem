@@ -7,15 +7,15 @@
 в 1С і прив'язує (status = linked, linked_to = id з 1С) — або система прив'язує сама за ЄДРПОУ:
 під час оновлення довідника чи живою перевіркою (find_onec_by_edrpou) перед оплатою.
 Ідентифікатор контрагента в системі — рядок: GUID з 1С або номер тимчасового (від 100001).
-Тимчасові — JSON-файл (/home/data на Azure), поки немає бази даних.
+Тимчасові — у базі даних (docstore), а без бази — JSON-файл (/home/data на Azure).
 """
-import json
 import logging
 import os
 import re
 import threading
 
 import clock
+import docstore
 import expense_items
 import pbi_cache
 
@@ -176,8 +176,7 @@ def _load():
     global _data
     if _data is None:
         try:
-            with open(_path(), encoding="utf-8") as f:
-                _data = json.load(f)
+            _data = docstore.read("counterparties", _path())
         except (OSError, ValueError):
             _data = {}
         _data.setdefault("next_id", FIRST_PENDING_ID)
@@ -190,12 +189,7 @@ def _load():
 
 
 def _write():
-    path = _path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(_data, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, path)
+    docstore.write("counterparties", _path(), _data)
 
 
 def reload():

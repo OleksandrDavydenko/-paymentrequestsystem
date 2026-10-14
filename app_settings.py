@@ -1,13 +1,13 @@
 """Налаштування роботи системи, які змінює адміністратор (наприклад, режим погодження).
 
-Поки бази даних немає — JSON-файл (/home/data на Azure переживає перезапуск і деплой).
+У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure).
 Кожна зміна запам'ятовує, хто і коли її зробив.
 """
-import json
 import os
 import threading
 
 import clock
+import docstore
 
 DEFAULTS = {
     "approval_mode": "sequential",
@@ -48,8 +48,7 @@ def _load():
     global _data
     if _data is None:
         try:
-            with open(_path(), encoding="utf-8") as f:
-                _data = json.load(f)
+            _data = docstore.read("app_settings", _path())
         except (OSError, ValueError):
             _data = {}
     return _data
@@ -80,9 +79,4 @@ def set(key, value, updated_by):
     with _lock:
         _load()[key] = {"value": value, "updated_by": updated_by,
                         "updated_at": clock.now().isoformat(timespec="seconds")}
-        path = _path()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(_data, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, path)
+        docstore.write("app_settings", _path(), _data)

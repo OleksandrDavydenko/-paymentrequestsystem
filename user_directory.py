@@ -4,11 +4,12 @@
 Ще довідник — це список «користувачів системи» (active: є роль) для вибору учасників заявки.
 Тому запам'ятовуємо людей, коли вони входять у систему або видні адміну в «Адмініструванні»
 (там групи читаються з правами адміна і пошта є), і за цим довідником знаходимо адреси
-погоджувачів для листів. JSON-файл (/home/data на Azure переживає перезапуск і деплой).
+погоджувачів для листів. У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure).
 """
-import json
 import os
 import threading
+
+import docstore
 
 _lock = threading.Lock()
 _data = None
@@ -23,8 +24,7 @@ def _load():
     global _data
     if _data is None:
         try:
-            with open(_path(), encoding="utf-8") as f:
-                _data = json.load(f)
+            _data = docstore.read("user_directory", _path())
         except (OSError, ValueError):
             _data = {}
     return _data
@@ -57,12 +57,7 @@ def remember(users, active=True):
                 data[oid], changed = entry, True
         if not changed:
             return
-        path = _path()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, path)
+        docstore.write("user_directory", _path(), data)
 
 
 def active_users():

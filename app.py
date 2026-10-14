@@ -17,6 +17,7 @@ import expense_items
 import app_settings
 import clock
 import counterparties
+import db_sql
 import departments
 import org_structure
 import organizations
@@ -1971,7 +1972,9 @@ def _start_background():
 
 @app.route("/health")
 def health():
-    return {"status": "ok"}
+    """Стан сайту й бази даних (без персональних даних)."""
+    info = db_sql.status()
+    return ({"status": "error", **info}, 503) if info.get("error") else {"status": "ok", **info}
 
 
 if __name__ == "__main__":

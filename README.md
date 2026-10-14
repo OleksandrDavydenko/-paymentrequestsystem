@@ -147,6 +147,22 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 Без `PBI_GROUP_ID`/`PBI_DATASET_ID` працюють мокові статті. Остання вдала копія довідника
 зберігається у `/home/data/expense_items.json`. Стан і кнопка «Оновити зараз» — в «Адмініструванні».
 
+## База даних (Azure SQL)
+`db_sql.py` + `docstore.py`. Вмикається налаштуваннями App Service (Environment variables):
+`SQL_SERVER=ftp-payreq-sql.database.windows.net`, `SQL_DATABASE=payrequests`. Без них — як раніше: демо-заявки
+в пам'яті, налаштування в JSON-файлах (локально, у тестах; `DATABASE_URL=sqlite:///…` — локальна SQLite).
+- Вхід **без пароля**: на App Service — керована ідентичність сайту (Identity → System assigned → On), у базі —
+  `CREATE USER [PaymentRequestSystem] FROM EXTERNAL PROVIDER` + ролі db_datareader / db_datawriter / db_ddladmin.
+  Сервер — Microsoft Entra-only, тариф бази Basic. Потрібен ODBC Driver 17/18 for SQL Server (є в образі App Service;
+  `/health` показує знайдені драйвери).
+- Таблиці створюються самі при першому підключенні: `requests` (ключові поля + уся заявка в JSON `data`),
+  `request_history`, `request_lines` (копії для звітів / Power BI), `documents` (налаштування й довідники системи).
+- **Перенесення**: при першому читанні кожного налаштування з базою JSON-файл із `/home/data` копіюється в базу
+  (файл лишається як резервна копія). Демо-заявки в базу не потрапляють.
+- Лишаються файлами: кеші довідників з Power BI, сесії входу, вкладені файли (`/home/data/uploads`).
+- `/health` — стан бази (кількість заявок або помилка, 503).
+- Вимкнути базу (повернутися до файлів) — прибрати `SQL_SERVER` з налаштувань App Service.
+
 ## Секрети
 - Секрети (`CLIENT_SECRET`, `FLASK_SECRET_KEY`, publish profile) — **лише** в App Service → Environment variables,
   у секретах GitHub і в локальному `.env`. У коді немає значень за замовчуванням для секретів.

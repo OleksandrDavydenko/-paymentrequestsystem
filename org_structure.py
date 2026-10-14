@@ -8,13 +8,13 @@
 Заявка запам'ятовує відділ автора на момент створення, тож зміна відділу співробітника
 не переносить його старі заявки. А от зміна керівника діє одразу: заявки, що чекають
 погодження керівника, переходять до нового.
-Поки бази даних немає — JSON-файл (/home/data на Azure переживає перезапуск і деплой).
+У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure).
 """
-import json
 import os
 import threading
 
 import clock
+import docstore
 
 _lock = threading.Lock()
 _data = None
@@ -47,8 +47,7 @@ def _load():
     global _data
     if _data is None:
         try:
-            with open(_path(), encoding="utf-8") as f:
-                _data = json.load(f)
+            _data = docstore.read("org_structure", _path())
         except (OSError, ValueError):
             _data = {}
         _data.setdefault("users", {})
@@ -59,12 +58,7 @@ def _load():
 
 
 def _write():
-    path = _path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(_data, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, path)
+    docstore.write("org_structure", _path(), _data)
 
 
 def reload():

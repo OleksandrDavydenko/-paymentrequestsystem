@@ -6,14 +6,13 @@
   • departments     — статті з розподілом лише цих відділів.
 Немає налаштувань — жодної статті.
 
-Поки бази даних немає, налаштування зберігаються в JSON-файлі (/home/data на Azure
-переживає перезапуск і деплой). Ключ — Entra object id (oid) користувача.
+Налаштування зберігаються в базі даних (docstore), а без бази — у JSON-файлі (/home/data на Azure). Ключ — Entra object id (oid) користувача.
 """
-import json
 import os
 import threading
 
 import clock
+import docstore
 
 _lock = threading.Lock()
 _data = None
@@ -28,20 +27,14 @@ def _load():
     global _data
     if _data is None:
         try:
-            with open(_path(), encoding="utf-8") as f:
-                _data = json.load(f)
+            _data = docstore.read("user_budget", _path())
         except (OSError, ValueError):
             _data = {}
     return _data
 
 
 def _save():
-    path = _path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(_data, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, path)  # атомарно: файл ніколи не буде наполовину записаним
+    docstore.write("user_budget", _path(), _data)
 
 
 def reload():

@@ -1,13 +1,14 @@
 """Особисті налаштування email-сповіщень користувача.
 
 Ключ — email у нижньому регістрі (за ним визначаємо одержувача листа).
-Поки бази даних немає — JSON-файл (/home/data на Azure переживає перезапуск і деплой).
+У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure).
 """
 import hashlib
-import json
 import os
 import secrets
 import threading
+
+import docstore
 from datetime import datetime, timedelta
 
 import clock
@@ -44,8 +45,7 @@ def _load():
     global _data
     if _data is None:
         try:
-            with open(_path(), encoding="utf-8") as f:
-                _data = json.load(f)
+            _data = docstore.read("user_prefs", _path())
         except (OSError, ValueError):
             _data = {}
     return _data
@@ -86,12 +86,7 @@ def save(email, enabled, events):
 
 
 def _write():
-    path = _path()
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    tmp = path + ".tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
-        json.dump(_data, f, ensure_ascii=False, indent=1)
-    os.replace(tmp, path)
+    docstore.write("user_prefs", _path(), _data)
 
 
 def _hash(token):

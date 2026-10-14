@@ -2,13 +2,13 @@
 
 Адмін вибирає користувача 1С у картці користувача; від цього залежить, які «Види оплати»
 бухгалтер бачить у заявці (його доступи з 1С). Ключ — oid користувача в Entra.
-JSON-файл (/home/data на Azure), поки немає бази даних.
+У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure).
 """
-import json
 import os
 import threading
 
 import clock
+import docstore
 
 _lock = threading.Lock()
 _data = None
@@ -23,8 +23,7 @@ def _load():
     global _data
     if _data is None:
         try:
-            with open(_path(), encoding="utf-8") as f:
-                _data = json.load(f)
+            _data = docstore.read("user_onec", _path())
         except (OSError, ValueError):
             _data = {}
     return _data
@@ -61,9 +60,4 @@ def set_link(oid, email, guid, onec_name, updated_by):
                       "updated_at": clock.now().isoformat(timespec="seconds")}
         else:
             d.pop(oid, None)
-        path = _path()
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        tmp = path + ".tmp"
-        with open(tmp, "w", encoding="utf-8") as f:
-            json.dump(d, f, ensure_ascii=False, indent=1)
-        os.replace(tmp, path)
+        docstore.write("user_onec", _path(), d)
