@@ -196,14 +196,8 @@ def _at_head(req, day):
 
 _at_head(_req(19, _OTHER, "2026-10-20", 1, 1, 1, "bank", "UAH", "7600.00", [], "Перевезення, жовтень"), 8)
 
-# Готівка: хто отримує гроші в касі (підрядник сам або автор, який передає підряднику)
-for _id, _who in {6: "contractor", 8: "author", 14: "author", 18: "contractor"}.items():
-    _REQUESTS[_id]["cash_receiver"] = _who
-
-
 def _cash_paid(req, paid_on, confirmed_on=None, reminders=0):
-    """Мокова оплачена готівкова заявка, де автор передає гроші підряднику сам."""
-    req["cash_receiver"] = "author"
+    """Мокова оплачена готівкова заявка: автор отримав гроші в касі й передає підряднику."""
     paid_at = datetime.fromisoformat(f"{paid_on}T15:00:00")
     req["history"].append({"at": paid_at, "user_name": _ACC[1], "user_email": _ACC[0],
                            "role": workflow.accountant_role(req), "action": "pay", "from_status": "to_pay",

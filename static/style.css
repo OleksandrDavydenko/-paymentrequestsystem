@@ -726,11 +726,6 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .handover-undo { margin-top: 10px; }
 .handover-undo summary { cursor: pointer; font-size: 13px; }
 .handover-undo .handover-form { margin-top: 8px; }
-.cash-receiver { margin-top: 10px; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 6px; }
-.cash-receiver[hidden] { display: none; }
-.cash-receiver-label { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
-.radio-stack { flex-direction: column; align-items: flex-start; gap: 4px; }
-.radio-group.invalid { outline: 1px solid #cf222e; border-radius: 6px; padding: 2px 6px; }
 a.badge { text-decoration: none; }
 .days-late { color: #cf222e; font-weight: 600; }
 .handover-confirm { display: flex; gap: 6px; align-items: center; flex-wrap: nowrap; }

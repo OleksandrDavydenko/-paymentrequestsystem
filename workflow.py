@@ -83,11 +83,7 @@ PAYMENT_FORMS = {
     "cash": "Готівка",
     "bank": "Безготівка",
 }
-# Хто отримує готівку в касі (для форми «Готівка», якщо в адмінці ввімкнено підтвердження передачі)
-CASH_RECEIVERS = {
-    "contractor": "Підрядник отримує сам у касі",
-    "author": "Я отримую й передаю підряднику",
-}
+# Готівку в касі отримує автор заявки й передає підряднику — після оплати він це підтверджує
 HANDOVER_MAX_REMINDERS = 5
 # Канал оплати = форма оплати + резидентність організації. Він визначає,
 # який бухгалтер перевіряє й проводить оплату заявки.
@@ -165,7 +161,6 @@ ACTIONS = {
     "participant_remove": (None, "Прибрано учасника", "grey", False),
     "cp_link": (None, "Контрагента прив'язано до 1С", "grey", False),
     "pay_account": (None, "Вид оплати", "grey", False),  # бачать лише бухгалтери й фіндиректор
-    "cash_receiver": (None, "Хто отримує готівку", "grey", False),
     "handover": (None, "Готівку передано підряднику", "green", False),
     "handover_undo": (None, "Підтвердження передачі скасовано", "purple", True),
 }
@@ -340,7 +335,7 @@ def admin_set_status(req, new_status, user, comment, handover=False):
 
 def handover_applies(req):
     """Готівку отримує автор і сам передає підряднику — після оплати потрібне його підтвердження."""
-    return req.get("payment_form") == "cash" and req.get("cash_receiver") == "author"
+    return req.get("payment_form") == "cash"
 
 
 def start_handover(req, enabled):
@@ -373,23 +368,6 @@ def can_confirm_handover(req, roles, user_email):
     """Підтвердити передачу: автор, а за нього — бухгалтер цієї заявки або адміністратор."""
     return needs_handover(req) and (is_author(req, user_email) or is_handover_accountant(req, roles)
                                     or "admin" in roles)
-
-
-def can_change_cash_receiver(req, roles):
-    """Виправити «Хто отримує готівку» до оплати: бухгалтер цієї заявки або адміністратор."""
-    return (req.get("payment_form") == "cash" and req["status"] not in ("draft", "paid", "rejected")
-            and (is_handover_accountant(req, roles) or "admin" in roles))
-
-
-def set_cash_receiver(req, value, user, role):
-    if value not in CASH_RECEIVERS:
-        raise WorkflowError("Оберіть, хто отримує готівку")
-    if req.get("cash_receiver") == value:
-        return False
-    old = CASH_RECEIVERS.get(req.get("cash_receiver"), "—")
-    req["cash_receiver"] = value
-    add_history(req, "cash_receiver", user, role, f"{old} → {CASH_RECEIVERS[value]}", req["status"], req["status"])
-    return True
 
 
 def confirm_handover(req, user, roles, when, comment=""):

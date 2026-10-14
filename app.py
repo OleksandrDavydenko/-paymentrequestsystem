@@ -153,7 +153,6 @@ def parse_request_form(form, current=None, allowed_codes=None):
                                        set(organizations.options()) | {(current or {}).get("organization_id")}),
         "expense_code": (form.get("expense_code") or "").strip() or None,
         "payment_form": form.get("payment_form") if form.get("payment_form") in db.PAYMENT_FORMS else None,
-        "cash_receiver": form.get("cash_receiver") if form.get("cash_receiver") in wf.CASH_RECEIVERS else None,
         "currency": form.get("currency") if form.get("currency") in db.CURRENCIES else None,
         "note": (form.get("note") or "").strip(),
         "amount": _parse_amount(form.get("amount")),
@@ -175,12 +174,6 @@ def parse_request_form(form, current=None, allowed_codes=None):
     for field, message in required.items():
         if data[field] is None:
             errors[field] = message
-    if data["payment_form"] != "cash":
-        data["cash_receiver"] = None
-    elif not app_settings.get("cash_handover_confirm"):
-        data["cash_receiver"] = data["cash_receiver"] or (current or {}).get("cash_receiver")
-    elif data["cash_receiver"] is None:
-        errors["cash_receiver"] = "Вкажіть, хто отримує готівку"
     if data["expense_code"] and data["expense_code"] != (current or {}).get("expense_code"):
         # Стаття має бути в довіднику і в бюджеті автора (стара стаття цієї ж заявки — приймається)
         if expense_items.get_name(data["expense_code"]) is None:
@@ -557,15 +550,12 @@ def request_card(request_id=None, *, context):
         cp_suggested=next((m for p_, m in counterparties.auto_link_candidates(only_id=req.get("counterparty_id"))), None)
         if counterparties.is_pending(req.get("counterparty_id")) else None,
         pay_blocked=_pay_guard(req)["cp_pending"] and _pay_guard(req)["block_pending"],
-        CASH_RECEIVERS=wf.CASH_RECEIVERS,
         handover_enabled=bool(app_settings.get("cash_handover_confirm")),
         handover=req.get("handover"),
         handover_pending=wf.needs_handover(req),
         handover_done=wf.handover_done(req),
         handover_days=wf.handover_days(req),
         can_confirm_handover=wf.can_confirm_handover(req, roles, user["email"]),
-        can_change_cash_receiver=req["id"] is not None and bool(app_settings.get("cash_handover_confirm"))
-        and wf.can_change_cash_receiver(req, roles),
         today=clock.today(),
         pending_cp_block=app_settings.get("pending_cp_payment") == "block",
         can_manage_participants=req["id"] is not None and wf.can_manage_participants(req, roles, user["email"]),
@@ -656,28 +646,6 @@ def request_handover(request_id, *, context):
         notifications.notify("handover", req, g.user)
     flash(message, "success")
     return redirect(back)
-
-
-@app.route("/requests/<int:request_id>/cash-receiver", methods=["POST"])
-@auth.login_required
-@requires(*wf.ACCOUNTANT_ROLES, "admin")
-def request_cash_receiver(request_id, *, context):
-    """Бухгалтер заявки або адмін виправляє «Хто отримує готівку» до оплати."""
-    req = _load_visible(request_id)
-    if not app_settings.get("cash_handover_confirm") or not wf.can_change_cash_receiver(req, g.roles):
-        abort(403)
-    try:
-        changed = wf.set_cash_receiver(req, request.form.get("cash_receiver"), g.user,
-                                       wf.history_role(req, g.roles, g.user["email"]))
-    except wf.WorkflowError as e:
-        flash(str(e), "error")
-        return redirect(url_for("request_card", request_id=request_id) + "#cash-receiver")
-    if changed:
-        db.save_request(req)
-        flash(f"Хто отримує готівку: {wf.CASH_RECEIVERS[req['cash_receiver']]}", "success")
-    else:
-        flash("Змін немає", "success")
-    return redirect(url_for("request_card", request_id=request_id) + "#cash-receiver")
 
 
 @app.route("/counterparties/search")
