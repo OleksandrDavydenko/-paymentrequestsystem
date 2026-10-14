@@ -59,7 +59,7 @@
           {% if p %}<div class="muted">{{ p.user_name }}</div>{% endif %}</td>
         <td data-label="Днів" class="num" data-sort="{{ '%05d' % days }}"><span class="{{ 'days-late' if days >= overdue_days }}">{{ days }}</span></td>
         <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
-        <td data-label="Організація">{{ org_name(r.organization_id) }}</td>
+        <td data-label="Організація">{{ payer_label(r) }}</td>
         <td data-label="Контрагент">{{ cp_name(r.counterparty_id) }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
         <td data-label="Нагадувань" class="num">{{ r.handover.reminders or 0 }}</td>

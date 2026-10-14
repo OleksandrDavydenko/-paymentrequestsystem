@@ -129,11 +129,24 @@
     </div>
 
     {% include "_counterparty_picker.html" %}
+    {% if org_mode == 'payer' %}
+    <div class="field">
+      <label>Платник</label>
+      <div class="radio-group {{ 'invalid' if errors.payer }}">
+        {% for code, label in PAYERS.items() %}
+        <label><input type="radio" name="payer" value="{{ code }}" {{ 'checked' if code == payer_value }}> {{ label }}</label>
+        {% endfor %}
+      </div>
+      {{ err('payer') }}
+      <span class="route-hint">{% if req.organization_id %}Організація: {{ org_name(req.organization_id) }}{% else %}Котра саме з наших компаній платить — вкаже бухгалтер{% endif %}</span>
+    </div>
+    {% else %}
     <div class="field">
       <label for="organization_id">Організація</label>
       {{ select_ref('organization_id', org_options, req.organization_id, '— оберіть організацію —') }}
       {{ err('organization_id') }}
     </div>
+    {% endif %}
 
     {% include "_expense_picker.html" %}
     <div class="field">
@@ -230,6 +243,16 @@
 
 <form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision">
   <h2>Рішення — {{ ROLES[acting_role] }}</h2>
+  {% if org_inline %}
+  <div class="pay-account-inline">
+    <label for="org-decision"><strong>Організація</strong> — з якої з наших компаній платимо
+      <span class="muted">(обов'язково для погодження; ініціатор вказав: {{ PAYERS.get(payer_value, '—') | lower }})</span></label>
+    <select name="organization_id" id="org-decision" class="pay-account-select">
+      <option value="">— оберіть організацію —</option>
+      {% for code, name in org_choices.items() %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
+    </select>
+  </div>
+  {% endif %}
   {% if account_required %}
   <div class="pay-account-inline">
     <label for="pay-account-decision"><strong>Вид оплати</strong> — з якого рахунку чи каси платимо
@@ -299,6 +322,22 @@
   {% endif %}
   {% endif %}
 </div>
+{% endif %}
+
+{% if can_set_org and not org_inline and (org_mode == 'payer' or not req.organization_id) %}
+<form method="post" action="{{ url_for('request_organization', request_id=req.id) }}" class="card pay-account" id="organization">
+  <div class="section-head">
+    <h2>Організація</h2>
+    <span class="muted">{{ PAYERS.get(payer_value, '') | lower }} · бухгалтер заявки, фіндиректор і адміністратор можуть змінити до оплати</span>
+  </div>
+  <div class="pay-account-row">
+    <select name="organization_id" class="pay-account-select" aria-label="Організація">
+      {% if not req.organization_id %}<option value="">— оберіть організацію —</option>{% endif %}
+      {% for code, name in org_choices.items() %}<option value="{{ code }}" {{ 'selected' if code == req.organization_id }}>{{ name }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="btn btn-sm">Зберегти</button>
+  </div>
+</form>
 {% endif %}
 
 {% if can_see_account and req.id and not account_required %}
@@ -479,16 +518,24 @@ const ORG_ACCOUNTANTS = {{ org_accountants | tojson }};  // призначенн
 function updateRouteHint() {
   const hint = document.getElementById('route-hint');
   const form = document.querySelector('input[name=payment_form]:checked');
-  const org = document.getElementById('organization_id').value;
+  const orgSel = document.getElementById('organization_id');
+  const org = orgSel ? orgSel.value : '{{ req.organization_id or '' }}';
+  const payer = (document.querySelector('input[name=payer]:checked') || {}).value;
   if (!hint) return;
   if (!form) { hint.textContent = ''; return; }
-  if (form.value === 'bank' && !org) { hint.textContent = 'Оберіть організацію — від неї залежить, хто перевірятиме заявку'; return; }
-  const channel = form.value === 'cash' ? 'cash' : (NONRESIDENT_ORGS.has(org) ? 'bank_nonresident' : 'bank_resident');
+  if (form.value === 'bank' && !org && !payer) {
+    hint.textContent = orgSel ? 'Оберіть організацію — від неї залежить, хто перевірятиме заявку'
+                              : 'Вкажіть платника — від нього залежить, хто перевірятиме заявку';
+    return;
+  }
+  const nonres = org ? NONRESIDENT_ORGS.has(org) : payer === 'nonresident';
+  const channel = form.value === 'cash' ? 'cash' : (nonres ? 'bank_nonresident' : 'bank_resident');
   const assigned = (ORG_ACCOUNTANTS[org] || {})[form.value];
   hint.textContent = 'Заявку перевірить: ' + (assigned || CHANNEL_ROLES[channel]);
 }
 document.querySelectorAll('input[name=payment_form]').forEach(r => r.addEventListener('change', updateRouteHint));
-document.getElementById('organization_id').addEventListener('change', updateRouteHint);
+document.getElementById('organization_id')?.addEventListener('change', updateRouteHint);
+document.querySelectorAll('input[name=payer]').forEach(r => r.addEventListener('change', updateRouteHint));
 updateRouteHint();
 const body = document.getElementById('lines-body');
 const noLines = document.getElementById('no-lines');

@@ -33,7 +33,8 @@ DEFAULTS = {
     "cash_handover_remind_days": 1,  # нагадувати автору кожні N днів (0 — не нагадувати)
     "cfo_mode": "approve",  # фіндиректор: approve — погоджує, observe — лише спостерігає (погоджує тільки бухгалтер)
     "cp_onec_owner": "accountant",  # хто заводить нового контрагента в 1С і прив'язує в заявці: accountant | admin
-    "data_mode": "work",  # що показує система, коли підключено базу: work — робочі заявки, test — демо-дані
+    "data_mode": "work",
+    "org_field_mode": "organization",  # що вибирає ініціатор: organization — організацію, payer — лише платника  # що показує система, коли підключено базу: work — робочі заявки, test — демо-дані
 }
 
 _lock = threading.Lock()

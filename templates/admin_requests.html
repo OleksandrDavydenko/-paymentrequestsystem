@@ -68,7 +68,7 @@
         <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('request_card', request_id=r.id) }}">{{ r.number }}</a></td>
         <td data-label="Дата заявки" data-sort="{{ r.created_at.isoformat() }}">{{ r.created_at | dt }}</td>
         <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
-        <td data-label="Організація">{{ org_name(r.organization_id) }}</td>
+        <td data-label="Організація">{{ payer_label(r) }}</td>
         <td data-label="Контрагент">{{ cp_name(r.counterparty_id) }}{% if cp_pending(r.counterparty_id) %} <span class="badge amber" title="Контрагента ще немає в 1С">новий</span>{% endif %}</td>
         <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>

@@ -313,6 +313,18 @@
   <p class="muted">База даних не підключена — система показує демо-дані (в пам'яті).</p>
   {% endif %}
 
+  <div class="budget-section-title">Організація в заявці</div>
+  {% for code, label in ORG_FIELD_MODES.items() %}
+  <label class="mode-option">
+    <input type="radio" name="org_field_mode" value="{{ code }}" {{ 'checked' if org_mode == code }}>
+    <span>
+      <strong>{{ label.split(':')[0] }}</strong>{% if org_mode == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
+      <span class="mode-hint">{% if code == 'organization' %}Від організації й форми оплати залежить, який бухгалтер перевіряє заявку.{% else %}Простіше для ініціатора: «Українська компанія» чи «Іноземна компанія» достатньо, щоб визначити бухгалтера. Бухгалтер обов'язково вибирає організацію (лише з тією ж резидентністю) при погодженні; поки її немає, у списках видно «Українська компанія (організацію вкаже бухгалтер)».{% endif %}</span>
+    </span>
+  </label>
+  {% endfor %}
+
   <div class="budget-section-title">Фіндиректор</div>
   {% for code, label in CFO_MODES.items() %}
   <label class="mode-option">

@@ -85,6 +85,12 @@ PAYMENT_FORMS = {
 }
 # Готівку в касі отримує автор заявки й передає підряднику — після оплати він це підтверджує
 HANDOVER_MAX_REMINDERS = 5
+# Що вибирає ініціатор (налаштування в адмінці): організацію або лише платника — тоді організацію вказує бухгалтер
+ORG_FIELD_MODES = {
+    "organization": "Організація: ініціатор вибирає організацію зі списку",
+    "payer": "Платник: ініціатор вибирає лише «українська чи іноземна компанія», організацію вказує бухгалтер при погодженні",
+}
+PAYERS = {"resident": "Українська компанія", "nonresident": "Іноземна компанія"}
 # Канал оплати = форма оплати + резидентність організації. Він визначає,
 # який бухгалтер перевіряє й проводить оплату заявки.
 CHANNELS = {
@@ -111,13 +117,20 @@ def accountant_role(req):
     return ACCOUNTANT_BY_CHANNEL.get(channel_of(req))
 
 
+def payer_of(req):
+    """Платник заявки: «resident» / «nonresident» — за організацією, а поки її немає — за вибором ініціатора."""
+    if req.get("organization_id"):
+        return "nonresident" if organizations.is_nonresident(req["organization_id"]) else "resident"
+    return req.get("payer") if req.get("payer") in PAYERS else None
+
+
 def channel_of(req):
-    """Готівка — завжди «cash»; безготівка — резидент/нерезидент за організацією заявки."""
+    """Готівка — завжди «cash»; безготівка — резидент/нерезидент за організацією (або платником) заявки."""
     form = req.get("payment_form")
     if form == "cash":
         return "cash"
     if form == "bank":
-        return "bank_nonresident" if organizations.is_nonresident(req.get("organization_id")) else "bank_resident"
+        return "bank_nonresident" if payer_of(req) == "nonresident" else "bank_resident"
     return None
 APPROVER_ROLES = ACCOUNTANT_ROLES | {"cfo", "dept_head"}
 
@@ -161,6 +174,7 @@ ACTIONS = {
     "participant_remove": (None, "Прибрано учасника", "grey", False),
     "cp_link": (None, "Контрагента прив'язано до 1С", "grey", False),
     "pay_account": (None, "Вид оплати", "grey", False),  # бачать лише бухгалтери й фіндиректор
+    "organization": (None, "Організація", "grey", False),
     "handover": (None, "Готівку передано підряднику", "green", False),
     "handover_undo": (None, "Підтвердження передачі скасовано", "purple", True),
 }
@@ -279,6 +293,15 @@ def history_visible(entry, roles):
 
 def visible_history(req, roles):
     return [h for h in req.get("history") or [] if history_visible(h, roles)]
+
+
+def set_organization(req, code, label, old_label, user, role, note=""):
+    """Змінити організацію заявки із записом в історії. Повертає True, якщо змінено."""
+    if (req.get("organization_id") or None) == (code or None):
+        return False
+    req["organization_id"] = code or None
+    add_history(req, "organization", user, role, f"{old_label or '—'} → {label or '—'}{note}", req["status"], req["status"])
+    return True
 
 
 def set_payment_account(req, account_id, account_label, old_label, user, role):
@@ -571,6 +594,8 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
         raise WorkflowError("Вкажіть коментар — що саме потрібно виправити або чому заявку відхилено")
     # «Вид оплати» обов'язковий, якщо в довіднику є рахунки / каси організації заявки
     account_required = (guard or {}).get("account_required", True)
+    if action in ("approve", "pay") and role in ACCOUNTANT_ROLES and not req.get("organization_id"):
+        raise WorkflowError("Оберіть організацію, з якої платимо")
     if action == "approve" and role in ACCOUNTANT_ROLES and account_required and not req.get("payment_account_id"):
         raise WorkflowError("Перед погодженням оберіть «Вид оплати» — з якого рахунку чи каси платимо")
     if action == "pay":
