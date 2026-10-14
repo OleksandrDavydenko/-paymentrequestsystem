@@ -169,8 +169,9 @@ def status():
     try:
         with engine().connect() as c:
             count = c.execute(sa.select(sa.func.count()).select_from(requests_t)).scalar()
+            docs = sorted(c.execute(sa.select(documents_t.c.name)).scalars())
         _last_error = None
-        return {"db": kind(), "requests": count}
+        return {"db": kind(), "requests": count, "documents": docs}
     except Exception as e:
         _last_error = str(e)
         logger.exception("База даних недоступна")
