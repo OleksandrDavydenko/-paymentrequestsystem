@@ -44,6 +44,7 @@ SUBJECTS = {
     "dept_new": "нова заявка відділу",
     "pay_handover": "готівку видано — підтвердіть передачу підряднику",
     "handover": "готівку передано підряднику",
+    "handover_for_you": "бухгалтер підтвердив передачу готівки за вас",
     "handover_reminder": "нагадування — підтвердіть передачу готівки підряднику",
     "cp_new": "новий контрагент — потрібно завести в 1С",
 }
@@ -168,7 +169,11 @@ def _notify(event, req, actor, comment, target=None):
         for w in org_structure.watchers_of(req["department"]):
             add(w["email"], "dept_new", f"ви бачите заявки відділу «{dep_name}»", SUBJECTS["dept_new"])
 
-    # 2в. Автор підтвердив передачу готівки — бухгалтеру заявки (якщо ввімкнув у налаштуваннях)
+    # 2в. Бухгалтер чи адмін підтвердив передачу за автора — автору (підтверджувати самому вже не треба)
+    if event == "handover" and (req.get("handover") or {}).get("on_behalf"):
+        add(req["author_email"], "my_paid", "ви автор цієї заявки", SUBJECTS["handover_for_you"])
+
+    # Автор підтвердив передачу готівки — бухгалтеру заявки (якщо ввімкнув у налаштуваннях)
     if event == "handover":
         role = wf.accountant_role(req)
         for m in cached_role_members(role) if role else []:
