@@ -500,6 +500,9 @@ def request_card(request_id=None, *, context):
             if req["id"] is None:
                 req["created_at"] = clock.now()
                 wf.add_history(req, "create", user, "initiator", to_status="draft")
+            added_participants = []
+            if "participants_sent" in request.form and wf.can_manage_participants(req, roles, user["email"]):
+                added_participants = _apply_participants(req, request.form.getlist("participants"), user, roles)
             if not req.get("department") or req["department"] not in departments.get_map():
                 # заявки, створені до появи відділів, або з відділом, якого вже немає в довіднику
                 req["department"] = org_structure.department_of(user["oid"])
@@ -507,6 +510,8 @@ def request_card(request_id=None, *, context):
                 wf.apply_action(req, "submit", roles, user, **_route_settings(req))
             new_id = db.save_request(req)
             number = db.get_request(new_id)["number"]
+            for email in added_participants:
+                notifications.notify("participant_add", db.get_request(new_id), user, target=email)
             if action == "submit":
                 notifications.notify("submit", db.get_request(new_id), user)
                 flash(f"Заявку № {number} відправлено на погодження", "success")
@@ -545,6 +550,8 @@ def request_card(request_id=None, *, context):
         parallel=req.get("route_mode") == "parallel",
         head_names=", ".join(h["name"] or h["email"] for h in org_structure.heads_of(req.get("department"))),
         participants=req.get("participants") or [],
+        # Учасники, як їх бачить форма: збережені або (після помилки в полях) ті, що користувач уже набрав
+        participants_state=_participants_state(req, existing, errors),
         history=wf.visible_history(req, roles),
         cp=counterparties.get(req.get("counterparty_id")),
         cp_brief=counterparties.brief(counterparties.get(req["counterparty_id"]))
@@ -570,7 +577,7 @@ def request_card(request_id=None, *, context):
         can_confirm_handover=wf.can_confirm_handover(req, roles, user["email"]),
         today=clock.today(),
         pending_cp_block=app_settings.get("pending_cp_payment") == "block",
-        can_manage_participants=req["id"] is not None and wf.can_manage_participants(req, roles, user["email"]),
+        can_manage_participants=wf.can_manage_participants(req, roles, user["email"]),
         approvals=req.get("approvals") or {},
         pending_roles=wf.pending_roles(req) if req["status"] == "approval" else [],
         current_email=user["email"],
@@ -770,6 +777,53 @@ def users_search(*, context):
                       for u in user_directory.search(request.args.get("q", "")) if u["email"].lower() != me]}
 
 
+def _apply_participants(req, emails, user, roles):
+    """Звести учасників заявки до списку з форми; кожна зміна — запис в історії.
+    Повертає пошти доданих (їм — лист «Вас додано»). Невідомих користувачів пропускає з повідомленням."""
+    want = []
+    for e in emails:
+        e = (e or "").strip().lower()
+        if e and e not in want:
+            want.append(e)
+    role = wf.history_role(req, roles, user["email"])
+    for p in list(req.get("participants") or []):
+        if p["email"].lower() not in want:
+            wf.remove_participant(req, p["email"], user, role)
+    current = {p["email"].lower() for p in req.get("participants") or []}
+    added = []
+    for e in want:
+        if e in current:
+            continue
+        person = user_directory.find_active(e)
+        try:
+            if not person:
+                raise wf.WorkflowError(f"{e} — такого користувача немає в системі")
+            wf.add_participant(req, person, user, role)
+            added.append(person["email"])
+        except wf.WorkflowError as ex:
+            flash(f"Учасника не додано: {ex}", "error")
+    return added
+
+
+def _participants_state(req, existing, errors):
+    """Учасники для форми: після помилки в полях заявки — набрані користувачем (ще не збережені)."""
+    saved = [{"email": p["email"], "name": p["name"],
+              "title": f"{p['email']} · додав(-ла) {p.get('added_by', '')}, {fmt_datetime(p.get('added_at'))}"}
+             for p in (existing or {}).get("participants") or []]
+    if request.method != "POST" or not errors or "participants_sent" not in request.form:
+        return saved
+    known = {s["email"].lower(): s for s in saved}
+    state = []
+    for e in request.form.getlist("participants"):
+        e = (e or "").strip().lower()
+        if not e or any(s["email"].lower() == e for s in state):
+            continue
+        person = known.get(e) or user_directory.find_active(e)
+        if person:
+            state.append({"email": person["email"], "name": person["name"], "title": person.get("title") or person["email"]})
+    return state
+
+
 @app.route("/requests/<int:request_id>/participants", methods=["POST"])
 @auth.login_required
 @requires()
@@ -778,6 +832,17 @@ def request_participants(request_id, *, context):
     back = redirect(url_for("request_card", request_id=request_id) + "#participants")
     if not wf.can_manage_participants(req, g.roles, g.user["email"]):
         abort(403)
+    if request.form.get("action") == "set":
+        if wf.can_edit(req, g.roles, g.user["email"]):
+            # у чернетці учасники зберігаються разом із заявкою (кнопка «Записати»)
+            flash("Збережіть заявку — учасники зберігаються разом із нею", "error")
+            return back
+        added = _apply_participants(req, request.form.getlist("participants"), g.user, g.roles)
+        db.save_request(req)
+        for email in added:
+            notifications.notify("participant_add", req, g.user, target=email)
+        flash("Учасників заявки збережено", "success")
+        return back
     email = (request.form.get("email") or "").strip()
     role = wf.history_role(req, g.roles, g.user["email"])
     try:

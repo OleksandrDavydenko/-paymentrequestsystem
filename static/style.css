@@ -613,6 +613,12 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .pchip form { display: inline; margin: 0; }
 .pchip-x { border: none; background: none; color: #0c447c; cursor: pointer; font-size: 11px; padding: 2px 6px; border-radius: 999px; }
 .pchip-x:hover { background: #d6e6f7; }
+.pchip-new { background: #e6f4ea; color: #1a6a32; outline: 1px dashed #4caf6a; }
+.pchip-new .pchip-x { color: #1a6a32; }
+.pchips { display: contents; }
+.participants-pending { font-size: 12px; color: #8a5a00; }
+.participants-save { display: inline-flex; gap: 6px; margin: 0; }
+.participants-save[hidden] { display: none; }
 .participant-add { position: relative; flex: 1; min-width: 220px; max-width: 340px; margin: 0; }
 .participant-add input[type=search] { width: 100%; padding: 4px 10px; font-size: 13px; border-radius: 999px; }
 .participant-add .search-results { position: absolute; z-index: 20; left: 0; right: 0; top: calc(100% + 4px); background: #fff;

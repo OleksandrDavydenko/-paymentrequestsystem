@@ -64,29 +64,33 @@
   {% endif %}
   {% endif %}
 
-  {% if req.id and (participants or can_manage_participants) %}
-  <div class="participants" id="participants">
+  {% if participants_state or can_manage_participants %}
+  {% set pform = 'request-form' if editable else 'participants-form' %}
+  <div class="participants" id="participants" data-state='{{ participants_state | tojson }}'
+       data-saved='{{ participants | map(attribute='email') | list | tojson }}'
+       data-manage="{{ 1 if can_manage_participants else 0 }}" data-form="{{ pform }}">
     <span class="muted participants-label" title="Учасники бачать заявку, можуть коментувати й додавати файли та отримують листи, як автор">Учасники:</span>
-    {% for p in participants %}
-    <span class="pchip" title="{{ p.email }} · додав(-ла) {{ p.added_by }}, {{ p.added_at | dt }}">{{ p.name }}
-      {% if can_manage_participants %}
-      <form method="post" action="{{ url_for('request_participants', request_id=req.id) }}">
-        <input type="hidden" name="action" value="remove"><input type="hidden" name="email" value="{{ p.email }}">
-        <button type="submit" class="pchip-x" aria-label="Прибрати {{ p.name }}" title="Прибрати з учасників">✕</button>
-      </form>
-      {% endif %}
+    <span class="pchips" id="pchips">
+      {% for p in participants_state %}<span class="pchip" title="{{ p.title }}">{{ p.name }}</span>{% else %}<span class="muted">поки немає</span>{% endfor %}
     </span>
-    {% else %}
-    <span class="muted">поки немає</span>
-    {% endfor %}
     {% if can_manage_participants %}
-    <form method="post" action="{{ url_for('request_participants', request_id=req.id) }}" class="participant-add" autocomplete="off">
-      <input type="hidden" name="action" value="add">
-      <input type="hidden" name="email" id="participant-email">
-      <input type="search" id="participant-search" placeholder="+ Додати учасника: ім'я або пошта"
+    <div class="participant-add">
+      <input type="search" id="participant-search" placeholder="+ Додати учасника: ім'я або пошта" autocomplete="off"
              data-url="{{ url_for('users_search') }}" aria-label="Додати учасника заявки">
       <ul class="search-results" id="participant-results" hidden></ul>
+    </div>
+    <span id="participants-inputs" hidden>
+      <input type="hidden" name="participants_sent" value="1" form="{{ pform }}">
+    </span>
+    {% if editable %}
+    <span class="muted participants-pending" id="participants-pending" hidden>Зміни учасників збережуться разом із заявкою</span>
+    {% else %}
+    <form method="post" action="{{ url_for('request_participants', request_id=req.id) }}" id="participants-form" class="participants-save" hidden>
+      <input type="hidden" name="action" value="set">
+      <button type="submit" class="btn btn-sm btn-primary">Зберегти учасників</button>
+      <button type="button" class="btn btn-sm" id="participants-reset">Скасувати</button>
     </form>
+    {% endif %}
     {% endif %}
   </div>
   {% endif %}
