@@ -320,6 +320,7 @@ def inject_roles():
         "queue_count": len(db.list_queue(roles)) if roles & wf.APPROVER_ROLES else 0,
         "can_see_payments": wf.can_see_payments(roles),
         "sees_all_requests": _sees_all_requests(roles),
+        "test_mode": notifications.test_mode(),
         "payments_count": len(db.list_to_pay(roles)) if wf.can_see_payments(roles) else 0,
     }
 
@@ -1222,6 +1223,12 @@ def admin_settings(*, context):
         flash(f"Маршрут: {wf.route_label(mode, head_mode, cfo_mode)}. Діє для нових і повторно відправлених заявок.",
               "success")
         changed = True
+    data_mode = request.form.get("data_mode")
+    if data_mode in ("work", "test") and db_sql.configured() and data_mode != app_settings.get("data_mode"):
+        app_settings.set("data_mode", data_mode, g.user["email"])
+        flash("Система показує: " + ("тестові дані — нові заявки не зберігаються в базі, листи позначено «[ТЕСТ]»"
+                                     if data_mode == "test" else "робочу базу даних"), "success")
+        changed = True
     if cp_owner != app_settings.get("cp_onec_owner"):
         app_settings.set("cp_onec_owner", cp_owner, g.user["email"])
         flash("Нових контрагентів у 1С заводить: " + ("адміністратор" if cp_owner == "admin" else "бухгалтер"),
@@ -1547,6 +1554,8 @@ def admin_users(*, context):
         head_mode=app_settings.info("dept_head_mode"),
         HEAD_MODES=wf.HEAD_MODES,
         cfo_mode=app_settings.info("cfo_mode"),
+        db_on=db_sql.configured(),
+        data_mode=app_settings.get("data_mode"),
         CFO_MODES=wf.CFO_MODES,
         cp_owner=app_settings.get("cp_onec_owner"),
         CP_OWNER_MODES=wf.CP_OWNER_MODES,
@@ -1932,7 +1941,7 @@ def _public_base_url():
 def run_handover_reminders(today=None):
     """Нагадати авторам, які не підтвердили передачу готівки. Повертає номери заявок, яким надіслано."""
     every = app_settings.get("cash_handover_remind_days") or 0
-    if not app_settings.get("cash_handover_confirm") or every <= 0:
+    if not app_settings.get("cash_handover_confirm") or every <= 0 or notifications.test_mode():
         return []
     sent = []
     for r in db.list_all():

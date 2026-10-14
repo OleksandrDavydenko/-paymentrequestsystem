@@ -139,6 +139,8 @@ header .count { background: #fff; color: var(--primary); border-radius: 999px; p
 .callout.orange { background: #fff4e5; border-color: #d97706; }
 .callout.red { background: #fdecea; border-color: #cf222e; }
 .callout.blue { background: #eef5fc; border-color: #0f6cbd; }
+.test-banner { background: #fff4ce; color: #5c4400; border-bottom: 1px solid #e5c26b; padding: 8px 16px; font-size: 13px; text-align: center; }
+.test-banner a { color: #5c4400; font-weight: 600; margin-left: 8px; }
 .approval-order:has(input:disabled) { opacity: .55; cursor: not-allowed; }
 .callout-text { margin-top: 4px; white-space: pre-wrap; }
 

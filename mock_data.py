@@ -10,6 +10,7 @@ from copy import deepcopy
 from datetime import date, datetime
 from decimal import Decimal
 
+import app_settings
 import db_sql
 import payment_accounts
 import workflow
@@ -302,31 +303,39 @@ def _realize_demo():
 
 # З базою (Azure SQL) — лише справжні заявки з бази, демо-заявки туди не потрапляють.
 # Без бази (локально, у тестах) — демо-заявки в пам'яті, зникають після перезапуску.
+# _REQUESTS — демо-заявки в пам'яті (тестові дані); _WORK — робочі заявки з бази.
+# Адмін перемикає, що показує система (app_settings «data_mode»): робоча база або тестові дані.
+# Що створено в тестовому режимі, лишається в пам'яті й у базу не потрапляє.
 _DB = db_sql.configured()
-_loaded = not _DB
+_WORK = {}
+_loaded = False
 _load_lock = threading.Lock()
-if _DB:
-    _REQUESTS = {}
-else:
-    try:
-        _realize_demo()
-    except Exception:  # довідники недоступні — лишаємо мокові демо-дані
-        logging.getLogger(__name__).exception("Не вдалося підставити справжні довідники в демо-заявки")
+try:
+    _realize_demo()
+except Exception:  # довідники недоступні — лишаємо мокові демо-дані
+    logging.getLogger(__name__).exception("Не вдалося підставити справжні довідники в демо-заявки")
+
+
+def work_mode():
+    """Чи працює система з робочою базою (а не з тестовими даними)."""
+    return _DB and app_settings.get("data_mode") != "test"
 
 
 def _reqs():
-    """Усі заявки {id: заявка}; з базою — при першому зверненні завантажуються з неї (далі — з пам'яті)."""
+    """Заявки поточного режиму {id: заявка}; робочі — при першому зверненні завантажуються з бази."""
     global _loaded
+    if not work_mode():
+        return _REQUESTS
     if not _loaded:
         with _load_lock:
             if not _loaded:
-                _REQUESTS.update(db_sql.load_requests())
+                _WORK.update(db_sql.load_requests())
                 _loaded = True
-    return _REQUESTS
+    return _WORK
 
 
 def _persist(*reqs):
-    if _DB and reqs:
+    if work_mode() and reqs:
         db_sql.save_requests(reqs)
 
 

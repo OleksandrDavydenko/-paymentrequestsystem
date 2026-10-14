@@ -53,6 +53,10 @@
     </details>
     {% endif %}
   </header>
+  {% if test_mode %}
+  <div class="test-banner">Тестовий режим: показано демо-дані, нові заявки й зміни не зберігаються в базі, листи позначено «[ТЕСТ]».
+    {% if 'admin' in roles %}<a href="{{ url_for('admin_users') }}#process-settings">Повернутися до робочої бази</a>{% endif %}</div>
+  {% endif %}
   <main class="{% block main_class %}{% endblock %}">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}

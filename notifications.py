@@ -59,6 +59,12 @@ MEMBERS_HINT = ("Щоб листи отримували погоджувачі, 
                 "Application permissions → GroupMember.Read.All з Grant admin consent.")
 
 
+def test_mode():
+    """Тестові дані замість робочої бази (перемикач в адмінці) — листи позначаються «[ТЕСТ]»."""
+    import db_sql
+    return db_sql.configured() and app_settings.get("data_mode") == "test"
+
+
 def cp_pending_check(cp_id):
     return counterparties.is_pending(cp_id)
 
@@ -116,6 +122,8 @@ def _send(to, subject, template_args):
     """to — робоча пошта одержувача; лист іде на підтверджену іншу адресу, якщо адмін це дозволив."""
     html = render_template("email/notification.html", **template_args)
     address = user_prefs.delivery_address(to, app_settings.get("allow_custom_email"))
+    if test_mode():
+        subject = "[ТЕСТ] " + subject
     mailer.enqueue(smtp_config(), address, subject, html)
 
 
