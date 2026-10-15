@@ -121,15 +121,26 @@ def log_problem(to, subject, error):
     _log(to, subject, error)
 
 
-def deliver(cfg, to, subject, html):
-    """Надіслати й записати в журнал. Повертає None або текст помилки."""
+def deliver(cfg, to, subject, html, meta=None):
+    """Надіслати й записати в журнал. meta — {"request_id", "number", "event", "recipient", "detail"}.
+    Повертає None або текст помилки."""
+    import notify_log
+    meta = meta or {}
+    log_args = {"subject": subject, "request_id": meta.get("request_id"), "number": meta.get("number"),
+                "event": meta.get("event", "")}
+    recipient = meta.get("recipient") or to
+    detail = meta.get("detail") or ""
+    if recipient.lower() != (to or "").lower():
+        detail = (detail + "; " if detail else "") + f"на адресу {to}"
     try:
         transport(cfg, to, subject, html)
         _log(to, subject)
+        notify_log.record("email", recipient, "sent", detail=detail, **log_args)
         return None
     except Exception as e:  # мережа, права — у журнал, дію користувача не ламаємо
         logger.warning("Не вдалося надіслати лист %s: %s", to, e)
         _log(to, subject, str(e))
+        notify_log.record("email", recipient, "failed", detail=(detail + "; " if detail else "") + str(e), **log_args)
         return str(e)
 
 
@@ -142,14 +153,14 @@ def _run():
             _queue.task_done()
 
 
-def enqueue(cfg, to, subject, html):
-    """Поставити лист у чергу (надсилається у фоні)."""
+def enqueue(cfg, to, subject, html, meta=None):
+    """Поставити лист у чергу (надсилається у фоні). meta — для журналу сповіщень (заявка, подія)."""
     global _worker
     with _worker_lock:
         if _worker is None or not _worker.is_alive():
             _worker = threading.Thread(target=_run, name="mailer", daemon=True)
             _worker.start()
-    _queue.put((cfg, to, subject, html))
+    _queue.put((cfg, to, subject, html, meta))
 
 
 def wait():

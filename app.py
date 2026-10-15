@@ -32,6 +32,7 @@ import user_onec
 import graph
 import mailer
 import notifications
+import notify_log
 import secret_box
 import telegram_notify
 import user_prefs
@@ -1155,7 +1156,8 @@ def _send_address_confirmation(email, alt_email):
     html = render_template("email/confirm_address.html", user_name=g.user["name"], login_email=email,
                            alt_email=alt_email, link=link,
                            hours=int(user_prefs.CONFIRM_TTL.total_seconds() // 3600))
-    return mailer.deliver(notifications.smtp_config(), alt_email, "Підтвердіть адресу для сповіщень — Система заявок на оплату", html)
+    return mailer.deliver(notifications.smtp_config(), alt_email, "Підтвердіть адресу для сповіщень — Система заявок на оплату",
+                          html, {"event": "confirm_email", "recipient": email})
 
 
 @app.route("/settings/notifications/address", methods=["POST"])
@@ -1288,7 +1290,7 @@ def admin_mail_test(*, context):
         error = "Збережений пароль не вдалося розшифрувати (змінився FLASK_SECRET_KEY?) — введіть пароль заново"
     else:
         html = render_template("email/test.html", user_name=g.user["name"], sender=cfg["sender"], host=cfg["host"])
-        error = mailer.deliver(cfg, to, "Тестовий лист — Система заявок на оплату", html)
+        error = mailer.deliver(cfg, to, "Тестовий лист — Система заявок на оплату", html, {"event": "test"})
     if error:
         flash("Тестовий лист не надіслано: " + error, "error")
     else:
@@ -1759,6 +1761,7 @@ def admin_users(*, context):
         SMTP_PRESETS=mailer.PRESETS,
         SMTP_SECURITY=mailer.SECURITY,
         mail_log=list(mailer.LOG)[:20],
+        mail_problems=len(notify_log.query(200, status="problems")),
         telegram=telegram_notify.status(),
         APPROVAL_MODES=wf.APPROVAL_MODES,
         budgets={uid: user_budget.get(uid) for uid in users},
@@ -2217,6 +2220,21 @@ def telegram_linked():
     return {"linked": telegram_notify.set_linked(data.get("emails") or [])}
 
 
+@app.route("/admin/notifications")
+@auth.login_required
+@requires("admin")
+def admin_notifications(*, context):
+    """Журнал сповіщень: пошта й Telegram — кому, коли, про яку заявку, результат; і кому не надіслано та чому."""
+    args = request.args
+    channel = args.get("channel") if args.get("channel") in ("email", "telegram", "-") else ""
+    status = args.get("status") if args.get("status") in ("problems", "skipped", "sent", "queued") else ""
+    q = (args.get("q") or "").strip()
+    rows = notify_log.query(500, channel, status, q)
+    return render_template("admin_notifications.html", user_name=g.user["name"], rows=rows, channel=channel,
+                           status=status, q=q, STATUSES=notify_log.STATUSES, CHANNEL_LABELS=notify_log.CHANNELS,
+                           EVENT_LABELS=notify_log.EVENT_LABELS)
+
+
 @app.route("/admin/telegram/test", methods=["POST"])
 @auth.login_required
 @requires("admin")
@@ -2224,8 +2242,9 @@ def admin_telegram_test(*, context):
     if not telegram_notify.enabled():
         flash("Telegram-бот не підключено: у налаштуваннях App Service немає TELEGRAM_BOT_KEY", "error")
     else:
-        telegram_notify.enqueue(g.user["email"], "✅ <b>Тестове повідомлення</b> системи заявок на оплату.\n"
-                                "Якщо ви його бачите — сповіщення в Telegram працюють.", request.host_url)
+        msg_id = telegram_notify.enqueue(g.user["email"], "✅ <b>Тестове повідомлення</b> системи заявок на оплату.\n"
+                                         "Якщо ви його бачите — сповіщення в Telegram працюють.", request.host_url)
+        notify_log.record("telegram", g.user["email"], "queued", "Тестове повідомлення", event="test", ref=f"tg:{msg_id}")
         flash("Тестове повідомлення поставлено в чергу — бот забере його протягом ~30 секунд", "success")
     return redirect(url_for("admin_users") + "#mail-settings")
 

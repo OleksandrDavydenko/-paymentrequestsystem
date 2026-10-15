@@ -28,7 +28,7 @@ _lock = threading.Lock()
 _memory = []           # черга без бази
 _state = {"last_poll": None, "linked": None}
 on_fallback = None     # (row, причина) -> надіслати запасний лист; встановлюється з notifications
-on_result = None       # (email, текст результату, помилка або None) -> журнал
+on_result = None       # (рядок черги, статус, помилка або None) -> журнал
 
 
 def enabled():
@@ -102,7 +102,7 @@ def ack(results):
             continue
         count += 1
         if on_result:
-            on_result(row["email"], DONE_LABELS[status], None if status == "sent" else (error or DONE_LABELS[status]))
+            on_result(row, status, None if status == "sent" else (error or DONE_LABELS[status]))
         if status != "sent" and row.get("subject") and row.get("html") and on_fallback:
             on_fallback(row, DONE_LABELS[status])
     return count

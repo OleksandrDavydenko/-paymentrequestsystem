@@ -16,6 +16,7 @@ import app_settings
 import counterparties
 import departments
 import mailer
+import notify_log
 import org_structure
 import secret_box
 import telegram_notify
@@ -159,15 +160,22 @@ def _send(to, subject, template_args):
     Лист іде на підтверджену іншу адресу, якщо адмін це дозволив."""
     html = render_template("email/notification.html", **template_args)
     address = user_prefs.delivery_address(to, app_settings.get("allow_custom_email"))
+    req = template_args["req"]
+    meta = {"request_id": req.get("id"), "number": req.get("number"), "event": template_args.get("event", ""),
+            "recipient": to}
     channel = user_prefs.channel(to) if telegram_notify.enabled() else "email"
-    if channel != "email" and telegram_notify.is_linked(user_prefs.telegram_lookup(to)) is False:
+    lookup = user_prefs.telegram_lookup(to)
+    if channel != "email" and telegram_notify.is_linked(lookup) is False:
         channel = "email"  # бот людину не знає — одразу листом
+        meta["detail"] = f"вибрано Telegram, але бот не знає {lookup} — листом"
     if channel in ("telegram", "both"):
         only_telegram = channel == "telegram"
-        telegram_notify.enqueue(to, telegram_text(template_args), template_args.get("link"),
-                                subject if only_telegram else None, html if only_telegram else None)
+        msg_id = telegram_notify.enqueue(to, telegram_text(template_args), template_args.get("link"),
+                                         subject if only_telegram else None, html if only_telegram else None)
+        notify_log.record("telegram", to, "queued", subject, meta["request_id"], meta["number"], meta["event"],
+                          detail=f"бот шукає за {lookup}" if lookup != to.lower() else "", ref=f"tg:{msg_id}")
     if channel in ("email", "both"):
-        mailer.enqueue(smtp_config(), address, subject, html)
+        mailer.enqueue(smtp_config(), address, subject, html, meta)
 
 
 def _fallback_mail(row, reason):
@@ -175,13 +183,15 @@ def _fallback_mail(row, reason):
     if not enabled():
         return
     address = user_prefs.delivery_address(row["email"], app_settings.get("allow_custom_email"))
-    mailer.enqueue(smtp_config(), address, row["subject"], row["html"])
+    mailer.enqueue(smtp_config(), address, row["subject"], row["html"],
+                   {"recipient": row["email"], "event": "fallback", "detail": f"запасний лист: Telegram — {reason}"})
     mailer.log_problem(f"Telegram → {row['email']}", row["subject"], f"{reason} — надіслано листом")
 
 
-def _telegram_result(email, label, error):
+def _telegram_result(row, status, error):
+    notify_log.update_ref(f"tg:{row['id']}", status, error)
     if error is None:
-        mailer._log(f"Telegram → {email}", label)
+        mailer._log(f"Telegram → {row['email']}", telegram_notify.DONE_LABELS[status])
 
 
 telegram_notify.on_fallback = _fallback_mail
@@ -191,7 +201,11 @@ telegram_notify.on_result = _telegram_result
 def notify(event, req, actor, comment="", target=None):
     """Надіслати листи після події event ("submit", "approve", "rework", "reject", "pay",
     "admin_status", "comment", "participant_add" — target: пошта доданого). Помилки не ламають дію."""
-    if not enabled() or muted_by_test_mode():
+    if muted_by_test_mode():
+        return []
+    if not enabled():
+        notify_log.record("-", "", "skipped", f"Заявка № {req.get('number')}: {notify_log.EVENT_LABELS.get(event, event)}",
+                          req.get("id"), req.get("number"), event, detail="розсилку вимкнено в адмінці (або не налаштовано SMTP)")
         return []
     try:
         return _notify(event, req, actor, comment, target)
@@ -205,11 +219,24 @@ def _notify(event, req, actor, comment, target=None):
     last = (req.get("history") or [{}])[-1]
     status_changed = last.get("from_status") != last.get("to_status")
     recipients = {}  # email -> (подія налаштувань, причина, тема)
+    skipped = {}     # email -> чому не надсилаємо (для журналу)
 
     def add(email, pref, reason, subject):
         email = (email or "").lower()
-        if email and email != actor_email and email not in recipients and user_prefs.wants(email, pref):
+        if not email or email in recipients:
+            return
+        if email == actor_email:
+            skipped.setdefault(email, f"{reason}, але дію виконали ви самі — про власні дії сповіщень немає")
+        elif not user_prefs.get(email)["enabled"]:
+            skipped.setdefault(email, f"{reason}, але людина вимкнула всі сповіщення")
+        elif not user_prefs.wants(email, pref):
+            skipped.setdefault(email, f"{reason}, але подію «{user_prefs.EVENTS[pref][0]}» вимкнено в її налаштуваннях")
+        else:
             recipients[email] = (pref, reason, subject)
+            skipped.pop(email, None)
+
+    def no_members(role):
+        skipped.setdefault(f"роль «{wf.ROLES.get(role, role)}»", "у групі ролі немає людей (або не вдалося прочитати групу)")
 
     # 0. Доданий учасник — лише він
     if event == "participant_add":
@@ -229,6 +256,8 @@ def _notify(event, req, actor, comment, target=None):
             # Керівник відділу — лише керівники відділу автора, а не вся група
             members = org_structure.heads_of(req.get("department")) if role == "dept_head" \
                 else cached_role_members(role)
+            if not members:
+                no_members(role)
             for m in members:
                 add(m["email"], "task_new", f"ви — {wf.ROLES.get(role, role).lower()}", SUBJECTS[kind])
 
@@ -276,6 +305,12 @@ def _notify(event, req, actor, comment, target=None):
             "settings_link": (os.environ.get("APP_BASE_URL", "").rstrip("/") + url_for("notification_settings"))
             if os.environ.get("APP_BASE_URL") else url_for("notification_settings", _external=True),
         })
+    for who, why in skipped.items():
+        notify_log.record("-", who, "skipped", f"Заявка № {req['number']}: {notify_log.EVENT_LABELS.get(event, event)}",
+                          req.get("id"), req.get("number"), event, detail=why)
+    if not recipients and not skipped:
+        notify_log.record("-", "", "skipped", f"Заявка № {req['number']}: {notify_log.EVENT_LABELS.get(event, event)}",
+                          req.get("id"), req.get("number"), event, detail="для цієї події одержувачів немає")
     return list(recipients)
 
 

@@ -244,20 +244,9 @@
       з'явиться <code>TELEGRAM_BOT_KEY</code> (той самий секрет, що й <code>PAYREQ_TELEGRAM_KEY</code> у бота на Heroku).</p>
     {% endif %}
   </div>
-  {% if mail_log %}
-  <details class="mail-log">
-    <summary>Останні листи ({{ mail_log | length }})</summary>
-    <table>
-      <thead><tr><th>Час</th><th>Кому</th><th>Тема</th><th>Результат</th></tr></thead>
-      <tbody>
-      {% for m in mail_log %}
-        <tr><td>{{ m.at | dt }}</td><td>{{ m.to }}</td><td>{{ m.subject }}</td>
-            <td>{% if m.ok %}<span class="badge green">надіслано</span>{% else %}<span class="badge red" title="{{ m.error }}">помилка</span> <span class="muted">{{ m.error[:400] }}</span>{% endif %}</td></tr>
-      {% endfor %}
-      </tbody>
-    </table>
-  </details>
-  {% endif %}
+  <p style="margin:14px 0 0"><a class="btn btn-sm" href="{{ url_for('admin_notifications') }}">📜 Журнал сповіщень</a>
+    <span class="muted">— пошта й Telegram: кому, коли, про яку заявку, результат; кому не надіслано й чому.
+      {% if mail_problems %}<a href="{{ url_for('admin_notifications', status='problems') }}" class="err">Проблем: {{ mail_problems }}</a>{% endif %}</span></p>
 </div>
 
 <form method="post" action="{{ url_for('admin_settings') }}" class="card process-settings" id="process-settings" data-collapsible>

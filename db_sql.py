@@ -98,6 +98,24 @@ telegram_t = sa.Table(
 )
 sa.Index("ix_telegram_status", telegram_t.c.status)
 
+log_t = sa.Table(
+    "notification_log", metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("at", sa.DateTime, nullable=False),
+    sa.Column("channel", sa.Unicode(20), nullable=False),     # email / telegram / -
+    sa.Column("recipient", sa.Unicode(320)),
+    sa.Column("status", sa.Unicode(20), nullable=False),      # sent / queued / failed / not_found / blocked / skipped
+    sa.Column("subject", sa.Unicode(500)),
+    sa.Column("request_id", sa.Integer),
+    sa.Column("request_number", sa.Unicode(20)),
+    sa.Column("event", sa.Unicode(40)),
+    sa.Column("detail", sa.Unicode(1000)),
+    sa.Column("ref", sa.Unicode(40)),                         # напр. «tg:15» — повідомлення в черзі бота
+)
+sa.Index("ix_notification_log_at", log_t.c.at)
+sa.Index("ix_notification_log_ref", log_t.c.ref)
+sa.Index("ix_notification_log_request", log_t.c.request_id)
+
 documents_t = sa.Table(
     "documents", metadata,
     sa.Column("name", sa.Unicode(100), primary_key=True),
@@ -317,3 +335,35 @@ def telegram_counts():
     with engine().connect() as c:
         rows = c.execute(sa.select(telegram_t.c.status, sa.func.count()).group_by(telegram_t.c.status)).all()
     return {r[0]: r[1] for r in rows}
+
+
+# ---------------------------------------------------------------- журнал сповіщень
+
+def log_add(row):
+    with engine().begin() as c:
+        c.execute(log_t.insert().values(**row))
+
+
+def log_update_ref(ref, status, detail, now):
+    values = {"status": status, "at": now}
+    if detail:
+        values["detail"] = detail[:1000]
+    with engine().begin() as c:
+        c.execute(log_t.update().where(log_t.c.ref == ref).values(**values))
+
+
+def log_query(limit, channel, status, q, request_id, problems):
+    stmt = sa.select(log_t).order_by(log_t.c.id.desc()).limit(limit)
+    if channel:
+        stmt = stmt.where(log_t.c.channel == channel)
+    if status == "problems":
+        stmt = stmt.where(log_t.c.status.in_(sorted(problems)))
+    elif status:
+        stmt = stmt.where(log_t.c.status == status)
+    if q:
+        like = f"%{q}%"
+        stmt = stmt.where(sa.func.lower(log_t.c.recipient).like(like) | log_t.c.request_number.like(like))
+    if request_id is not None:
+        stmt = stmt.where(log_t.c.request_id == request_id)
+    with engine().connect() as c:
+        return [dict(r) for r in c.execute(stmt).mappings().all()]
