@@ -64,6 +64,18 @@
       {% endif %}
     </select>
     <div class="uc-note" id="uc-dept-note"></div>
+
+    <label for="uc-acc-default" class="uc-sublabel">Бухгалтер за замовчуванням</label>
+    <select name="accountant_default" id="uc-acc-default" class="uc-select">
+      <option value="">— не задано —</option>
+      {% for code, label in ACCOUNTANT_CHOICES.items() %}
+      <option value="{{ code }}" {{ 'selected' if code == accountant_default }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+    <p class="uc-explain" style="margin-top:4px">Підставляється в нову заявку цього користувача, коли в «Налаштуваннях процесу»
+      вибрано режим «Бухгалтер» (ініціатор сам вибирає тип бухгалтера) — він може змінити.
+      {% if org_mode != 'accountant' %}<strong>Зараз цей режим вимкнено</strong> — налаштування почне діяти, коли його ввімкнуть.{% endif %}
+      Не задано — підставляється тип з його попередньої заявки.</p>
   </section>
 
   <section class="card uc-section" id="uc-org">

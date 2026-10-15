@@ -89,6 +89,13 @@ HANDOVER_MAX_REMINDERS = 5
 ORG_FIELD_MODES = {
     "organization": "Організація: ініціатор вибирає організацію зі списку",
     "payer": "Платник: ініціатор вибирає лише «українська чи іноземна компанія» — організацію не вказує ніхто",
+    "accountant": "Бухгалтер: ініціатор одразу вибирає, який бухгалтер перевірить заявку — по готівці, резидентів чи нерезидентів",
+}
+# Як тип бухгалтера бачить ініціатор (режим «Бухгалтер»)
+ACCOUNTANT_CHOICES = {
+    "acc_cash": "Бухгалтер по готівці",
+    "acc_resident": "Бухгалтер резидентів (українські компанії, безготівка)",
+    "acc_nonresident": "Бухгалтер нерезидентів (іноземні компанії, безготівка)",
 }
 PAYERS = {"resident": "Українська компанія", "nonresident": "Іноземна компанія"}
 # Канал оплати = форма оплати + резидентність організації. Він визначає,
@@ -108,8 +115,10 @@ ACCOUNTANT_ROLES = set(ACCOUNTANT_BY_CHANNEL.values())
 
 
 def accountant_role(req):
-    """Хто з бухгалтерів перевіряє й оплачує заявку: призначений організації в адмінці
-    для цієї форми оплати, а якщо не призначено — за правилом (форма оплати + резидентність)."""
+    """Хто з бухгалтерів перевіряє й оплачує заявку: вибраний ініціатором тип (режим «Бухгалтер»),
+    інакше призначений організації в адмінці для цієї форми оплати, інакше за правилом (форма оплати + резидентність)."""
+    if req.get("accountant_type") in ACCOUNTANT_ROLES:
+        return req["accountant_type"]
     form = req.get("payment_form")
     override = organizations.accountant_for(req.get("organization_id"), form) if form else None
     if override in ACCOUNTANT_ROLES:
@@ -121,6 +130,8 @@ def payer_of(req):
     """Платник заявки: «resident» / «nonresident» — за організацією, а поки її немає — за вибором ініціатора."""
     if req.get("organization_id"):
         return "nonresident" if organizations.is_nonresident(req["organization_id"]) else "resident"
+    if req.get("accountant_type") in ("acc_resident", "acc_nonresident"):
+        return "nonresident" if req["accountant_type"] == "acc_nonresident" else "resident"
     return req.get("payer") if req.get("payer") in PAYERS else None
 
 

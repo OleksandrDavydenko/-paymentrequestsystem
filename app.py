@@ -192,6 +192,15 @@ def parse_request_form(form, current=None, allowed_codes=None):
             errors["payer"] = "Вкажіть платника — українська чи іноземна компанія"
     else:
         data["payer"] = None
+    if app_settings.get("org_field_mode") == "accountant":
+        # Ініціатор одразу вибирає тип бухгалтера; організація не потрібна (стару — лишаємо як є)
+        data["accountant_type"] = form.get("accountant_type") if form.get("accountant_type") in wf.ACCOUNTANT_CHOICES else None
+        data["organization_id"] = (current or {}).get("organization_id")
+        required.pop("organization_id")
+        if data["accountant_type"] is None:
+            errors["accountant_type"] = "Оберіть, який бухгалтер перевірить заявку"
+    else:
+        data["accountant_type"] = None
     for field, message in required.items():
         if data[field] is None:
             errors[field] = message
@@ -493,6 +502,7 @@ def request_card(request_id=None, *, context):
             "status": "draft",
             "payment_form": "bank",
             "currency": "UAH",
+            **_default_accountant(user),
             "lines": [],
             "history": [],
             "attachments": [],
@@ -524,6 +534,7 @@ def request_card(request_id=None, *, context):
         if not errors:
             for line in req["lines"]:
                 line.pop("amount_raw", None)
+            req.pop("accountant_hint", None)
             action = request.form.get("action")
             if req["id"] is None:
                 req["created_at"] = clock.now()
@@ -600,6 +611,7 @@ def request_card(request_id=None, *, context):
         handover_enabled=bool(app_settings.get("cash_handover_confirm")),
         org_mode=app_settings.get("org_field_mode"),
         PAYERS=wf.PAYERS,
+        ACCOUNTANT_CHOICES=wf.ACCOUNTANT_CHOICES,
         payer_value=wf.payer_of(req),
         handover=req.get("handover"),
         handover_pending=wf.needs_handover(req),
@@ -644,6 +656,18 @@ def _apply_payment_account(req, raw, user, roles):
     old_label = payment_accounts.label(req.get("payment_account_id")) if req.get("payment_account_id") else ""
     return wf.set_payment_account(req, new_id, payment_accounts.label(new_id) if new_id else "", old_label,
                                   user, wf.history_role(req, roles, user["email"]))
+
+
+def _default_accountant(user):
+    """Тип бухгалтера для нової заявки (режим «Бухгалтер»): з картки користувача, інакше як у попередній заявці."""
+    if app_settings.get("org_field_mode") != "accountant":
+        return {}
+    acc = org_structure.accountant_default_of(user["oid"])
+    if acc in wf.ACCOUNTANT_CHOICES:
+        return {"accountant_type": acc, "accountant_hint": "за замовчуванням з вашої картки"}
+    last = next((r["accountant_type"] for r in db.list_requests(user["email"])
+                 if r.get("accountant_type") in wf.ACCOUNTANT_CHOICES), None)
+    return {"accountant_type": last, "accountant_hint": "як у вашій попередній заявці"} if last else {}
 
 
 def payer_label(req):
@@ -1263,8 +1287,8 @@ def admin_settings(*, context):
     org_mode = request.form.get("org_field_mode")
     if org_mode in wf.ORG_FIELD_MODES and org_mode != app_settings.get("org_field_mode"):
         app_settings.set("org_field_mode", org_mode, g.user["email"])
-        flash("У заявці ініціатор вибирає: " + ("лише платника (організацію вказує бухгалтер)" if org_mode == "payer"
-                                                 else "організацію"), "success")
+        flash("У заявці ініціатор вибирає: " + {"payer": "лише платника — українська чи іноземна компанія",
+                                                 "accountant": "тип бухгалтера"}.get(org_mode, "організацію"), "success")
         changed = True
     data_mode = request.form.get("data_mode")
     if data_mode in ("work", "test") and db_sql.configured() and data_mode != app_settings.get("data_mode"):
@@ -1735,6 +1759,9 @@ def admin_user_card(user_id, *, context):
         head_deps=org_structure.head_departments(user_id),
         view_deps=org_structure.viewer_departments(user_id),
         head_mode=app_settings.get("dept_head_mode"),
+        accountant_default=org_structure.accountant_default_of(user_id),
+        ACCOUNTANT_CHOICES=wf.ACCOUNTANT_CHOICES,
+        org_mode=app_settings.get("org_field_mode"),
         budget=user_budget.get(user_id) or {},
         budget_departments=expense_items.get_departments(),
         budget_items=[{"k": i["kind"], "d": i["departments"]} for i in expense_items.get_items()],
@@ -1775,6 +1802,13 @@ def _save_user_card(token, person):
     if dep != org_structure.department_of(uid) and (dep is None or dep in known):
         org_structure.set_department(uid, email, name, dep, who)
         changes.append(f"відділ — {departments.get_name(dep) if dep else 'не вказано'}")
+
+    # Бухгалтер за замовчуванням (режим «Бухгалтер» у заявці)
+    if "accountant_default" in f:
+        acc = f.get("accountant_default") or None
+        if acc in (None, *wf.ACCOUNTANT_CHOICES) and acc != org_structure.accountant_default_of(uid):
+            org_structure.set_accountant_default(uid, email, name, acc, who)
+            changes.append("бухгалтер за замовчуванням — " + (wf.ACCOUNTANT_CHOICES[acc] if acc else "не задано"))
 
     # Які відділи очолює / заявки яких бачить (відділи, яких уже немає в довіднику, не чіпаємо)
     old_heads, old_views = org_structure.head_departments(uid), org_structure.viewer_departments(uid)

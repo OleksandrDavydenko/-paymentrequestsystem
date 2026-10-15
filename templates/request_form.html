@@ -129,7 +129,19 @@
     </div>
 
     {% include "_counterparty_picker.html" %}
-    {% if org_mode == 'payer' %}
+    {% if org_mode == 'accountant' %}
+    <div class="field">
+      <label>Бухгалтер</label>
+      <div class="radio-group radio-col {{ 'invalid' if errors.accountant_type }}">
+        {% for code, label in ACCOUNTANT_CHOICES.items() %}
+        <label><input type="radio" name="accountant_type" value="{{ code }}" {{ 'checked' if code == req.accountant_type }}> {{ label }}</label>
+        {% endfor %}
+      </div>
+      {{ err('accountant_type') }}
+      {% if req.accountant_hint and not errors %}<span class="route-hint">{{ req.accountant_hint | capitalize }} — можна змінити</span>{% endif %}
+      {% if req.organization_id %}<span class="route-hint">Організація: {{ org_name(req.organization_id) }}</span>{% endif %}
+    </div>
+    {% elif org_mode == 'payer' %}
     <div class="field">
       <label>Платник</label>
       <div class="radio-group {{ 'invalid' if errors.payer }}">
@@ -496,7 +508,7 @@ function updateRouteHint() {
   const org = orgSel ? orgSel.value : '{{ req.organization_id or '' }}';
   const payer = (document.querySelector('input[name=payer]:checked') || {}).value;
   if (!hint) return;
-  if (!form) { hint.textContent = ''; return; }
+  if (!form || document.querySelector('input[name=accountant_type]')) { hint.textContent = ''; return; }
   if (form.value === 'bank' && !org && !payer) {
     hint.textContent = orgSel ? 'Оберіть організацію — від неї залежить, хто перевірятиме заявку'
                               : 'Вкажіть платника — від нього залежить, хто перевірятиме заявку';

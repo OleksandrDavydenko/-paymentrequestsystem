@@ -76,15 +76,36 @@ def department_of(oid):
         return (_load()["users"].get(oid or "") or {}).get("department")
 
 
-def set_department(oid, email, name, department, updated_by):
+def _set_user_field(oid, email, name, field, value, updated_by):
+    """Особисте призначення користувача (відділ, бухгалтер за замовчуванням); порожній запис — прибирається."""
     with _lock:
         users = _load()["users"]
-        if department:
-            users[oid] = {"email": email, "name": name, "department": department,
-                          "updated_by": updated_by, "updated_at": clock.now().isoformat(timespec="seconds")}
+        entry = dict(users.get(oid) or {})
+        if value:
+            entry[field] = value
+        else:
+            entry.pop(field, None)
+        if entry.get("department") or entry.get("accountant_default"):
+            entry.update({"email": email, "name": name, "updated_by": updated_by,
+                          "updated_at": clock.now().isoformat(timespec="seconds")})
+            users[oid] = entry
         else:
             users.pop(oid, None)
         _write()
+
+
+def set_department(oid, email, name, department, updated_by):
+    _set_user_field(oid, email, name, "department", department, updated_by)
+
+
+def accountant_default_of(oid):
+    """Тип бухгалтера, який підставляється в нову заявку цього користувача (режим «Бухгалтер»), або None."""
+    with _lock:
+        return (_load()["users"].get(oid or "") or {}).get("accountant_default")
+
+
+def set_accountant_default(oid, email, name, role, updated_by):
+    _set_user_field(oid, email, name, "accountant_default", role, updated_by)
 
 
 def members_of(department):
