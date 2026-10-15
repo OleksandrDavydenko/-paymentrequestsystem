@@ -249,7 +249,7 @@ GROUPS = {
     "acc_nonresident": os.environ.get("GROUP_ACC_NONRESIDENT", ""),
     "cfo": os.environ.get("GROUP_CFO", ""),
 }
-# Керівник відділу і «бачить заявки відділу» — не групи Azure, а призначення в розділі «Відділи»
+# Керівник відділу і «бачить заявки відділу» — не групи Azure, а призначення в картці користувача (org_structure)
 # (org_structure); ролі dept_head / dept_viewer додаються під час входу.
 # Страховка від блокування: ці люди завжди адміністратори
 ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "od@ftpua.com").split(",") if e.strip()}
@@ -294,7 +294,7 @@ def requires(*needed):
             email = claims.get("preferred_username", "")
             g.user = {"email": email, "name": claims.get("name") or email, "oid": claims.get("oid")}
             roles = resolve_roles(claims)
-            # Керівник відділу / «бачить заявки відділу» — з розділу «Відділи», не з груп Azure
+            # Керівник відділу / «бачить заявки відділу» — з картки користувача, не з груп Azure
             heads = org_structure.head_departments(g.user["oid"])
             views = org_structure.viewer_departments(g.user["oid"])
             if heads:
@@ -1651,10 +1651,6 @@ def admin_users(*, context):
         user_departments={uid: org_structure.department_of(uid) for uid in users},
         onec_links=user_onec.all_links(),
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
-        dept_rows=[{**d, **org_structure.staff(d["code"]), "members": org_structure.members_of(d["code"])}
-                   for d in departments.get_departments()],
-        staff_users=[{"id": u["id"], "name": u["name"], "email": u["email"]}
-                     for u in sorted(users.values(), key=lambda u: u["name"].lower())],
         mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name", "smtp_host",
                                                 "smtp_port", "smtp_security", "smtp_username",
                                                 "allow_custom_email")},
@@ -1852,33 +1848,6 @@ def _save_user_card(token, person):
     else:
         flash("Змін немає", "success")
     return redirect(url_for("admin_user_card", user_id=uid))
-
-
-@app.route("/admin/departments/save", methods=["POST"])
-@auth.login_required
-@requires("admin")
-def admin_departments_save(*, context):
-    """Керівник відділу (один) і хто ще бачить заявки відділу."""
-    code = request.form.get("department", "")
-    if code not in departments.get_map():
-        abort(400)
-    people = {u["id"]: u for u in user_directory.active_users()}
-    head_id = request.form.get("head") or None
-    if head_id and head_id not in people:
-        flash("Керівника не знайдено серед користувачів системи", "error")
-        return redirect(url_for("admin_users") + "#departments")
-    viewers = [people[v] for v in request.form.getlist("viewers") if v in people]
-    previous = org_structure.head_of(code)
-    org_structure.set_department_staff(code, people.get(head_id), viewers, g.user["email"])
-    head = org_structure.head_of(code)
-    parts = [f"керівник — {head['name'] if head else 'не призначено'}"]
-    if previous and head and previous["id"] != head["id"]:
-        parts.append(f"замість {previous['name']}; заявки, що чекають погодження, перейшли до нового керівника")
-    staff = org_structure.staff(code)
-    if staff["viewers"]:
-        parts.append("бачать заявки: " + ", ".join(v["name"] for v in staff["viewers"]))
-    flash(f"{departments.get_name(code)}: " + "; ".join(parts), "success")
-    return redirect(url_for("admin_users") + "#departments")
 
 
 # ---------------------------------------------------------------- документи

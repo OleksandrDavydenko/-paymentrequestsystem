@@ -628,7 +628,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
   box-shadow: 0 6px 18px #0002; }
 .search-results li.active { background: #e8f1fb; }
 
-/* Розділ «Відділи» */
+/* Оргструктура (відділи) */
 .dept-table td { vertical-align: top; }
 .dept-table .dept-select { max-width: 240px; }
 
