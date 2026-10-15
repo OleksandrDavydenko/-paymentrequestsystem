@@ -1,4 +1,6 @@
+import io
 import logging
+import mimetypes
 import os
 import re
 import threading
@@ -21,6 +23,7 @@ import currencies
 import rates
 import db_sql
 import departments
+import filestore
 import org_structure
 import organizations
 import payment_accounts
@@ -1924,10 +1927,7 @@ def _save_user_card(token, person):
 
 # ---------------------------------------------------------------- документи
 
-UPLOAD_DIR = os.environ.get("UPLOAD_DIR") or (
-    "/home/data/uploads" if os.environ.get("WEBSITE_SITE_NAME")  # змінна є лише на App Service
-    else os.path.join(app.root_path, "uploads")
-)
+# Файли — у filestore: Azure Blob Storage (BLOB_ACCOUNT_URL + BLOB_CONTAINER) або папка на диску
 ALLOWED_EXT = {"pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx"}
 MAX_FILE_SIZE = 10 * 1024 * 1024
 INLINE_EXT = {"pdf", "jpg", "jpeg", "png"}  # відкриваються в браузері, решта — скачуються
@@ -1956,7 +1956,6 @@ def upload_files(request_id, *, context):
         flash("Оберіть файл", "error")
         return redirect(url_for("request_card", request_id=request_id))
 
-    os.makedirs(UPLOAD_DIR, exist_ok=True)
     added = []
     role = wf.history_role(req, roles, user["email"])
     for f in files:
@@ -1971,7 +1970,12 @@ def upload_files(request_id, *, context):
             flash(f"«{f.filename}»: файл більший за 10 МБ", "error")
             continue
         file_id = uuid.uuid4().hex
-        f.save(os.path.join(UPLOAD_DIR, f"{file_id}.{ext}"))
+        try:
+            filestore.save(file_id, ext, f.stream)
+        except Exception:
+            logging.getLogger(__name__).exception("Не вдалося зберегти файл %s", f.filename)
+            flash(f"«{f.filename}»: не вдалося зберегти файл — спробуйте ще раз", "error")
+            continue
         name = os.path.basename(f.filename.replace("\\", "/"))
         req["attachments"].append({
             "id": file_id, "name": name, "ext": ext, "size": size, "at": clock.now(),
@@ -1992,10 +1996,12 @@ def download_file(file_id, *, context):
     req, att = db.find_attachment(file_id)
     if not req or not wf.can_view(req, g.roles, g.user["email"]):
         abort(404)
-    path = os.path.join(UPLOAD_DIR, f"{att['id']}.{att['ext']}")
-    if not os.path.exists(path):
+    data = filestore.read(att["id"], att["ext"])
+    if data is None:
         abort(404)
-    return send_file(path, download_name=att["name"], as_attachment=att["ext"] not in INLINE_EXT)
+    mimetype = mimetypes.guess_type(att["name"])[0] or "application/octet-stream"
+    return send_file(io.BytesIO(data), mimetype=mimetype, download_name=att["name"],
+                     as_attachment=att["ext"] not in INLINE_EXT)
 
 
 @app.route("/files/<file_id>/delete", methods=["POST"])
@@ -2012,9 +2018,9 @@ def delete_file(file_id, *, context):
     wf.add_history(req, "file_delete", user, wf.history_role(req, roles, user["email"]), comment=att["name"])
     db.save_request(req)
     try:
-        os.remove(os.path.join(UPLOAD_DIR, f"{att['id']}.{att['ext']}"))
-    except FileNotFoundError:
-        pass
+        filestore.delete(att["id"], att["ext"])
+    except Exception:
+        logging.getLogger(__name__).exception("Не вдалося видалити файл %s", att["id"])
     flash(f"Документ «{att['name']}» видалено", "success")
     return redirect(url_for("request_card", request_id=req["id"]) + "#documents")
 
@@ -2092,6 +2098,7 @@ def _reminder_loop():
 def _start_background():
     global _last_base_url, _reminders_started
     _last_base_url = request.host_url.rstrip("/")
+    filestore.start_migration()
     if _reminders_started or not (os.environ.get("WEBSITE_SITE_NAME") or os.environ.get("HANDOVER_REMINDERS") == "1"):
         return
     with _reminders_lock:
@@ -2103,7 +2110,7 @@ def _start_background():
 @app.route("/health")
 def health():
     """Стан сайту й бази даних (без персональних даних)."""
-    info = db_sql.status()
+    info = {**db_sql.status(), **filestore.status()}
     return ({"status": "error", **info}, 503) if info.get("error") else {"status": "ok", **info}
 
 

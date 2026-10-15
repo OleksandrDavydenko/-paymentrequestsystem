@@ -181,6 +181,13 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
   довідниках; що створено в тестовому режимі, у базу не потрапляє; банер для всіх, листи з «[ТЕСТ]», без нагадувань.
 - Вимкнути базу (повернутися до файлів) — прибрати `SQL_SERVER` з налаштувань App Service.
 
+## Файли заявок (Azure Blob Storage)
+`filestore.py`. Вмикається змінними App Service `BLOB_ACCOUNT_URL=https://ftppayreqfiles.blob.core.windows.net` і
+`BLOB_CONTAINER=attachments`; без них — папка `/home/data/uploads`, як раніше. Вхід без ключів — керована ідентичність
+сайту з роллю **Storage Blob Data Contributor** на сховищі (анонімний доступ вимкнено, «м'яке видалення» 7 днів).
+Файли з диска переносяться в Blob у фоні після запуску й при першому відкритті (копії на диску лишаються).
+Скачування — лише через сайт і лише тим, хто бачить заявку. `/health` показує `files: blob` або помилку доступу.
+
 ## Секрети
 - Секрети (`CLIENT_SECRET`, `FLASK_SECRET_KEY`, publish profile) — **лише** в App Service → Environment variables,
   у секретах GitHub і в локальному `.env`. У коді немає значень за замовчуванням для секретів.
