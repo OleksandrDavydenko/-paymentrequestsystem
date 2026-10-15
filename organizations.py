@@ -1,6 +1,6 @@
 """Довідник організацій з 1С (таблиця Organizations семантичної моделі Power BI).
 
-Колонки: Code, Name, EDRPOU, Country, CountryGUID, IsDeleted.
+Колонки: Code, Name, EDRPOU, Country, CountryGUID, GUID, IsDeleted.
 Ключ організації в системі — Code (поки в таблиці немає GUID організації).
 Резидентність: Country = Україна — резидент; порожня або будь-яка інша країна — нерезидент.
 Від резидентності залежить, який бухгалтер перевіряє безготівкові заявки.
@@ -12,10 +12,10 @@ UKRAINE = {"україна", "ukraine", "ua", "украина"}
 
 # Мокові організації (без Power BI) — у тому ж форматі
 MOCK = [
-    {"code": "1", "name": "ТОВ «Фрейт Транс Південь»", "edrpou": "", "country": "Україна"},
-    {"code": "2", "name": "ТОВ «Укрбуд Логістик»", "edrpou": "", "country": "Україна"},
-    {"code": "3", "name": "ФОП Коваленко І.П.", "edrpou": "", "country": "Україна"},
-    {"code": "4", "name": "Litbia", "edrpou": "", "country": "Serbia"},
+    {"code": "1", "name": "ТОВ «Фрейт Транс Південь»", "edrpou": "", "country": "Україна", "guid": "ORG-G1"},
+    {"code": "2", "name": "ТОВ «Укрбуд Логістик»", "edrpou": "", "country": "Україна", "guid": "ORG-G2"},
+    {"code": "3", "name": "ФОП Коваленко І.П.", "edrpou": "", "country": "Україна", "guid": "ORG-G3"},
+    {"code": "4", "name": "Litbia", "edrpou": "", "country": "Serbia", "guid": "ORG-G4"},
 ]
 
 
@@ -23,9 +23,9 @@ def is_resident_country(country):
     return (country or "").strip().lower() in UKRAINE
 
 
-def _record(code, name, edrpou, country, deleted):
+def _record(code, name, edrpou, country, deleted, guid=""):
     return {"code": code, "name": name, "edrpou": edrpou, "country": country,
-            "resident": is_resident_country(country), "deleted": deleted}
+            "resident": is_resident_country(country), "deleted": deleted, "guid": guid}
 
 
 def parse(rows):
@@ -38,12 +38,13 @@ def parse(rows):
         country = str(r.get("Country") or "").strip()
         if country.lower() in ("none", "null"):
             country = ""
-        by_code[code] = _record(code, name, str(r.get("EDRPOU") or "").strip(), country, pbi_cache.truthy(r.get("IsDeleted")))
+        by_code[code] = _record(code, name, str(r.get("EDRPOU") or "").strip(), country, pbi_cache.truthy(r.get("IsDeleted")),
+                                str(r.get("GUID") or "").strip())
     return sorted(by_code.values(), key=lambda o: o["name"].lower())
 
 
 def _mock():
-    return [_record(o["code"], o["name"], o["edrpou"], o["country"], False) for o in MOCK]
+    return [_record(o["code"], o["name"], o["edrpou"], o["country"], False, o["guid"]) for o in MOCK]
 
 
 _table = pbi_cache.CachedTable("organizations", "PBI_ORGANIZATIONS_TABLE", "Organizations", parse, _mock)
@@ -55,6 +56,12 @@ def get_all(include_deleted=False):
 
 def get(code):
     return next((o for o in _table.items() if o["code"] == str(code or "")), None)
+
+
+def by_guid(guid):
+    """Організація за GUID з 1С (зокрема помічена на видалення) або None."""
+    guid = str(guid or "").strip()
+    return next((o for o in _table.items() if guid and o.get("guid") == guid), None) if guid else None
 
 
 def names():

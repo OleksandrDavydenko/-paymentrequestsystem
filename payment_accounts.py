@@ -6,6 +6,7 @@
 Ідентифікатор виду оплати в заявці — рядок (GUID з 1С або номер мокового рахунку).
 """
 import expense_items
+import organizations
 import payment_types
 import user_onec
 
@@ -80,7 +81,21 @@ def options_for(req, user=None, roles=frozenset()):
         rows = payment_types.types_for_user(user_onec.guid_for(user.get("oid")))
     else:
         rows = []
-    return [{"id": t["id"], "name": t["name"], "currency": "", "iban": "", "kind": "type"} for t in rows]
+    return [{"id": t["id"], "name": t["name"], "currency": "", "iban": "", "kind": "type",
+             "org": (organization_of(t["id"]) or {}).get("name", "")} for t in rows]
+
+
+def organization_of(account_id):
+    """З якої організації платимо цим видом оплати: {"code", "name"} або None (не прив'язано в 1С)."""
+    if not account_id:
+        return None
+    if use_types():
+        t = payment_types.get(account_id)
+        o = organizations.by_guid(t.get("org_guid")) if t else None
+    else:
+        a = _mock_get(account_id)
+        o = organizations.get(a["organization_id"]) if a else None
+    return {"code": o["code"], "name": o["name"]} if o else None
 
 
 def valid_for(req, account_id, user=None, roles=frozenset()):

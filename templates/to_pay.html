@@ -40,6 +40,13 @@
         {% endfor %}
         <option value="none" {{ 'selected' if acc_filter == 'none' }}>Не вибрано</option>
       </select>
+      <select name="payorg" onchange="this.form.submit()" aria-label="Платимо з" class="{{ 'is-active' if payorg_filter }}">
+        <option value="">Платимо з: усі організації</option>
+        {% for code, name in payorg_options %}
+        <option value="{{ code }}" {{ 'selected' if payorg_filter == code }}>{{ name }}</option>
+        {% endfor %}
+        <option value="none" {{ 'selected' if payorg_filter == 'none' }}>Не визначено</option>
+      </select>
       {% endif %}
       {% include "_ref_filters.html" %}
     </div>
@@ -60,6 +67,23 @@
     <tbody>
       {% for label, sums in account_totals %}
       <tr class="{{ 'overdue' if label == 'Не вибрано' }}"><td>{{ label }}</td>
+        <td class="num">{% for cur, v in sums.items() %}{{ v | money }} {{ cur }}{{ ' + ' if not loop.last }}{% endfor %}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</details>
+{% endif %}
+
+{% if org_totals and view == "to_pay" %}
+<details class="card plan" id="by-org">
+  <summary><h2>За організаціями</h2><span class="muted">з якої організації скільки платити (за видом оплати)</span></summary>
+  <div class="table-wrap">
+  <table class="plan-table">
+    <thead><tr><th>Платимо з</th><th class="num">Сума</th></tr></thead>
+    <tbody>
+      {% for label, sums in org_totals %}
+      <tr class="{{ 'overdue' if label == 'Не визначено' }}"><td>{{ label }}</td>
         <td class="num">{% for cur, v in sums.items() %}{{ v | money }} {{ cur }}{{ ' + ' if not loop.last }}{% endfor %}</td></tr>
       {% endfor %}
     </tbody>
@@ -117,6 +141,7 @@
         <th>Стаття витрат</th>
         <th>Форма оплати</th>
         <th>Вид оплати</th>
+        <th>Платимо з</th>
         <th class="num">Сума</th>
         <th>Автор</th>
         {% if view == 'paid' %}<th>Оплачено</th>{% endif %}
@@ -148,6 +173,8 @@
         <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
         <td data-label="Вид оплати">{% if r.payment_account_id %}{{ pay_account_label(r.payment_account_id) }}{% else %}<span class="badge red">не вибрано</span>{% endif %}</td>
+        {% set po = pay_org(r) %}
+        <td data-label="Платимо з">{{ po.name if po else '—' }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
         <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
         {% if view == 'paid' %}

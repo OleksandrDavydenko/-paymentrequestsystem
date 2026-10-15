@@ -44,6 +44,7 @@
         <th>Автор</th>
         {% if show_org %}<th>Організація</th>{% endif %}
         <th>Контрагент</th>
+        <th>Платимо з</th>
         <th class="num">Сума</th>
         <th class="num">Нагадувань</th>
         <th data-nosort>Підтвердити за автора</th>
@@ -61,6 +62,8 @@
         <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
         {% if show_org %}<td data-label="Організація">{{ payer_label(r) }}</td>{% endif %}
         <td data-label="Контрагент">{{ cp_name(r.counterparty_id) }}</td>
+        {% set po = pay_org(r) %}
+        <td data-label="Платимо з">{{ po.name if po else '—' }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
         <td data-label="Нагадувань" class="num">{{ r.handover.reminders or 0 }}</td>
         <td data-label="Підтвердити">
@@ -75,7 +78,7 @@
         </td>
       </tr>
       {% else %}
-      <tr><td colspan="9" class="empty">Усю видану готівку підтверджено{{ " (за вибраними фільтрами)" if request.args | reject('equalto', 'view') | list }}</td></tr>
+      <tr><td colspan="10" class="empty">Усю видану готівку підтверджено{{ " (за вибраними фільтрами)" if request.args | reject('equalto', 'view') | list }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

@@ -13,11 +13,12 @@ import re
 import pbi_cache
 
 MOCK_TYPES = [
-    {"GUID": "PT-NAL", "Code": "000000001", "Name": "НАЛ", "IsDeleted": False},
-    {"GUID": "PT-CARD", "Code": "000000002", "Name": "КАРТА", "IsDeleted": False},
-    {"GUID": "PT-KASA", "Code": "000000003", "Name": "КАСА", "IsDeleted": False},
-    {"GUID": "PT-NLB", "Code": "000000004", "Name": "NLB LITBIA", "IsDeleted": False},
-    {"GUID": "PT-PUMB", "Code": "000000005", "Name": "ПУМБ ФТП, ТОВ", "IsDeleted": False},
+    {"GUID": "PT-NAL", "Code": "000000001", "Name": "НАЛ", "IsDeleted": False, "OrganizationsGUID": "ORG-G1"},
+    {"GUID": "PT-CARD", "Code": "000000002", "Name": "КАРТА", "IsDeleted": False, "OrganizationsGUID": "ORG-G3"},
+    {"GUID": "PT-KASA", "Code": "000000003", "Name": "КАСА", "IsDeleted": False, "OrganizationsGUID": "ORG-G2"},
+    {"GUID": "PT-NLB", "Code": "000000004", "Name": "NLB LITBIA", "IsDeleted": False, "OrganizationsGUID": "ORG-G4"},
+    {"GUID": "PT-PUMB", "Code": "000000005", "Name": "ПУМБ ФТП, ТОВ", "IsDeleted": False,
+     "OrganizationsGUID": "00000000000000000000000000000000"},
 ]
 MOCK_ACCESS = [
     {"UserGUID": "U-IRINA", "UserName": "Irina.Chagan", "PaymentTypeGUID": "PT-NAL", "IsDeleted": False},
@@ -33,8 +34,11 @@ def _parse_types(rows):
     for r in rows:
         guid, name = str(r.get("GUID") or "").strip(), str(r.get("Name") or "").strip()
         if guid and name:
+            org = str(r.get("OrganizationsGUID") or "").strip()
             by_id[guid] = {"id": guid, "code": str(r.get("Code") or "").strip(), "name": name,
-                           "deleted": pbi_cache.truthy(r.get("IsDeleted"))}
+                           "deleted": pbi_cache.truthy(r.get("IsDeleted")),
+                           # до якої організації належить вид оплати (порожнє посилання 1С — нулі)
+                           "org_guid": org if org.strip("0") else None}
     return sorted(by_id.values(), key=lambda t: t["name"].lower())
 
 

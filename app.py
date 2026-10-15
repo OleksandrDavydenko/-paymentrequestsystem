@@ -107,6 +107,7 @@ def inject_refs():
         "STATUSES": db.STATUSES,
         "needs_handover": wf.needs_handover,
         "payer_label": payer_label,
+        "pay_org": pay_org,
         # У режимі «Бухгалтер» організацію не вказують — колонки й фільтра «Організація» немає
         "show_org": app_settings.get("org_field_mode") != "accountant",
     }
@@ -609,6 +610,7 @@ def request_card(request_id=None, *, context):
         can_see_account=wf.can_see_payment_account(roles),
         account_options=payment_accounts.options_for(req, user, roles) if wf.can_see_payment_account(roles) else [],
         account_empty_hint=payment_accounts.no_options_hint(req, user, roles),
+        account_org=payment_accounts.organization_of(req.get("payment_account_id")),
         account_required=wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES
         and req["status"] in ("accountant", "approval") and bool(payment_accounts.options_for(req, user, roles))
         and bool(app_settings.get("require_payment_account")),
@@ -679,6 +681,16 @@ def _default_accountant(user):
     last = next((r["accountant_type"] for r in db.list_requests(user["email"])
                  if r.get("accountant_type") in wf.ACCOUNTANT_CHOICES), None)
     return {"accountant_type": last, "accountant_hint": "як у вашій попередній заявці"} if last else {}
+
+
+def pay_org(req):
+    """З якої організації платимо: організація вибраного виду оплати, інакше — організація заявки. {"code","name"} або None."""
+    o = payment_accounts.organization_of(req.get("payment_account_id"))
+    if o:
+        return o
+    if req.get("organization_id"):
+        return {"code": req["organization_id"], "name": organizations.name(req["organization_id"])}
+    return None
 
 
 def payer_label(req):
@@ -1416,14 +1428,18 @@ def to_pay(*, context):
         return entry["at"].date() if entry else r["pay_date"]
 
     acc_filter = request.args.get("acc", "")
+    payorg_filter = request.args.get("payorg", "")
     rows = [r for r in apply_ref_filters(all_rows, refs)
             if (not form_filter or wf.channel_of(r) == form_filter)
             and (not acc_filter or str(r.get("payment_account_id") or "none") == acc_filter)
+            and (not payorg_filter or ((pay_org(r) or {}).get("code") or "none") == payorg_filter)
             and _in_period(period_date(r), d_from, d_to)]
-    account_totals = {}
+    account_totals, org_totals = {}, {}
     for r in rows:
         key = payment_accounts.label(r.get("payment_account_id")) if r.get("payment_account_id") else "Не вибрано"
         t = account_totals.setdefault(key, {})
+        t[r["currency"]] = t.get(r["currency"], Decimal(0)) + r["amount"]
+        t = org_totals.setdefault((pay_org(r) or {}).get("name") or "Не визначено", {})
         t[r["currency"]] = t.get(r["currency"], Decimal(0)) + r["amount"]
     blocked = {r["id"] for r in rows if _pay_guard(r)["cp_pending"] and _pay_guard(r)["block_pending"]}
     no_account = {r["id"] for r in rows if not r.get("payment_account_id")}
@@ -1436,6 +1452,9 @@ def to_pay(*, context):
                                key=lambda a: payment_accounts.label(a).lower()),
         has_rows=bool(all_rows),
         account_totals=sorted(account_totals.items()),
+        org_totals=sorted(org_totals.items(), key=lambda kv: (kv[0] == "Не визначено", kv[0].lower())),
+        payorg_filter=payorg_filter,
+        payorg_options=_payorg_options(all_rows),
         blocked=blocked,
         no_account=no_account,
         pending_cp_mode=app_settings.get("pending_cp_payment"),
@@ -1462,6 +1481,12 @@ def to_pay(*, context):
                 for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
                 and (r["id"] in blocked or r["id"] in no_account)},
     )
+
+
+def _payorg_options(rows):
+    """Організації-платники, що трапляються в рядках: [(код, назва)] за назвою."""
+    seen = {o["code"]: o["name"] for o in (pay_org(r) for r in rows) if o}
+    return sorted(seen.items(), key=lambda kv: kv[1].lower())
 
 
 def _handover_rows(roles):
