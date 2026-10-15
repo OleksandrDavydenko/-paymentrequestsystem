@@ -358,6 +358,7 @@ def inject_roles():
         "can_see_payments": wf.can_see_payments(roles),
         "sees_all_requests": _sees_all_requests(roles),
         "test_mode": notifications.test_mode(),
+        "test_mail_muted": notifications.muted_by_test_mode(),
         "payments_count": len(db.list_to_pay(roles)) if wf.can_see_payments(roles) else 0,
     }
 
@@ -1367,8 +1368,9 @@ def admin_settings(*, context):
     data_mode = request.form.get("data_mode")
     if data_mode in ("work", "test") and db_sql.configured() and data_mode != app_settings.get("data_mode"):
         app_settings.set("data_mode", data_mode, g.user["email"])
-        flash("Система показує: " + ("тестові дані — нові заявки не зберігаються в базі, листи позначено «[ТЕСТ]»"
-                                     if data_mode == "test" else "робочу базу даних"), "success")
+        flash("Система показує: " + ("тестові дані — нові заявки не зберігаються в базі, email-розсилку вимкнено"
+                                     if data_mode == "test" else "робочу базу даних, email-розсилка — як налаштовано"),
+              "success")
         changed = True
     if cp_owner != app_settings.get("cp_onec_owner"):
         app_settings.set("cp_onec_owner", cp_owner, g.user["email"])

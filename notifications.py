@@ -60,9 +60,14 @@ MEMBERS_HINT = ("Щоб листи отримували погоджувачі, 
 
 
 def test_mode():
-    """Тестові дані замість робочої бази (перемикач в адмінці) — листи позначаються «[ТЕСТ]»."""
+    """Тестові дані замість робочої бази (перемикач в адмінці)."""
     import db_sql
     return db_sql.configured() and app_settings.get("data_mode") == "test"
+
+
+def muted_by_test_mode():
+    """У тестовому режимі email-розсилка вимкнена (повертається разом із робочою базою)."""
+    return test_mode()
 
 
 def cp_pending_check(cp_id):
@@ -122,15 +127,13 @@ def _send(to, subject, template_args):
     """to — робоча пошта одержувача; лист іде на підтверджену іншу адресу, якщо адмін це дозволив."""
     html = render_template("email/notification.html", **template_args)
     address = user_prefs.delivery_address(to, app_settings.get("allow_custom_email"))
-    if test_mode():
-        subject = "[ТЕСТ] " + subject
     mailer.enqueue(smtp_config(), address, subject, html)
 
 
 def notify(event, req, actor, comment="", target=None):
     """Надіслати листи після події event ("submit", "approve", "rework", "reject", "pay",
     "admin_status", "comment", "participant_add" — target: пошта доданого). Помилки не ламають дію."""
-    if not enabled():
+    if not enabled() or muted_by_test_mode():
         return []
     try:
         return _notify(event, req, actor, comment, target)
@@ -222,7 +225,7 @@ def send_handover_reminder(req, days):
     """Нагадування автору: підтвердіть, що передали готівку підряднику. Лише автору й без особистих
     налаштувань (це контроль, його вимикає тільки адмін). Потрібен контекст запиту Flask (для посилань).
     Повертає True, якщо лист поставлено в чергу."""
-    if not enabled():
+    if not enabled() or muted_by_test_mode():
         return False
     try:
         _send(req["author_email"], f"Заявка № {req['number']}: {SUBJECTS['handover_reminder']}", {
