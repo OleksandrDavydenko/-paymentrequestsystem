@@ -36,6 +36,10 @@ _next_id = [0]
 
 
 def record(channel, recipient, status, subject="", request_id=None, number=None, event="", detail="", ref=None):
+    if db_sql.configured():
+        import app_settings
+        if app_settings.get("data_mode") == "test":
+            detail = "тестовий режим (демо-заявка)" + (f"; {detail}" if detail else "")
     row = {"at": clock.now(), "channel": channel, "recipient": (recipient or "")[:320], "status": status,
            "subject": (subject or "")[:500], "request_id": request_id, "request_number": number,
            "event": (event or "")[:40], "detail": (detail or "")[:1000] or None, "ref": ref}

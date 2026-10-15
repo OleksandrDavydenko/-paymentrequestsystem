@@ -70,8 +70,8 @@ def test_mode():
 
 
 def muted_by_test_mode():
-    """У тестовому режимі email-розсилка вимкнена (повертається разом із робочою базою)."""
-    return test_mode()
+    """У тестовому режимі розсилка (пошта й Telegram) за замовчуванням вимкнена — якщо адмін не ввімкнув її окремо."""
+    return test_mode() and not app_settings.get("test_mode_mail")
 
 
 def cp_pending_check(cp_id):
@@ -158,6 +158,8 @@ def telegram_text(args):
 def _send(to, subject, template_args):
     """to — робоча пошта одержувача. Канал — з його налаштувань: пошта, Telegram або обидва.
     Лист іде на підтверджену іншу адресу, якщо адмін це дозволив."""
+    if test_mode():
+        subject = "[ТЕСТ] " + subject
     html = render_template("email/notification.html", **template_args)
     address = user_prefs.delivery_address(to, app_settings.get("allow_custom_email"))
     req = template_args["req"]
@@ -170,7 +172,8 @@ def _send(to, subject, template_args):
         meta["detail"] = f"вибрано Telegram, але бот не знає {lookup} — листом"
     if channel in ("telegram", "both"):
         only_telegram = channel == "telegram"
-        msg_id = telegram_notify.enqueue(to, telegram_text(template_args), template_args.get("link"),
+        text = ("🧪 <b>ТЕСТ</b> — демо-дані системи заявок\n" if test_mode() else "") + telegram_text(template_args)
+        msg_id = telegram_notify.enqueue(to, text, template_args.get("link"),
                                          subject if only_telegram else None, html if only_telegram else None)
         notify_log.record("telegram", to, "queued", subject, meta["request_id"], meta["number"], meta["event"],
                           detail=f"бот шукає за {lookup}" if lookup != to.lower() else "", ref=f"tg:{msg_id}")

@@ -1373,12 +1373,18 @@ def admin_settings(*, context):
         flash("У заявці ініціатор вибирає: " + {"payer": "лише платника — українська чи іноземна компанія",
                                                  "accountant": "тип бухгалтера"}.get(org_mode, "організацію"), "success")
         changed = True
+    if "test_mode_mail_sent" in request.form:
+        test_mail = request.form.get("test_mode_mail") == "1"
+        if test_mail != bool(app_settings.get("test_mode_mail")):
+            app_settings.set("test_mode_mail", test_mail, g.user["email"])
+            flash("Розсилка в тестовому режимі: " + ("увімкнена — листи й Telegram з позначкою «[ТЕСТ]»" if test_mail
+                                                     else "вимкнена"), "success")
+            changed = True
     data_mode = request.form.get("data_mode")
     if data_mode in ("work", "test") and db_sql.configured() and data_mode != app_settings.get("data_mode"):
         app_settings.set("data_mode", data_mode, g.user["email"])
-        flash("Система показує: " + ("тестові дані — нові заявки не зберігаються в базі, email-розсилку вимкнено"
-                                     if data_mode == "test" else "робочу базу даних, email-розсилка — як налаштовано"),
-              "success")
+        flash("Система показує: " + ("тестові дані — нові заявки не зберігаються в базі" if data_mode == "test"
+                                     else "робочу базу даних"), "success")
         changed = True
     if cp_owner != app_settings.get("cp_onec_owner"):
         app_settings.set("cp_onec_owner", cp_owner, g.user["email"])
@@ -1724,6 +1730,7 @@ def admin_users(*, context):
         org_mode=app_settings.get("org_field_mode"),
         ORG_FIELD_MODES=wf.ORG_FIELD_MODES,
         data_mode=app_settings.get("data_mode"),
+        test_mode_mail=app_settings.get("test_mode_mail"),
         CFO_MODES=wf.CFO_MODES,
         cp_owner=app_settings.get("cp_onec_owner"),
         CP_OWNER_MODES=wf.CP_OWNER_MODES,
