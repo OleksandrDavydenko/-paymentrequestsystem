@@ -107,6 +107,8 @@ def inject_refs():
         "STATUSES": db.STATUSES,
         "needs_handover": wf.needs_handover,
         "payer_label": payer_label,
+        # У режимі «Бухгалтер» організацію не вказують — колонки й фільтра «Організація» немає
+        "show_org": app_settings.get("org_field_mode") != "accountant",
     }
 
 

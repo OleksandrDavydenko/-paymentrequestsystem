@@ -106,13 +106,13 @@
 
 <form method="post" action="{{ url_for('to_pay_bulk', **request.args) }}" class="card" id="pay-form">
   <div class="table-wrap">
-  <table class="stack sortable" id="{{ 'paid' if view == 'paid' else 'to-pay' }}">
+  <table class="stack sortable" id="{{ ('paid' if view == 'paid' else 'to-pay') ~ ('' if show_org else '-noorg') }}">
     <thead>
       <tr>
         {% if payable or locked %}<th class="chk" data-nosort>{% if payable %}<input type="checkbox" id="check-all" aria-label="Вибрати всі">{% endif %}</th>{% endif %}
         <th>Номер</th>
         <th>Дата оплати</th>
-        <th>Організація</th>
+        {% if show_org %}<th>Організація</th>{% endif %}
         <th>Контрагент</th>
         <th>Стаття витрат</th>
         <th>Форма оплати</th>
@@ -142,7 +142,7 @@
           {{ r.pay_date | d }}
           {% if overdue %}<span class="badge red">прострочено</span>{% elif due_today %}<span class="badge amber">сьогодні</span>{% endif %}
         </td>
-        <td data-label="Організація">{{ payer_label(r) }}</td>
+        {% if show_org %}<td data-label="Організація">{{ payer_label(r) }}</td>{% endif %}
         <td data-label="Контрагент">{{ cp_name(r.counterparty_id) }}{% if cp_pending(r.counterparty_id) %}
           <span class="badge amber" title="Контрагента ще немає в 1С{{ ' — оплату заблоковано' if pending_cp_mode == 'block' }}">новий</span>{% endif %}</td>
         <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>

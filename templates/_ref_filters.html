@@ -1,12 +1,14 @@
 {# Фільтри за довідниками (організація, контрагент, вид витрат, відділ). Очікує refs = ref_filters(...).
    Вставляється всередину GET-форми. Фільтр «Відділ» — якщо в заявках є кілька відділів
    і сторінка не вимкнула його (show_dep_filter=False). #}
+{% if show_org %}
 <select name="org" onchange="this.form.submit()" aria-label="Організація" class="{{ 'is-active' if refs.org }}">
   <option value="">Усі організації</option>
   {% for key, label in ORG_FILTER.items() %}
   <option value="{{ key }}" {{ 'selected' if key == refs.org }}>{{ label }}</option>
   {% endfor %}
 </select>
+{% endif %}
 <select name="cp" onchange="this.form.submit()" aria-label="Контрагент" class="{{ 'is-active' if refs.cp }}">
   <option value="">Усі контрагенти</option>
   {% for key, label in cp_filter_options().items() %}
