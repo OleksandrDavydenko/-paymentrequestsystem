@@ -601,11 +601,6 @@ def request_card(request_id=None, *, context):
         org_mode=app_settings.get("org_field_mode"),
         PAYERS=wf.PAYERS,
         payer_value=wf.payer_of(req),
-        org_choices=_org_choices(req),
-        # Бухгалтер вказує організацію в панелі рішення (обов'язково), якщо її ще немає
-        org_inline=wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES
-        and req["status"] in ("accountant", "approval") and not req.get("organization_id"),
-        can_set_org=req["id"] is not None and _can_set_org(req, roles),
         handover=req.get("handover"),
         handover_pending=wf.needs_handover(req),
         handover_done=wf.handover_done(req),
@@ -651,67 +646,12 @@ def _apply_payment_account(req, raw, user, roles):
                                   user, wf.history_role(req, roles, user["email"]))
 
 
-def _org_choices(req):
-    """Організації, які можна вказати в заявці: лише з резидентністю платника (без вимкнених адміном)."""
-    payer = wf.payer_of(req)
-    opts = organizations.options()
-    if payer:
-        opts = {c: n for c, n in opts.items() if wf.payer_of({"organization_id": c}) == payer}
-    if req.get("organization_id") and req["organization_id"] not in opts:
-        opts = {req["organization_id"]: organizations.name(req["organization_id"]), **opts}
-    return opts
-
-
-def _can_set_org(req, roles):
-    """Хто вказує / змінює організацію в картці: бухгалтер цієї заявки, фіндиректор, адмін — до оплати."""
-    return req["status"] not in ("draft", "rework", "paid", "rejected") and (
-        wf.accountant_role(req) in roles or bool(roles & {"cfo", "admin"}))
-
-
-def _apply_organization(req, raw, user, roles):
-    """Зберегти організацію з картки / панелі рішення. Кидає WorkflowError. Повертає True, якщо змінено."""
-    if raw is None or not _can_set_org(req, roles):
-        return False
-    raw = raw.strip()
-    if not raw:
-        return False
-    if raw != (req.get("organization_id") or "") and raw not in _org_choices(req):
-        raise wf.WorkflowError("Цю організацію не можна вибрати: інша резидентність платника або її вимкнено в адмінці")
-    old = req.get("organization_id")
-    changed = wf.set_organization(req, raw, organizations.name(raw), organizations.name(old) if old else "",
-                                  user, wf.history_role(req, roles, user["email"]))
-    if changed and old and req.get("payment_account_id") and not payment_accounts.use_types():
-        wf.set_payment_account(req, None, "", payment_accounts.label(req["payment_account_id"]) +
-                               " (скинуто: змінено організацію)", user, wf.history_role(req, roles, user["email"]))
-    return changed
-
-
 def payer_label(req):
-    """Організація заявки або, поки її не вказано, платник: «Українська компанія (організацію вкаже бухгалтер)»."""
+    """Організація заявки, а якщо ініціатор вибрав лише платника — «Українська компанія» / «Іноземна компанія»."""
     if req.get("organization_id"):
         return organizations.name(req["organization_id"])
     payer = wf.payer_of(req)
-    return f"{wf.PAYERS[payer]} (організацію вкаже бухгалтер)" if payer else ""
-
-
-@app.route("/requests/<int:request_id>/organization", methods=["POST"])
-@auth.login_required
-@requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
-def request_organization(request_id, *, context):
-    req = _load_visible(request_id)
-    if not _can_set_org(req, g.roles):
-        abort(403)
-    try:
-        changed = _apply_organization(req, request.form.get("organization_id", ""), g.user, g.roles)
-    except wf.WorkflowError as e:
-        flash(str(e), "error")
-        return redirect(url_for("request_card", request_id=request_id) + "#organization")
-    if changed:
-        db.save_request(req)
-        flash(f"Організація: {organizations.name(req['organization_id'])}", "success")
-    else:
-        flash("Змін немає", "success")
-    return redirect(url_for("request_card", request_id=request_id) + "#organization")
+    return wf.PAYERS[payer] if payer else ""
 
 
 def _route_settings(req):
@@ -970,14 +910,6 @@ def request_action(request_id, *, context):
     req = _load_visible(request_id)
     action = request.form.get("action")
     try:
-        before_role = wf.acting_role(req, g.roles, g.user["email"])
-        if _apply_organization(req, request.form.get("organization_id"), g.user, g.roles) and before_role \
-                and wf.acting_role(req, g.roles, g.user["email"]) is None:
-            # Цю організацію веде інший бухгалтер (призначення в адмінці) — заявка переходить до нього
-            db.save_request(req)
-            flash(f"Організацію вказано: {organizations.name(req['organization_id'])}. Її веде "
-                  f"{wf.ROLES.get(wf.accountant_role(req), 'інший бухгалтер').lower()} — заявку передано йому", "success")
-            return redirect(url_for("approvals"))
         _apply_payment_account(req, request.form.get("payment_account_id"), g.user, g.roles)
         if action == "pay" and _try_live_link(req, g.user, wf.history_role(req, g.roles, g.user["email"])):
             flash("Контрагента знайдено в 1С і прив'язано автоматично", "success")

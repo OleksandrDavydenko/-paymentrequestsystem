@@ -138,7 +138,7 @@
         {% endfor %}
       </div>
       {{ err('payer') }}
-      <span class="route-hint">{% if req.organization_id %}Організація: {{ org_name(req.organization_id) }}{% else %}Котра саме з наших компаній платить — вкаже бухгалтер{% endif %}</span>
+      {% if req.organization_id %}<span class="route-hint">Організація: {{ org_name(req.organization_id) }}</span>{% endif %}
     </div>
     {% else %}
     <div class="field">
@@ -243,16 +243,6 @@
 
 <form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision">
   <h2>Рішення — {{ ROLES[acting_role] }}</h2>
-  {% if org_inline %}
-  <div class="pay-account-inline">
-    <label for="org-decision"><strong>Організація</strong> — з якої з наших компаній платимо
-      <span class="muted">(обов'язково для погодження; ініціатор вказав: {{ PAYERS.get(payer_value, '—') | lower }})</span></label>
-    <select name="organization_id" id="org-decision" class="pay-account-select">
-      <option value="">— оберіть організацію —</option>
-      {% for code, name in org_choices.items() %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
-    </select>
-  </div>
-  {% endif %}
   {% if account_required %}
   <div class="pay-account-inline">
     <label for="pay-account-decision"><strong>Вид оплати</strong> — з якого рахунку чи каси платимо
@@ -322,22 +312,6 @@
   {% endif %}
   {% endif %}
 </div>
-{% endif %}
-
-{% if can_set_org and not org_inline and (org_mode == 'payer' or not req.organization_id) %}
-<form method="post" action="{{ url_for('request_organization', request_id=req.id) }}" class="card pay-account" id="organization">
-  <div class="section-head">
-    <h2>Організація</h2>
-    <span class="muted">{{ PAYERS.get(payer_value, '') | lower }} · бухгалтер заявки, фіндиректор і адміністратор можуть змінити до оплати</span>
-  </div>
-  <div class="pay-account-row">
-    <select name="organization_id" class="pay-account-select" aria-label="Організація">
-      {% if not req.organization_id %}<option value="">— оберіть організацію —</option>{% endif %}
-      {% for code, name in org_choices.items() %}<option value="{{ code }}" {{ 'selected' if code == req.organization_id }}>{{ name }}</option>{% endfor %}
-    </select>
-    <button type="submit" class="btn btn-sm">Зберегти</button>
-  </div>
-</form>
 {% endif %}
 
 {% if can_see_account and req.id and not account_required %}
