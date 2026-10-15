@@ -33,6 +33,7 @@ import graph
 import mailer
 import notifications
 import secret_box
+import telegram_notify
 import user_prefs
 import user_budget
 import user_directory
@@ -1130,13 +1131,17 @@ def notification_settings(*, context):
             if group not in groups:
                 new_events[code] = prev[code]
         user_prefs.save(email, enabled, new_events)
+        if telegram_notify.enabled() and request.form.get("channel") in user_prefs.CHANNEL_VALUES:
+            user_prefs.set_channel(email, request.form["channel"])
         flash("Налаштування сповіщень збережено", "success")
         return redirect(url_for("notification_settings"))
     allow_custom = app_settings.get("allow_custom_email")
     return render_template("notification_settings.html", user_name=g.user["name"], user_email=email,
                            prefs=user_prefs.get(email), events=events, mail_enabled=notifications.enabled(),
                            allow_custom=allow_custom, delivery=user_prefs.delivery_address(email, allow_custom),
-                           confirm_hours=int(user_prefs.CONFIRM_TTL.total_seconds() // 3600))
+                           confirm_hours=int(user_prefs.CONFIRM_TTL.total_seconds() // 3600),
+                           telegram_on=telegram_notify.enabled(), tg_linked=telegram_notify.is_linked(email),
+                           CHANNELS=telegram_notify.CHANNELS)
 
 
 def _send_address_confirmation(email, alt_email):
@@ -1750,6 +1755,7 @@ def admin_users(*, context):
         SMTP_PRESETS=mailer.PRESETS,
         SMTP_SECURITY=mailer.SECURITY,
         mail_log=list(mailer.LOG)[:20],
+        telegram=telegram_notify.status(),
         APPROVAL_MODES=wf.APPROVAL_MODES,
         budgets={uid: user_budget.get(uid) for uid in users},
         budget_summary=user_budget.summary,
@@ -2154,10 +2160,60 @@ def _start_background():
             threading.Thread(target=_reminder_loop, name="handover-reminders", daemon=True).start()
 
 
+# ---------------------------------------------------------------- API для Telegram-бота (tb_ftp)
+
+def _bot_guard():
+    """Лише для бота: Telegram підключено (TELEGRAM_BOT_KEY) і правильний X-Api-Key."""
+    if not telegram_notify.enabled():
+        abort(404)
+    if not telegram_notify.key_ok(request.headers.get("X-Api-Key")):
+        abort(403)
+
+
+@app.route("/api/telegram/outbox")
+def telegram_outbox():
+    _bot_guard()
+    try:
+        limit = max(1, min(int(request.args.get("limit", 50)), 200))
+    except ValueError:
+        limit = 50
+    return {"messages": telegram_notify.take(limit)}
+
+
+@app.route("/api/telegram/ack", methods=["POST"])
+def telegram_ack():
+    _bot_guard()
+    data = request.get_json(silent=True) or {}
+    return {"accepted": telegram_notify.ack(data.get("results") or [])}
+
+
+@app.route("/api/telegram/linked", methods=["POST"])
+def telegram_linked():
+    _bot_guard()
+    data = request.get_json(silent=True) or {}
+    return {"linked": telegram_notify.set_linked(data.get("emails") or [])}
+
+
+@app.route("/admin/telegram/test", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_telegram_test(*, context):
+    if not telegram_notify.enabled():
+        flash("Telegram-бот не підключено: у налаштуваннях App Service немає TELEGRAM_BOT_KEY", "error")
+    else:
+        telegram_notify.enqueue(g.user["email"], "✅ <b>Тестове повідомлення</b> системи заявок на оплату.\n"
+                                "Якщо ви його бачите — сповіщення в Telegram працюють.", request.host_url)
+        flash("Тестове повідомлення поставлено в чергу — бот забере його протягом ~30 секунд", "success")
+    return redirect(url_for("admin_users") + "#mail-settings")
+
+
 @app.route("/health")
 def health():
     """Стан сайту й бази даних (без персональних даних)."""
-    info = {**db_sql.status(), **filestore.status()}
+    tg = telegram_notify.status()
+    info = {**db_sql.status(), **filestore.status(), "telegram": "on" if tg["enabled"] else "off"}
+    if tg["enabled"]:
+        info["telegram_last_poll"] = tg["last_poll"].isoformat(timespec="seconds") if tg["last_poll"] else None
     return ({"status": "error", **info}, 503) if info.get("error") else {"status": "ok", **info}
 
 

@@ -4,9 +4,11 @@ notify(event, req, actor) викликається після дії в сист
 Листи йдуть, лише якщо адмін увімкнув розсилку і вказав відправника, а одержувач
 не вимкнув цю подію. Самому автору дії листи не надсилаються.
 """
+import html as html_lib
 import logging
 import os
 import time
+from decimal import Decimal
 
 from flask import render_template, url_for
 
@@ -16,6 +18,7 @@ import departments
 import mailer
 import org_structure
 import secret_box
+import telegram_notify
 import user_prefs
 import workflow as wf
 
@@ -123,11 +126,66 @@ def _link(req):
     return base + path if base else url_for("request_card", request_id=req["id"], _external=True)
 
 
+def _money(value):
+    try:
+        return f"{Decimal(value):,.2f}".replace(",", " ").replace(".", ",")
+    except Exception:
+        return str(value or "")
+
+
+def telegram_text(args):
+    """Коротка версія листа для Telegram (HTML-розмітка Telegram)."""
+    esc = html_lib.escape
+    req = args["req"]
+    lines = [f"<b>Заявка № {esc(req['number'])}</b> — {esc(args['headline'])}"]
+    if args.get("event") == "handover_reminder":
+        lines.append(f"Ви отримали готівку {args.get('handover_days', 0)} дн. тому — підтвердіть передачу підряднику.")
+    elif args.get("actor") and args["actor"].get("name"):
+        lines.append(f"Від: {esc(args['actor']['name'])}")
+    cp = counterparties.name(req.get("counterparty_id"))
+    if cp:
+        lines.append(f"Контрагент: {esc(cp)}")
+    lines.append(f"Сума: <b>{_money(req.get('amount'))} {esc(req.get('currency') or '')}</b>")
+    if args.get("status"):
+        lines.append(f"Статус: {esc(args['status'])}")
+    comment = (args.get("comment") or "").strip()
+    if comment:
+        lines.append("💬 " + esc(comment[:500] + ("…" if len(comment) > 500 else "")))
+    return "\n".join(lines)
+
+
 def _send(to, subject, template_args):
-    """to — робоча пошта одержувача; лист іде на підтверджену іншу адресу, якщо адмін це дозволив."""
+    """to — робоча пошта одержувача. Канал — з його налаштувань: пошта, Telegram або обидва.
+    Лист іде на підтверджену іншу адресу, якщо адмін це дозволив."""
     html = render_template("email/notification.html", **template_args)
     address = user_prefs.delivery_address(to, app_settings.get("allow_custom_email"))
-    mailer.enqueue(smtp_config(), address, subject, html)
+    channel = user_prefs.channel(to) if telegram_notify.enabled() else "email"
+    if channel != "email" and telegram_notify.is_linked(to) is False:
+        channel = "email"  # бот людину не знає — одразу листом
+    if channel in ("telegram", "both"):
+        only_telegram = channel == "telegram"
+        telegram_notify.enqueue(to, telegram_text(template_args), template_args.get("link"),
+                                subject if only_telegram else None, html if only_telegram else None)
+    if channel in ("email", "both"):
+        mailer.enqueue(smtp_config(), address, subject, html)
+
+
+def _fallback_mail(row, reason):
+    """Повідомлення не дійшло в Telegram — той самий лист на пошту."""
+    if not enabled():
+        return
+    address = user_prefs.delivery_address(row["email"], app_settings.get("allow_custom_email"))
+    mailer.enqueue(smtp_config(), address, row["subject"], row["html"])
+    mailer.log_problem(f"Telegram → {row['email']}", row["subject"], f"{reason} — надіслано листом")
+
+
+def _telegram_result(email, label, error):
+    if error is None:
+        mailer._log(f"Telegram → {email}", label)
+
+
+telegram_notify.on_fallback = _fallback_mail
+telegram_notify.on_result = _telegram_result
 
 
 def notify(event, req, actor, comment="", target=None):

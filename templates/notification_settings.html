@@ -50,9 +50,27 @@
   </div>
   {% endif %}
 
+  {% if telegram_on %}
+  <div class="notif-channel" id="channel">
+    <div class="budget-section-title" style="margin-top:0">Куди надсилати сповіщення</div>
+    <div class="radio-group">
+      {% for code, label in CHANNELS.items() %}
+      <label><input type="radio" name="channel" value="{{ code }}" {{ 'checked' if prefs.channel == code }}> {{ label }}</label>
+      {% endfor %}
+    </div>
+    <div class="channel-status">
+      {% if tg_linked %}<span class="badge green">✓ Вас знайдено в корпоративному Telegram-боті</span>
+      {% elif tg_linked is none %}<span class="muted">Бот ще не передав список користувачів — спробуйте пізніше.</span>
+      {% else %}<span class="badge amber">Бот вас поки не знає</span>
+        <span class="muted">— увійдіть у корпоративний бот і перевірте, що в картці співробітника в 1С вказано вашу робочу пошту
+          ({{ user_email }}). Доти сповіщення йтимуть листом.</span>{% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <label class="notif-master">
     <input type="checkbox" name="enabled" value="1" id="notif-enabled" {{ 'checked' if prefs.enabled }}>
-    <span><strong>Отримувати листи</strong><span class="muted"> — вимкніть, щоб не отримувати жодних сповіщень</span></span>
+    <span><strong>Отримувати сповіщення</strong><span class="muted"> — вимкніть, щоб не отримувати жодних сповіщень</span></span>
   </label>
 
   <fieldset class="notif-events" id="notif-events" {{ 'disabled' if not prefs.enabled }}>

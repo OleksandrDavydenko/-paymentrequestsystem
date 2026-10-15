@@ -227,6 +227,22 @@
               title="Лист прийде на вашу адресу">✉ Надіслати тестовий лист собі</button>
     </div>
   </form>
+  <div class="tg-admin" id="telegram">
+    <div class="budget-section-title">Telegram-бот</div>
+    {% if telegram.enabled %}
+    <p style="margin:0 0 6px"><span class="badge green">Підключено</span>
+      <span class="muted">бот востаннє забирав повідомлення: {{ telegram.last_poll | dt if telegram.last_poll else 'ще ні (після перезапуску сайту)' }}
+        · у черзі: {{ telegram.counts.get('queued', 0) + telegram.counts.get('taken', 0) }}
+        · надіслано: {{ telegram.counts.get('sent', 0) }}
+        · знайдено в боті: {{ telegram.linked }} людей{% if telegram.linked_updated %} ({{ telegram.linked_updated.replace('T', ' ')[:16] }}){% endif %}</span></p>
+    <form method="post" action="{{ url_for('admin_telegram_test') }}">
+      <button type="submit" class="btn btn-sm">✈ Надіслати тестове повідомлення в Telegram собі</button>
+    </form>
+    {% else %}
+    <p class="muted" style="margin:0">Не підключено. Користувачі зможуть вибрати Telegram у своїх налаштуваннях, коли в App Service
+      з'явиться <code>TELEGRAM_BOT_KEY</code> (той самий секрет, що й <code>PAYREQ_TELEGRAM_KEY</code> у бота на Heroku).</p>
+    {% endif %}
+  </div>
   {% if mail_log %}
   <details class="mail-log">
     <summary>Останні листи ({{ mail_log | length }})</summary>

@@ -791,3 +791,8 @@ a.badge { text-decoration: none; }
 .tl-file { font-size: 13px; background: #eef4fb; color: #0c447c; border-radius: 6px; padding: 3px 9px; text-decoration: none; }
 .tl-file:hover { background: #d6e6f7; }
 .tl-file.is-gone { background: #f3f4f6; color: var(--muted); }
+
+/* Telegram */
+.notif-channel { margin: 0 0 14px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 8px; }
+.channel-status { margin-top: 8px; font-size: 13px; }
+.tg-admin { margin-top: 14px; }

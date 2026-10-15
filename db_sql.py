@@ -82,6 +82,22 @@ lines_t = sa.Table(
     sa.Column("deal", sa.Unicode(500)),
 )
 
+telegram_t = sa.Table(
+    "telegram_outbox", metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("email", sa.Unicode(320), nullable=False),
+    sa.Column("text", sa.UnicodeText, nullable=False),
+    sa.Column("url", sa.Unicode(1000)),
+    sa.Column("subject", sa.Unicode(500)),   # запасний лист, якщо людини немає в боті
+    sa.Column("html", sa.UnicodeText),
+    sa.Column("status", sa.Unicode(20), nullable=False),  # queued / taken / sent / not_found / blocked / failed
+    sa.Column("created_at", sa.DateTime),
+    sa.Column("taken_at", sa.DateTime),
+    sa.Column("done_at", sa.DateTime),
+    sa.Column("error", sa.Unicode(500)),
+)
+sa.Index("ix_telegram_status", telegram_t.c.status)
+
 documents_t = sa.Table(
     "documents", metadata,
     sa.Column("name", sa.Unicode(100), primary_key=True),
@@ -266,3 +282,38 @@ def put_document(name, data):
         c.execute(documents_t.delete().where(documents_t.c.name == name))
         c.execute(documents_t.insert().values(name=name, data=json.dumps(data, ensure_ascii=False),
                                               updated_at=clock.now()))
+
+
+# ---------------------------------------------------------------- черга повідомлень для Telegram-бота
+
+def telegram_add(row):
+    with engine().begin() as c:
+        return c.execute(telegram_t.insert().values(**row)).inserted_primary_key[0]
+
+
+def telegram_take(limit, now, stale_before):
+    """Позначити «взяті» до limit повідомлень: нові й ті, що взяли давно, але не підтвердили. Повертає рядки."""
+    with engine().begin() as c:
+        rows = c.execute(sa.select(telegram_t).where(
+            (telegram_t.c.status == "queued") | ((telegram_t.c.status == "taken") & (telegram_t.c.taken_at < stale_before))
+        ).order_by(telegram_t.c.id).limit(limit)).mappings().all()
+        ids = [r["id"] for r in rows]
+        if ids:
+            c.execute(telegram_t.update().where(telegram_t.c.id.in_(ids)).values(status="taken", taken_at=now))
+    return [dict(r) for r in rows]
+
+
+def telegram_finish(msg_id, status, error, now):
+    """Записати результат від бота; повертає рядок (для запасного листа) або None."""
+    with engine().begin() as c:
+        row = c.execute(sa.select(telegram_t).where(telegram_t.c.id == msg_id)).mappings().first()
+        if not row or row["status"] not in ("queued", "taken"):
+            return None
+        c.execute(telegram_t.update().where(telegram_t.c.id == msg_id).values(status=status, error=error, done_at=now))
+    return dict(row)
+
+
+def telegram_counts():
+    with engine().connect() as c:
+        rows = c.execute(sa.select(telegram_t.c.status, sa.func.count()).group_by(telegram_t.c.status)).all()
+    return {r[0]: r[1] for r in rows}

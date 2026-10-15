@@ -188,6 +188,14 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 Файли з диска переносяться в Blob у фоні після запуску й при першому відкритті (копії на диску лишаються).
 Скачування — лише через сайт і лише тим, хто бачить заявку. `/health` показує `files: blob` або помилку доступу.
 
+## Сповіщення в Telegram (корпоративний бот tb_ftp)
+`telegram_notify.py`. Користувач у «Сповіщеннях» вибирає: Пошта / Telegram / Пошта і Telegram. Бот (Heroku, worker)
+сам забирає повідомлення кожні ~30 с: `GET /api/telegram/outbox`, підтверджує `POST /api/telegram/ack`
+(sent / not_found / blocked / failed), раз на 10 хв передає список знайдених людей `POST /api/telegram/linked`.
+Людину бот знаходить за робочою поштою (`Employees[Email]` у Power BI). Захист — заголовок `X-Api-Key` =
+`TELEGRAM_BOT_KEY` (App Service) = `PAYREQ_TELEGRAM_KEY` (Heroku); без ключа Telegram вимкнено. Черга — таблиця
+`telegram_outbox`. «Лише Telegram», а людини немає в боті / заблокувала бота — запасний лист.
+
 ## Секрети
 - Секрети (`CLIENT_SECRET`, `FLASK_SECRET_KEY`, publish profile) — **лише** в App Service → Environment variables,
   у секретах GitHub і в локальному `.env`. У коді немає значень за замовчуванням для секретів.

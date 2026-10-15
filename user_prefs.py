@@ -66,7 +66,25 @@ def get(email):
     events.update({k: bool(v) for k, v in (saved.get("events") or {}).items() if k in EVENTS})
     return {"enabled": saved.get("enabled", True), "events": events, "updated_at": saved.get("updated_at"),
             "alt_email": saved.get("alt_email") or "", "alt_verified": bool(saved.get("alt_verified")),
-            "alt_sent_at": saved.get("alt_sent_at")}
+            "alt_sent_at": saved.get("alt_sent_at"), "channel": saved.get("channel") or "email"}
+
+
+CHANNEL_VALUES = ("email", "telegram", "both")
+
+
+def channel(email):
+    """Куди надсилати сповіщення: email | telegram | both."""
+    value = get(email)["channel"]
+    return value if value in CHANNEL_VALUES else "email"
+
+
+def set_channel(email, value):
+    if value not in CHANNEL_VALUES:
+        return
+    with _lock:
+        entry = _load().setdefault((email or "").lower(), {})
+        entry["channel"] = value
+        _write()
 
 
 def wants(email, event):
