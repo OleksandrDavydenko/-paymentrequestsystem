@@ -18,6 +18,7 @@ import app_settings
 import clock
 import counterparties
 import currencies
+import rates
 import db_sql
 import departments
 import org_structure
@@ -344,7 +345,7 @@ def inject_roles():
         "roles": roles,
         "ROLES": wf.ROLES,
         "ROLE_SHORT": wf.ROLE_SHORT,
-        "is_approver": bool(_deciding_roles(roles)),
+        "is_approver": bool(_deciding_roles(roles)) or "cfo" in roles,
         "sees_departments": bool(roles & {"dept_head", "dept_viewer"}),
         "participating_count": len(db.list_participating(g.user["email"])) if getattr(g, "user", None) else 0,
         "queue_count": len(db.list_queue(roles)) if roles & wf.APPROVER_ROLES else 0,
@@ -469,8 +470,11 @@ def requests_list(*, context):
 @requires(*wf.APPROVER_ROLES)
 def approvals(*, context):
     refs = ref_filters(request.args)
-    view = "processed" if request.args.get("view") == "processed" else "queue"
-    source = db.list_processed(g.roles) if view == "processed" else db.list_queue(g.roles)
+    view = request.args.get("view") if request.args.get("view") in ("processed", "accountants") else "queue"
+    if view == "accountants" and "cfo" not in g.roles:
+        abort(403)
+    source = {"processed": lambda: db.list_processed(g.roles), "accountants": db.list_at_accountants,
+              "queue": lambda: db.list_queue(g.roles)}[view]()
     return render_template(
         "approvals.html",
         user_name=g.user["name"],
@@ -478,6 +482,8 @@ def approvals(*, context):
         refs=refs,
         view=view,
         processed_entry=lambda r: wf.processed_entry(r, g.roles),
+        accountants_count=len(db.list_at_accountants()) if "cfo" in g.roles else 0,
+        accountant_role=wf.accountant_role,
         ACTIONS=wf.ACTIONS,
     )
 
@@ -578,7 +584,10 @@ def request_card(request_id=None, *, context):
         editable=wf.can_edit(req, roles, user["email"]),
         can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
         actions=[a for a in available if a != "submit"],
-        acting_role=wf.acting_role(req, roles, user["email"]),
+        acting_role=wf.acting_role(req, roles, user["email"]) or (
+            "cfo" if wf.cfo_can_intervene(req, roles, user["email"]) else None),
+        cfo_intervene=wf.cfo_can_intervene(req, roles, user["email"]),
+        accountant_role_of_req=wf.accountant_role(req),
         can_submit="submit" in available,
         stages=wf.stage_states(req),
         ACTIONS=wf.ACTIONS,
@@ -684,8 +693,28 @@ def _route_settings(req):
         "mode": app_settings.get("approval_mode"),
         "head_mode": app_settings.get("dept_head_mode"),
         "heads": [h["email"] for h in org_structure.heads_of(req.get("department")) if h["email"]],
-        "cfo_step": app_settings.get("cfo_mode") != "observe",
+        **_cfo_route(req),
     }
+
+
+def _cfo_route(req):
+    """Чи погоджує фіндиректор цю заявку (режим з адмінки; для «від суми» — еквівалент у USD за останнім курсом 1С)."""
+    mode = app_settings.get("cfo_mode")
+    if mode == "observe":
+        return {"cfo_step": False, "cfo_note": ""}
+    if mode != "threshold":
+        return {"cfo_step": True, "cfo_note": ""}
+    limit = Decimal(str(app_settings.get("cfo_threshold_usd") or 0))
+    usd, day = rates.to_usd(req.get("amount"), req.get("currency"))
+    limit_s = wf.fmt_usd(limit)
+    if usd is None:
+        return {"cfo_step": True, "cfo_note": f"Потрібне погодження фіндиректора: не вдалося перерахувати суму в USD ({day})"}
+    when = f" (курс 1С на {date.fromisoformat(day):%d.%m.%Y})" if day else ""
+    if usd >= limit:
+        return {"cfo_step": True,
+                "cfo_note": f"Потрібне погодження фіндиректора: ≈ {money(usd)} USD — не менше за поріг {limit_s} USD{when}"}
+    return {"cfo_step": False,
+            "cfo_note": f"Фіндиректор не погоджує: ≈ {money(usd)} USD — менше за поріг {limit_s} USD{when}"}
 
 
 @app.route("/requests/<int:request_id>/payment-account", methods=["POST"])
@@ -1269,6 +1298,18 @@ def admin_settings(*, context):
     head_mode = request.form.get("dept_head_mode", app_settings.get("dept_head_mode"))
     cp_mode = request.form.get("pending_cp_payment", app_settings.get("pending_cp_payment"))
     cfo_mode = request.form.get("cfo_mode", app_settings.get("cfo_mode"))
+    if "cfo_threshold_usd" in request.form:
+        try:
+            threshold = int(Decimal((request.form.get("cfo_threshold_usd") or "").replace(" ", "").replace(",", ".")))
+        except (InvalidOperation, ValueError):
+            threshold = 0
+        if threshold <= 0 and cfo_mode == "threshold":
+            flash("Вкажіть поріг фіндиректора — суму в USD, більшу за 0", "error")
+            return redirect(url_for("admin_users") + "#process-settings")
+        if threshold > 0 and threshold != app_settings.get("cfo_threshold_usd"):
+            app_settings.set("cfo_threshold_usd", threshold, g.user["email"])
+            flash(f"Поріг фіндиректора: від {wf.fmt_usd(threshold)} USD", "success")
+            changed = True
     cp_owner = request.form.get("cp_onec_owner", app_settings.get("cp_onec_owner"))
     mode = mode or app_settings.get("approval_mode")  # радіокнопки неактивні, поки фіндиректор спостерігає
     if (mode not in wf.APPROVAL_MODES or head_mode not in wf.HEAD_MODES or cp_mode not in PENDING_CP_MODES
@@ -1281,7 +1322,8 @@ def admin_settings(*, context):
         app_settings.set("approval_mode", mode, g.user["email"])
         app_settings.set("dept_head_mode", head_mode, g.user["email"])
         app_settings.set("cfo_mode", cfo_mode, g.user["email"])
-        flash(f"Маршрут: {wf.route_label(mode, head_mode, cfo_mode)}. Діє для нових і повторно відправлених заявок.",
+        flash(f"Маршрут: {wf.route_label(mode, head_mode, cfo_mode, app_settings.get('cfo_threshold_usd'))}. "
+              "Діє для нових і повторно відправлених заявок.",
               "success")
         changed = True
     org_mode = request.form.get("org_field_mode")
@@ -1621,6 +1663,8 @@ def admin_users(*, context):
         head_mode=app_settings.info("dept_head_mode"),
         HEAD_MODES=wf.HEAD_MODES,
         cfo_mode=app_settings.info("cfo_mode"),
+        cfo_threshold=app_settings.get("cfo_threshold_usd"),
+        rates_status=rates.status(),
         db_on=db_sql.configured(),
         org_mode=app_settings.get("org_field_mode"),
         ORG_FIELD_MODES=wf.ORG_FIELD_MODES,
@@ -1679,7 +1723,8 @@ def admin_expense_refresh(*, context):
         _, _, count = _link_counterparty(pending["id"], target["id"], wf.SYSTEM_USER, "admin")
         flash(f"Контрагента «{pending['name']}» автоматично прив'язано до «{target['name']}» з 1С (заявок: {count})",
               "success")
-    for name, ref in (("організацій", organizations), ("відділів", departments), ("валют", currencies)):
+    for name, ref in (("організацій", organizations), ("відділів", departments), ("валют", currencies),
+                      ("курсів валют", rates)):
         if not ref.refresh():
             flash(f"Не вдалося оновити довідник {name}: " + (ref.status()["error"] or "невідома помилка"), "error")
     if expense_items.refresh():

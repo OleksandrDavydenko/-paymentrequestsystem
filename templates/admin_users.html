@@ -242,7 +242,7 @@
 <form method="post" action="{{ url_for('admin_settings') }}" class="card process-settings" id="process-settings" data-collapsible>
   <div class="toolbar">
     <h2 style="margin:0">Налаштування процесу</h2>
-    <span class="sec-summary muted">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value) }}</span>
+    <span class="sec-summary muted">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value, cfo_threshold) }}</span>
   </div>
   <div class="budget-section-title">Дані</div>
   {% if db_on %}
@@ -279,8 +279,10 @@
     <span>
       <strong>{{ label.split(':')[0] }}</strong>{% if cfo_mode.value == code %}<span class="mode-saved">діє зараз</span>{% endif %}
       <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
-      <span class="mode-hint">{{ 'Погоджує після бухгалтера або одночасно з ним — за порядком нижче.' if code == 'approve'
-        else 'Після погодження бухгалтера заявка одразу йде до оплати. Фіндиректор не отримує заявок на рішення, але бачить «Усі заявки», «До оплати» й «Оплачені» та картку кожної заявки.' }}</span>
+      <span class="mode-hint">{% if code == 'approve' %}Погоджує після бухгалтера або одночасно з ним — за порядком нижче.{% elif code == 'threshold' %}Від
+        <input type="number" name="cfo_threshold_usd" value="{{ cfo_threshold }}" min="1" step="1" style="width:100px" aria-label="Поріг у USD"> USD
+        — еквівалент суми заявки за останнім відомим курсом 1С на момент відправки. Менші заявки після бухгалтера одразу йдуть до оплати; в історії заявки видно, чому.{% else %}Після погодження бухгалтера заявка одразу йде до оплати. Фіндиректор не отримує заявок на рішення.{% endif %}
+        Фіндиректор у будь-якому режимі бачить заявки, що чекають бухгалтерів («На погодження → У бухгалтерів»), і може повернути чи відхилити їх.</span>
     </span>
   </label>
   {% endfor %}
@@ -310,7 +312,7 @@
     </span>
   </label>
   {% endfor %}
-  <div class="route-summary">Маршрут: <strong id="route-summary">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value) }}</strong></div>
+  <div class="route-summary">Маршрут: <strong id="route-summary">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value, cfo_threshold) }}</strong></div>
 
   <div class="budget-section-title">Вид оплати</div>
   <input type="hidden" name="require_payment_account_sent" value="1">
@@ -403,6 +405,7 @@
                                ('Види оплати', payment_types_status, 'з доступами бухгалтерів (UserPaymentTypes): користувачів 1С — ' ~ payment_types_status.users),
                                ('Організації', organizations_status, 'резидент — країна Україна; порожня чи інша країна — нерезидент'),
                                ('Валюти', currencies_status, 'буквений код (Name) — у заявках; UAH, USD, EUR — першими'),
+                               ('Курси валют', rates_status, 'останній відомий курс кожної валюти (за 31 день) — для порогу фіндиректора в USD'),
                                ('Відділи співробітників', departments_status, "окремий довідник оргструктури, не пов'язаний з відділами статей")] %}
     <dt>{{ title }}</dt>
     <dd>{{ SRC.get(st.source, st.source) }} · {{ st.active }}{% if st.count != st.active %} <span class="muted">(+{{ st.count - st.active }} помічених на видалення)</span>{% endif %}

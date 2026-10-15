@@ -17,7 +17,10 @@
         summary.textContent = steps.concat('Бухгалтер', 'Оплата').join(' → ') + ' · фіндиректор спостерігає';
         return;
       }
-      steps.push(...(mode === 'parallel' ? ['Бухгалтер + Фіндиректор (одночасно)'] : ['Бухгалтер', 'Фіндиректор']));
+      const cfoMode = (settings.querySelector('input[name=cfo_mode]:checked') || {}).value;
+      const limit = (settings.querySelector('input[name=cfo_threshold_usd]') || {}).value;
+      const cfo = 'Фіндиректор' + (cfoMode === 'threshold' ? ` (від ${Number(limit || 0).toLocaleString('uk-UA')} USD)` : '');
+      steps.push(...(mode === 'parallel' ? [`Бухгалтер + ${cfo} (одночасно)`] : ['Бухгалтер', cfo]));
       summary.textContent = steps.concat('Оплата').join(' → ');
     });
   }

@@ -26,9 +26,11 @@ def truthy(value):
 
 
 class CachedTable:
-    def __init__(self, key, table_env, default_table, parse, mock, ttl_env=None, ttl_default_minutes=None):
+    def __init__(self, key, table_env, default_table, parse, mock, ttl_env=None, ttl_default_minutes=None, fetch=None):
         """key — для файлу копії; parse(rows) -> список записів; mock() -> записи без Power BI.
-        ttl_env — змінна з власним інтервалом оновлення в хвилинах (інакше PBI_CACHE_MINUTES)."""
+        ttl_env — змінна з власним інтервалом оновлення в хвилинах (інакше PBI_CACHE_MINUTES).
+        fetch(table) -> рядки — власний запит замість усієї таблиці (напр. лише за останній місяць)."""
+        self.fetch = fetch
         self.key, self.table_env, self.default_table, self.ttl_env = key, table_env, default_table, ttl_env
         self.ttl_default_minutes = ttl_default_minutes
         self.parse, self.mock = parse, mock
@@ -70,7 +72,7 @@ class CachedTable:
                 self._state.update(items=self.mock(), loaded_at=time.time(), source="mock", updated=None, error=None)
                 return True
             try:
-                items = self.parse(expense_items.query_table(self.table))
+                items = self.parse(self.fetch(self.table) if self.fetch else expense_items.query_table(self.table))
                 if not items:
                     raise RuntimeError(f"Power BI повернув порожню таблицю «{self.table}» або в ній немає потрібних колонок")
                 updated = clock.now().isoformat(timespec="seconds")

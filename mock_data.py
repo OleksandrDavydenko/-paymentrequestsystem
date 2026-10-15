@@ -362,6 +362,11 @@ def list_queue(roles):
     return sorted(rows, key=lambda r: r["history"][-1]["at"])
 
 
+def list_at_accountants():
+    """Заявки, що чекають рішення бухгалтерів (усіх типів) — для фіндиректора; найдовше чекають — першими."""
+    return sorted((r for r in _reqs().values() if workflow.at_accountants(r)), key=lambda r: r["history"][-1]["at"])
+
+
 def list_all():
     """Усі заявки системи (для адміністратора), нові — першими."""
     return sorted(_reqs().values(), key=lambda r: r["created_at"], reverse=True)

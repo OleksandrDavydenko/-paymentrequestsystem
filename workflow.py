@@ -188,6 +188,7 @@ ACTIONS = {
     "organization": (None, "Організація", "grey", False),
     "handover": (None, "Готівку передано підряднику", "green", False),
     "handover_undo": (None, "Підтвердження передачі скасовано", "purple", True),
+    "cfo_threshold": (None, "Поріг фіндиректора", "grey", False),
 }
 # Записи історії, які бачать лише ті, хто бачить «Вид оплати»
 PAYMENT_ACCOUNT_ACTIONS = {"pay_account"}
@@ -200,6 +201,7 @@ APPROVAL_MODES = {
 # Роль фіндиректора (налаштовується в адмінці, запам'ятовується в заявці при відправці)
 CFO_MODES = {
     "approve": "Погоджує: заявка після бухгалтера (або разом з ним) йде фіндиректору",
+    "threshold": "Погоджує від суми: фіндиректору йдуть лише заявки від порогу в еквіваленті USD, менші погоджує тільки бухгалтер",
     "observe": "Лише спостерігає: погоджує тільки бухгалтер, фіндиректор бачить усі заявки, але не погоджує",
 }
 # Хто заводить у 1С нового контрагента, внесеного ініціатором, і прив'язує його в заявці
@@ -215,13 +217,21 @@ HEAD_MODES = {
 SYSTEM_USER = {"name": "Система", "email": ""}
 
 
-def route_label(mode, head_mode, cfo_mode="approve"):
+def route_label(mode, head_mode, cfo_mode="approve", threshold=None):
     """Підсумок маршруту для адмінки: «Керівник відділу → Бухгалтер → Фіндиректор → Оплата»."""
     steps = ["Керівник відділу"] if head_mode == "approve" else []
     if cfo_mode == "observe":
         return " → ".join(steps + ["Бухгалтер", "Оплата"]) + " · фіндиректор спостерігає"
-    steps += ["Бухгалтер + Фіндиректор (одночасно)"] if mode == "parallel" else ["Бухгалтер", "Фіндиректор"]
+    cfo = "Фіндиректор" + (f" (від {fmt_usd(threshold)} USD)" if cfo_mode == "threshold" else "")
+    steps += [f"Бухгалтер + {cfo} (одночасно)"] if mode == "parallel" else ["Бухгалтер", cfo]
     return " → ".join(steps + ["Оплата"])
+
+
+def fmt_usd(value):
+    try:
+        return f"{int(value):,}".replace(",", " ")
+    except (TypeError, ValueError):
+        return str(value or 0)
 
 
 def has_cfo_step(req):
@@ -541,9 +551,27 @@ def can_attach(req, roles, user_email):
             or acting_role(req, roles, user_email) is not None)
 
 
+def cfo_can_intervene(req, roles, user_email=""):
+    """Фіндиректор як керівник бухгалтерів: повернути або відхилити заявку, що чекає бухгалтера
+    (погоджує все одно бухгалтер). Лише коли сам фіндиректор на цьому етапі не діє іншою роллю."""
+    if "cfo" not in roles or acting_role(req, roles, user_email) is not None:
+        return False
+    if req["status"] == "accountant":
+        return True
+    return req["status"] == "approval" and accountant_role(req) in pending_roles(req)
+
+
+def at_accountants(req):
+    """Заявка чекає рішення бухгалтера (послідовно або паралельно)."""
+    return req["status"] == "accountant" or (req["status"] == "approval" and accountant_role(req) in pending_roles(req))
+
+
+INTERVENE_ACTIONS = ["rework", "reject"]
+
+
 def available_actions(req, roles, user_email):
     if acting_role(req, roles, user_email) is None:
-        return []
+        return list(INTERVENE_ACTIONS) if cfo_can_intervene(req, roles, user_email) else []
     return list(WORKFLOW[req["status"]][1])
 
 
@@ -578,7 +606,7 @@ def history_role(req, roles, user_email):
 
 
 def apply_action(req, action, roles, user, comment="", mode="sequential", head_mode="view", heads=(), guard=None,
-                 cfo_step=True):
+                 cfo_step=True, cfo_note=""):
     """Виконати дію процесу над заявкою (змінює req). Кидає WorkflowError.
 
     mode / head_mode — режим погодження і роль керівника відділу з налаштувань; враховуються
@@ -590,6 +618,8 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
     """
     comment = (comment or "").strip()
     role = acting_role(req, roles, user["email"])
+    if role is None and action in INTERVENE_ACTIONS and cfo_can_intervene(req, roles, user["email"]):
+        role = "cfo"  # фіндиректор повертає / відхиляє заявку, що чекає бухгалтера
     if role is None or action not in WORKFLOW[req["status"]][1]:
         raise WorkflowError("Ця дія недоступна для вашої ролі на поточному етапі")
     if ACTIONS[action][3] and not comment:
@@ -608,6 +638,8 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
     new = WORKFLOW[old][1][action]
     if action == "submit":
         _submit(req, user, comment, mode, head_mode, heads, cfo_step)
+        if cfo_note:  # чому фіндиректор погоджує / не погоджує (поріг у USD)
+            add_history(req, "cfo_threshold", SYSTEM_USER, "cfo", cfo_note, req["status"], req["status"])
         return
     if old == "dept_head" and action == "approve":
         new = _after_head(req)

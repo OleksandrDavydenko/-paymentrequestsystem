@@ -254,7 +254,13 @@
 
 
 <form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision">
+  {% if cfo_intervene %}
+  <h2>Втручання фіндиректора</h2>
+  <p class="muted" style="margin-top:0">Заявка чекає рішення {{ ROLES[accountant_role_of_req] | lower if accountant_role_of_req else 'бухгалтера' }}.
+    Погоджує бухгалтер; ви можете повернути заявку на доопрацювання або відхилити її (коментар обов'язковий).</p>
+  {% else %}
   <h2>Рішення — {{ ROLES[acting_role] }}</h2>
+  {% endif %}
   {% if account_required %}
   <div class="pay-account-inline">
     <label for="pay-account-decision"><strong>Вид оплати</strong> — з якого рахунку чи каси платимо
