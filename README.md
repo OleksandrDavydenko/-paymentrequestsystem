@@ -195,6 +195,8 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 Людину бот знаходить за робочою поштою (`Employees[Email]` у Power BI). Захист — заголовок `X-Api-Key` =
 `TELEGRAM_BOT_KEY` (App Service) = `PAYREQ_TELEGRAM_KEY` (Heroku); без ключа Telegram вимкнено. Черга — таблиця
 `telegram_outbox`. «Лише Telegram», а людини немає в боті / заблокувала бота — запасний лист.
+За замовчуванням у всіх «Пошта і Telegram». У картці користувача (розділ «Telegram») видно, чи знайшов бот людину
+(автоматично за робочою поштою), і адмін може вказати пошту для бота вручну (`user_prefs.telegram_email`).
 
 ## Секрети
 - Секрети (`CLIENT_SECRET`, `FLASK_SECRET_KEY`, publish profile) — **лише** в App Service → Environment variables,

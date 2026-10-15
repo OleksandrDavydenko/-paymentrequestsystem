@@ -166,6 +166,35 @@
     <script type="application/json" id="onec-types">{{ onec_types | tojson }}</script>
   </section>
 
+  <section class="card uc-section" id="uc-telegram">
+    <div class="uc-title"><span class="uc-num">✈</span><h2>Telegram</h2></div>
+    {% if not tg_on %}
+    <p class="uc-explain" style="margin-bottom:0">Telegram-бот ще не підключено (у налаштуваннях сайту немає <code>TELEGRAM_BOT_KEY</code>).</p>
+    {% else %}
+    <p class="uc-explain">Бот знаходить людину за поштою: <strong>автоматично</strong> — за робочою поштою входу
+      ({{ person.email }}), яку бот бере з картки співробітника в 1С (<code>Employees[Email]</code> у Power BI);
+      або за поштою, яку тут вказано <strong>вручну</strong> — якщо в 1С у людини записано іншу адресу.</p>
+    <div class="tg-status">
+      {% if tg_linked %}
+        <span class="badge green">✓ Знайдено в боті</span>
+        <span class="muted">{% if tg_manual %}за поштою, вказаною вручну: {{ tg_manual }}{% else %}автоматично — за робочою поштою {{ person.email }}{% endif %}</span>
+      {% elif tg_linked is none %}
+        <span class="muted">Бот ще не передав список користувачів — статус з'явиться за кілька хвилин.</span>
+      {% else %}
+        <span class="badge amber">Бот не знає цю людину</span>
+        <span class="muted">— за поштою {{ tg_lookup }}. Перевірте, що в 1С у картці співробітника вказано
+          {{ 'цю адресу' if tg_manual else 'робочу пошту ' ~ person.email }}, або вкажіть нижче пошту, з якою людина є в боті.
+          Доти сповіщення йдуть листом.</span>
+      {% endif %}
+    </div>
+    <label for="uc-tg-email" class="uc-sublabel">Пошта в боті (вручну)</label>
+    <input type="email" name="telegram_email" id="uc-tg-email" class="uc-select" value="{{ tg_manual }}"
+           placeholder="{{ person.email }} — автоматично" maxlength="254" autocomplete="off">
+    <p class="uc-explain" style="margin:4px 0 0">Порожньо — автоматично за робочою поштою. Сповіщення людина отримує:
+      <strong>{{ tg_channel }}</strong> (змінює сама в меню «Сповіщення»).</p>
+    {% endif %}
+  </section>
+
   <section class="card uc-section uc-info">
     <div class="uc-title"><span class="uc-num">✉</span><h2>Сповіщення</h2></div>
     <p class="uc-explain" style="margin-bottom:0">Листи надходять на <strong>{{ delivery }}</strong>{{ ' (підтверджена інша адреса)' if delivery != person.email }}.

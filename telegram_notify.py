@@ -72,7 +72,9 @@ def take(limit=50):
             for r in rows:
                 r.update(status="taken", taken_at=now)
             rows = [dict(r) for r in rows]
-    return [{"id": r["id"], "email": r["email"], "text": r["text"], "url": r["url"]} for r in rows]
+    import user_prefs  # пошта для бота: вказана адміном вручну або робоча
+    return [{"id": r["id"], "email": user_prefs.telegram_lookup(r["email"]), "text": r["text"], "url": r["url"]}
+            for r in rows]
 
 
 def ack(results):

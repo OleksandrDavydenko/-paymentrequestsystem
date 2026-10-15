@@ -66,7 +66,8 @@ def get(email):
     events.update({k: bool(v) for k, v in (saved.get("events") or {}).items() if k in EVENTS})
     return {"enabled": saved.get("enabled", True), "events": events, "updated_at": saved.get("updated_at"),
             "alt_email": saved.get("alt_email") or "", "alt_verified": bool(saved.get("alt_verified")),
-            "alt_sent_at": saved.get("alt_sent_at"), "channel": saved.get("channel") or "email"}
+            "alt_sent_at": saved.get("alt_sent_at"), "channel": saved.get("channel") or "both",
+            "telegram_email": saved.get("telegram_email") or ""}
 
 
 CHANNEL_VALUES = ("email", "telegram", "both")
@@ -75,7 +76,31 @@ CHANNEL_VALUES = ("email", "telegram", "both")
 def channel(email):
     """Куди надсилати сповіщення: email | telegram | both."""
     value = get(email)["channel"]
-    return value if value in CHANNEL_VALUES else "email"
+    return value if value in CHANNEL_VALUES else "both"
+
+
+def telegram_lookup(email):
+    """Пошта, за якою бот шукає людину: вказана адміном вручну, інакше — робоча (автоматично, Employees[Email])."""
+    return (get(email)["telegram_email"] or email or "").lower()
+
+
+def set_telegram_email(email, value, updated_by):
+    """Ручна пошта для Telegram-бота (порожньо — автоматично за робочою)."""
+    with _lock:
+        entry = _load().setdefault((email or "").lower(), {})
+        if value:
+            entry["telegram_email"] = value.strip().lower()
+            entry["telegram_email_by"] = updated_by
+        else:
+            entry.pop("telegram_email", None)
+            entry.pop("telegram_email_by", None)
+        _write()
+
+
+def telegram_overrides():
+    """{робоча пошта: ручна пошта для бота} — для списку користувачів в адмінці."""
+    with _lock:
+        return {k: v["telegram_email"] for k, v in _load().items() if v.get("telegram_email")}
 
 
 def set_channel(email, value):

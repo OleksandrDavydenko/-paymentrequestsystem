@@ -160,7 +160,7 @@ def _send(to, subject, template_args):
     html = render_template("email/notification.html", **template_args)
     address = user_prefs.delivery_address(to, app_settings.get("allow_custom_email"))
     channel = user_prefs.channel(to) if telegram_notify.enabled() else "email"
-    if channel != "email" and telegram_notify.is_linked(to) is False:
+    if channel != "email" and telegram_notify.is_linked(user_prefs.telegram_lookup(to)) is False:
         channel = "email"  # бот людину не знає — одразу листом
     if channel in ("telegram", "both"):
         only_telegram = channel == "telegram"

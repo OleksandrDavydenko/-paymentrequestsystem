@@ -51,6 +51,7 @@
           <div class="muted">{{ u.email }}</div>
           {% if alt_addresses.get(u.email | lower) %}<div class="muted alt-addr" title="Користувач підтвердив іншу адресу для сповіщень">✉ листи на: {{ alt_addresses[u.email | lower] }}</div>{% endif %}
           {% if onec_links.get(u.id) %}<div class="muted alt-addr" title="Користувач 1С (для видів оплати)">1С: {{ onec_links[u.id].name }}</div>{% endif %}
+          {% if tg_on and tg_linked(u.email) %}<div class="muted alt-addr" title="Знайдено в Telegram-боті {{ 'за поштою, вказаною вручну' if tg_overrides.get(u.email | lower) else 'автоматично за робочою поштою' }}">✈ Telegram{{ ' (вручну: ' ~ tg_overrides[u.email | lower] ~ ')' if tg_overrides.get(u.email | lower) }}</div>{% endif %}
         </td>
         <td data-label="Ролі">
           <div class="budget-chips">

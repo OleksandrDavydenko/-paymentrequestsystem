@@ -1140,7 +1140,8 @@ def notification_settings(*, context):
                            prefs=user_prefs.get(email), events=events, mail_enabled=notifications.enabled(),
                            allow_custom=allow_custom, delivery=user_prefs.delivery_address(email, allow_custom),
                            confirm_hours=int(user_prefs.CONFIRM_TTL.total_seconds() // 3600),
-                           telegram_on=telegram_notify.enabled(), tg_linked=telegram_notify.is_linked(email),
+                           telegram_on=telegram_notify.enabled(),
+                           tg_linked=telegram_notify.is_linked(user_prefs.telegram_lookup(email)),
                            CHANNELS=telegram_notify.CHANNELS)
 
 
@@ -1751,6 +1752,9 @@ def admin_users(*, context):
                                                 "smtp_port", "smtp_security", "smtp_username",
                                                 "allow_custom_email")},
         alt_addresses=user_prefs.confirmed_addresses() if app_settings.get("allow_custom_email") else {},
+        tg_on=telegram_notify.enabled(),
+        tg_overrides=user_prefs.telegram_overrides(),
+        tg_linked=lambda e: telegram_notify.is_linked(user_prefs.telegram_lookup(e)),
         mail_password=app_settings.info("smtp_password"),
         SMTP_PRESETS=mailer.PRESETS,
         SMTP_SECURITY=mailer.SECURITY,
@@ -1861,6 +1865,11 @@ def admin_user_card(user_id, *, context):
         budget_items=[{"k": i["kind"], "d": i["departments"]} for i in expense_items.get_items()],
         expense_status=expense_items.status(),
         delivery=user_prefs.delivery_address(person["email"], allow_alt),
+        tg_on=telegram_notify.enabled(),
+        tg_manual=user_prefs.get(person["email"])["telegram_email"],
+        tg_lookup=user_prefs.telegram_lookup(person["email"]),
+        tg_linked=telegram_notify.is_linked(user_prefs.telegram_lookup(person["email"])),
+        tg_channel=telegram_notify.CHANNELS.get(user_prefs.channel(person["email"])),
         onec_link=user_onec.get(user_id),
         onec_users=payment_types.onec_users(),
         onec_suggested=None if user_onec.get(user_id) else payment_types.suggest_user(person["name"], person["email"]),
@@ -1868,6 +1877,9 @@ def admin_user_card(user_id, *, context):
                     for u in payment_types.onec_users()},
         is_accountant_or_cfo=bool(set(person["roles"]) & (wf.ACCOUNTANT_ROLES | {"cfo"})),
     )
+
+
+EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
 def _save_user_card(token, person):
@@ -1914,6 +1926,17 @@ def _save_user_card(token, person):
         changes.append("бачить заявки: " + (", ".join(departments.get_name(d) for d in sorted(views)) or "жодного відділу"))
         for code, prev in replaced:
             changes.append(f"у відділі «{departments.get_name(code)}» замінено керівника {prev['name']}")
+
+    # Пошта для Telegram-бота (порожньо — автоматично за робочою)
+    if "telegram_email" in f:
+        tg = (f.get("telegram_email") or "").strip().lower()
+        if tg == email.lower():
+            tg = ""
+        if tg and not EMAIL_RE.match(tg):
+            flash(f"«{tg}» — це не схоже на адресу пошти; пошту для Telegram не змінено", "error")
+        elif tg != (user_prefs.get(email)["telegram_email"] or ""):
+            user_prefs.set_telegram_email(email, tg, who)
+            changes.append(f"пошта для Telegram — {tg}" if tg else "пошта для Telegram — автоматично за робочою")
 
     # Користувач 1С (для «Видів оплати»)
     if "onec_user" in f:
