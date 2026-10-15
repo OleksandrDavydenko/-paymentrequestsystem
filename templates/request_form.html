@@ -425,7 +425,7 @@
       <span class="doc-ext doc-{{ kind }}">{{ f.ext | upper }}</span>
       <div class="doc-main">
         <a class="doc-name" href="{{ url_for('download_file', file_id=f.id) }}" target="_blank" rel="noopener" title="{{ f.name }}">{{ f.name }}</a>
-        <div class="doc-meta">{{ f.size | filesize }} · {{ f.user_name }} · {{ f.at | dt }}</div>
+        <div class="doc-meta">{{ f.size | filesize }} · {{ f.user_name }} · {{ f.at | dt }}{% if f.from_comment %} · <a href="#history">з коментаря</a>{% endif %}</div>
       </div>
       <div class="doc-actions">
         <a class="doc-btn" href="{{ url_for('download_file', file_id=f.id) }}" target="_blank" rel="noopener" title="Відкрити" aria-label="Відкрити {{ f.name }}">
@@ -464,11 +464,18 @@
 </div>
 
 {% if req.id %}
-<form method="post" action="{{ url_for('request_comment', request_id=req.id) }}" class="card comment-form" id="comment">
+<form method="post" action="{{ url_for('request_comment', request_id=req.id) }}" class="card comment-form" id="comment"
+      enctype="multipart/form-data">
   <h2 class="card-title">Коментар</h2>
-  <textarea name="comment" maxlength="2000" required
+  <textarea name="comment" maxlength="2000"
             placeholder="Питання чи уточнення щодо заявки — статус не зміниться, коментар побачать усі учасники">{{ comment_draft }}</textarea>
+  <input type="file" name="files" id="comment-files" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" hidden>
+  <div class="comment-files" id="comment-file-list" hidden></div>
+  <span class="err" id="comment-file-error" hidden></span>
   <div class="comment-actions">
+    <button type="button" class="btn btn-sm comment-attach" id="comment-attach" title="PDF, фото, Word, Excel — до 10 МБ">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5 12.6 19a5 5 0 0 1-7.1-7.1L13 4.4a3.3 3.3 0 0 1 4.7 4.7l-7.4 7.5a1.7 1.7 0 0 1-2.4-2.4L14.6 7"/></svg>
+      Прикріпити файл</button>
     <span class="muted">Видно автору, погоджувачам і адміністратору</span>
     <button type="submit" class="btn btn-primary btn-sm">Надіслати</button>
   </div>
@@ -488,6 +495,14 @@
         {% if h.to_status and h.from_status and h.to_status != h.from_status %}<span class="muted">→ {{ STATUSES[h.to_status][0] }}</span>{% endif %}
       </div>
       {% if h.comment %}<div class="tl-comment">{{ h.comment }}</div>{% endif %}
+      {% if h.files %}
+      <div class="tl-files">
+        {% for fid in h.files %}{% set f = attachments_by_id.get(fid) %}
+        {% if f %}<a class="tl-file" href="{{ url_for('download_file', file_id=f.id) }}" target="_blank" rel="noopener" title="{{ f.size | filesize }}">📎 {{ f.name }}</a>
+        {% else %}<span class="tl-file is-gone">📎 файл видалено</span>{% endif %}
+        {% endfor %}
+      </div>
+      {% endif %}
     </li>
     {% endfor %}
   </ul>

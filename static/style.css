@@ -781,3 +781,13 @@ a.badge { text-decoration: none; }
   .doc-ext { width: 38px; height: 34px; font-size: 10px; }
   .dropzone { padding: 14px; }
 }
+
+/* Файли в коментарях */
+.comment-attach { display: inline-flex; align-items: center; gap: 6px; }
+.comment-attach svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.comment-files { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 0; }
+.comment-files[hidden] { display: none; }
+.tl-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.tl-file { font-size: 13px; background: #eef4fb; color: #0c447c; border-radius: 6px; padding: 3px 9px; text-decoration: none; }
+.tl-file:hover { background: #d6e6f7; }
+.tl-file.is-gone { background: #f3f4f6; color: var(--muted); }

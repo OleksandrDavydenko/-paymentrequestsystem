@@ -483,14 +483,17 @@ def mark_reminded(req, today=None):
     h["last_reminder"] = today or clock.today()
 
 
-def add_comment(req, user, role, text):
-    """Коментар без зміни статусу. Кидає WorkflowError для порожнього / задовгого тексту."""
+def add_comment(req, user, role, text, files=()):
+    """Коментар без зміни статусу; files — id вкладених файлів (тоді текст можна не писати).
+    Кидає WorkflowError для порожнього / задовгого коментаря."""
     text = (text or "").strip()
-    if not text:
-        raise WorkflowError("Напишіть текст коментаря")
+    if not text and not files:
+        raise WorkflowError("Напишіть текст коментаря або прикріпіть файл")
     if len(text) > MAX_COMMENT:
         raise WorkflowError(f"Коментар задовгий (максимум {MAX_COMMENT} символів)")
     add_history(req, "comment", user, role, text, req["status"], req["status"])
+    if files:
+        req["history"][-1]["files"] = list(files)
 
 
 def can_view(req, roles, user_email):

@@ -607,6 +607,7 @@ def request_card(request_id=None, *, context):
         # Учасники, як їх бачить форма: збережені або (після помилки в полях) ті, що користувач уже набрав
         participants_state=_participants_state(req, existing, errors),
         history=wf.visible_history(req, roles),
+        attachments_by_id={a["id"]: a for a in req.get("attachments") or []},
         cp=counterparties.get(req.get("counterparty_id")),
         cp_brief=counterparties.brief(counterparties.get(req["counterparty_id"]))
         if counterparties.get(req.get("counterparty_id")) else None,
@@ -1076,15 +1077,29 @@ def _in_period(value, d_from, d_to):
 @requires()
 def request_comment(request_id, *, context):
     req = _load_visible(request_id)
+    files = [f for f in request.files.getlist("files") if f and f.filename]
+    text = (request.form.get("comment") or "").strip()
+    if not text and not files:
+        flash("Напишіть текст коментаря або прикріпіть файл", "error")
+        return redirect(url_for("request_card", request_id=request_id) + "#comment")
+    if len(text) > wf.MAX_COMMENT:
+        flash(f"Коментар задовгий (максимум {wf.MAX_COMMENT} символів)", "error")
+        session["comment_draft"] = text
+        return redirect(url_for("request_card", request_id=request_id) + "#comment")
+    stored = _store_uploads(req, files, g.user, from_comment=True)
+    if files and not stored and not text:
+        session["comment_draft"] = text
+        return redirect(url_for("request_card", request_id=request_id) + "#comment")
     try:
-        wf.add_comment(req, g.user, wf.history_role(req, g.roles, g.user["email"]), request.form.get("comment"))
+        wf.add_comment(req, g.user, wf.history_role(req, g.roles, g.user["email"]), text, [a["id"] for a in stored])
     except wf.WorkflowError as e:
         flash(str(e), "error")
-        session["comment_draft"] = request.form.get("comment", "")
+        session["comment_draft"] = text
         return redirect(url_for("request_card", request_id=request_id) + "#comment")
     db.save_request(req)
-    notifications.notify("comment", req, g.user)
-    flash("Коментар додано", "success")
+    names = ", ".join(a["name"] for a in stored)
+    notifications.notify("comment", req, g.user, comment=text + (("\n" if text else "") + "📎 " + names if names else ""))
+    flash("Коментар додано" + (f" (файли: {names})" if names else ""), "success")
     return redirect(url_for("request_card", request_id=request_id) + "#history")
 
 
@@ -1965,21 +1980,9 @@ def _ext(filename):
     return filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
 
-@app.route("/requests/<int:request_id>/files", methods=["POST"])
-@auth.login_required
-@requires()
-def upload_files(request_id, *, context):
-    user, roles = g.user, g.roles
-    req = _load_visible(request_id)
-    if not wf.can_attach(req, roles, user["email"]):
-        abort(403)
-    files = [f for f in request.files.getlist("files") if f and f.filename]
-    if not files:
-        flash("Оберіть файл", "error")
-        return redirect(url_for("request_card", request_id=request_id))
-
+def _store_uploads(req, files, user, from_comment=False):
+    """Зберегти файли з форми у сховище й додати до заявки. Повертає додані записи; про відхилені — flash."""
     added = []
-    role = wf.history_role(req, roles, user["email"])
     for f in files:
         ext = _ext(f.filename)
         f.stream.seek(0, os.SEEK_END)
@@ -1998,13 +2001,33 @@ def upload_files(request_id, *, context):
             logging.getLogger(__name__).exception("Не вдалося зберегти файл %s", f.filename)
             flash(f"«{f.filename}»: не вдалося зберегти файл — спробуйте ще раз", "error")
             continue
-        name = os.path.basename(f.filename.replace("\\", "/"))
-        req["attachments"].append({
-            "id": file_id, "name": name, "ext": ext, "size": size, "at": clock.now(),
-            "user_name": user["name"], "user_email": user["email"],
-        })
-        wf.add_history(req, "file_add", user, role, comment=name)
-        added.append(name)
+        att = {"id": file_id, "name": os.path.basename(f.filename.replace("\\", "/")), "ext": ext, "size": size,
+               "at": clock.now(), "user_name": user["name"], "user_email": user["email"]}
+        if from_comment:
+            att["from_comment"] = True
+        req.setdefault("attachments", []).append(att)
+        added.append(att)
+    return added
+
+
+@app.route("/requests/<int:request_id>/files", methods=["POST"])
+@auth.login_required
+@requires()
+def upload_files(request_id, *, context):
+    user, roles = g.user, g.roles
+    req = _load_visible(request_id)
+    if not wf.can_attach(req, roles, user["email"]):
+        abort(403)
+    files = [f for f in request.files.getlist("files") if f and f.filename]
+    if not files:
+        flash("Оберіть файл", "error")
+        return redirect(url_for("request_card", request_id=request_id))
+
+    role = wf.history_role(req, roles, user["email"])
+    added = []
+    for att in _store_uploads(req, files, user):
+        wf.add_history(req, "file_add", user, role, comment=att["name"])
+        added.append(att["name"])
     if added:
         db.save_request(req)
         flash("Додано: " + ", ".join(added), "success")

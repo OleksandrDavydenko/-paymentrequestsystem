@@ -40,3 +40,50 @@
   window.addEventListener('dragover', e => e.preventDefault());
   window.addEventListener('drop', e => { if (!zone.contains(e.target)) e.preventDefault(); });
 })();
+
+// Коментар: прикріпити файли (чипи з можливістю прибрати до відправки)
+(function () {
+  const input = document.getElementById('comment-files');
+  const btn = document.getElementById('comment-attach');
+  if (!input || !btn) return;
+  const list = document.getElementById('comment-file-list');
+  const error = document.getElementById('comment-file-error');
+  const ALLOWED = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+  let picked = [];
+
+  function sync() {
+    const dt = new DataTransfer();
+    picked.forEach(f => dt.items.add(f));
+    input.files = dt.files;
+    list.innerHTML = '';
+    list.hidden = !picked.length;
+    picked.forEach((f, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'pchip';
+      chip.append('📎 ' + f.name);
+      const x = document.createElement('button');
+      x.type = 'button'; x.className = 'pchip-x'; x.textContent = '✕'; x.title = 'Прибрати';
+      x.addEventListener('click', () => { picked.splice(i, 1); sync(); });
+      chip.appendChild(x);
+      list.appendChild(chip);
+    });
+  }
+
+  btn.addEventListener('click', () => input.click());
+  input.addEventListener('change', () => {
+    const problems = [];
+    [...input.files].forEach(f => {
+      const ext = (f.name.split('.').pop() || '').toLowerCase();
+      if (!ALLOWED.includes(ext)) problems.push(`«${f.name}» — недопустимий тип`);
+      else if (f.size > 10 * 1024 * 1024) problems.push(`«${f.name}» — більший за 10 МБ`);
+      else if (!picked.some(p => p.name === f.name && p.size === f.size)) picked.push(f);
+    });
+    error.hidden = !problems.length;
+    error.textContent = problems.join('; ');
+    sync();
+  });
+  input.closest('form').addEventListener('submit', e => {
+    const text = input.closest('form').comment.value.trim();
+    if (!text && !picked.length) { e.preventDefault(); error.hidden = false; error.textContent = 'Напишіть коментар або прикріпіть файл'; }
+  });
+})();
