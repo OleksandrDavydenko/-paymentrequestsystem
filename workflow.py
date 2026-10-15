@@ -570,6 +570,13 @@ def at_accountants(req):
 
 
 INTERVENE_ACTIONS = ["rework", "reject"]
+# Службові записи історії, що йдуть одразу після дії й не змінюють статус (не «остання дія» для сповіщень)
+SYSTEM_NOTES = {"cfo_threshold"}
+
+
+def last_action(req):
+    """Останній запис історії без службових приміток (напр. «Поріг фіндиректора» після відправки)."""
+    return next((h for h in reversed(req.get("history") or []) if h.get("action") not in SYSTEM_NOTES), {})
 
 
 def available_actions(req, roles, user_email):

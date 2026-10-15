@@ -216,7 +216,7 @@ def notify(event, req, actor, comment="", target=None):
 
 def _notify(event, req, actor, comment, target=None):
     actor_email = (actor.get("email") or "").lower()
-    last = (req.get("history") or [{}])[-1]
+    last = wf.last_action(req)  # без службових приміток, інакше «статус не змінився» і погоджувачі без листа
     status_changed = last.get("from_status") != last.get("to_status")
     recipients = {}  # email -> (подія налаштувань, причина, тема)
     skipped = {}     # email -> чому не надсилаємо (для журналу)
