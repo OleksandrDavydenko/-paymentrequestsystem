@@ -746,3 +746,38 @@ a.badge { text-decoration: none; }
 }
 
 .uc-sublabel { display: block; font-weight: 600; margin: 14px 0 6px; }
+
+/* Документи заявки */
+.count-pill { background: #eaeef2; color: var(--muted); border-radius: 999px; padding: 1px 9px; font-size: 12px; font-weight: 600; }
+.doc-list { list-style: none; padding: 0; margin: 0 0 14px; display: grid; gap: 8px; }
+.doc { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.doc:hover { border-color: #b6cde8; background: #fafcff; }
+.doc-ext { flex: none; width: 46px; height: 40px; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+  font-size: 11px; font-weight: 700; letter-spacing: .3px; color: #fff; }
+.doc-pdf { background: #d1453b; } .doc-img { background: #2f9e6f; } .doc-word { background: #2b6cd4; }
+.doc-excel { background: #1f7a45; } .doc-other { background: #8a94a3; }
+.doc-main { flex: 1; min-width: 0; }
+.doc-name { display: block; font-weight: 600; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.doc-name:hover { color: var(--primary); text-decoration: underline; }
+.doc-meta { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.doc-actions { display: flex; gap: 4px; flex: none; }
+.doc-actions form { margin: 0; }
+.doc-btn { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px;
+  border: 1px solid transparent; background: none; color: var(--muted); cursor: pointer; padding: 0; }
+.doc-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.doc-btn:hover { background: #eef4fb; color: var(--primary); border-color: #d6e6f7; }
+.doc-del:hover { background: #fdecea; color: #cf222e; border-color: #f5c2c0; }
+.doc-empty { margin: 0 0 8px; }
+.dropzone { display: flex; align-items: center; gap: 14px; padding: 16px 18px; border: 2px dashed #c8d3e0; border-radius: 10px;
+  background: #f8fafc; cursor: pointer; transition: border-color .15s, background .15s; margin: 0; }
+.dropzone:hover, .dropzone.is-over { border-color: var(--primary); background: #eef5fc; }
+.dropzone.is-busy { cursor: progress; opacity: .8; }
+.dz-icon { width: 30px; height: 30px; flex: none; fill: none; stroke: var(--primary); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.dz-text { display: flex; flex-direction: column; gap: 2px; }
+.dz-text .btn-link { font-weight: 600; color: var(--primary); padding: 0; }
+.dz-hint { font-size: 12px; }
+@media (max-width: 700px) {
+  .doc { padding: 8px 10px; gap: 10px; }
+  .doc-ext { width: 38px; height: 34px; font-size: 10px; }
+  .dropzone { padding: 14px; }
+}

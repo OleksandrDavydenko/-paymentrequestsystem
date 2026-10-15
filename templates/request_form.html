@@ -415,35 +415,51 @@
 <div class="card" id="documents">
   <div class="section-head">
     <h2>Документи</h2>
-    <span class="muted">{{ req.attachments | length if req.attachments else 0 }}</span>
+    {% if req.attachments %}<span class="count-pill">{{ req.attachments | length }}</span>{% endif %}
   </div>
   {% if req.attachments %}
-  <ul class="files">
+  <ul class="doc-list">
     {% for f in req.attachments %}
-    <li>
-      <span class="file-ext">{{ f.ext | upper }}</span>
-      <a href="{{ url_for('download_file', file_id=f.id) }}" target="_blank">{{ f.name }}</a>
-      <span class="muted">{{ f.size | filesize }} · {{ f.user_name }} · {{ f.at | dt }}</span>
-      {% if req.status not in CLOSED_STATUSES and f.user_email | lower == current_email | lower %}
-      <form method="post" action="{{ url_for('delete_file', file_id=f.id) }}" data-msg="Видалити «{{ f.name }}»?" onsubmit="return confirm(this.dataset.msg)">
-        <button type="submit" class="btn-link" title="Видалити">✕</button>
-      </form>
-      {% endif %}
+    {% set kind = 'pdf' if f.ext == 'pdf' else ('img' if f.ext in ('jpg', 'jpeg', 'png') else ('word' if f.ext in ('doc', 'docx') else ('excel' if f.ext in ('xls', 'xlsx') else 'other'))) %}
+    <li class="doc">
+      <span class="doc-ext doc-{{ kind }}">{{ f.ext | upper }}</span>
+      <div class="doc-main">
+        <a class="doc-name" href="{{ url_for('download_file', file_id=f.id) }}" target="_blank" rel="noopener" title="{{ f.name }}">{{ f.name }}</a>
+        <div class="doc-meta">{{ f.size | filesize }} · {{ f.user_name }} · {{ f.at | dt }}</div>
+      </div>
+      <div class="doc-actions">
+        <a class="doc-btn" href="{{ url_for('download_file', file_id=f.id) }}" target="_blank" rel="noopener" title="Відкрити" aria-label="Відкрити {{ f.name }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4h6v6M20 4l-9 9M19 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1h5"/></svg></a>
+        <a class="doc-btn" href="{{ url_for('download_file', file_id=f.id, download=1) }}" title="Скачати" aria-label="Скачати {{ f.name }}">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></a>
+        {% if req.status not in CLOSED_STATUSES and f.user_email | lower == current_email | lower %}
+        <form method="post" action="{{ url_for('delete_file', file_id=f.id) }}" data-msg="Видалити «{{ f.name }}»?" onsubmit="return confirm(this.dataset.msg)">
+          <button type="submit" class="doc-btn doc-del" title="Видалити" aria-label="Видалити {{ f.name }}">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></svg></button>
+        </form>
+        {% endif %}
+      </div>
     </li>
     {% endfor %}
   </ul>
-  {% elif req.id %}
-  <p class="muted">Документів ще немає.</p>
   {% endif %}
 
   {% if not req.id %}
-    <p class="muted">Щоб додати документи, спочатку запишіть заявку.</p>
+    <p class="muted doc-empty">Щоб додати документи, спочатку запишіть заявку.</p>
   {% elif can_attach %}
-  <form method="post" action="{{ url_for('upload_files', request_id=req.id) }}" enctype="multipart/form-data" class="upload">
-    <input type="file" name="files" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx">
-    <button type="submit" class="btn btn-sm">Завантажити</button>
-    <span class="muted">PDF, фото, Word, Excel — до 10 МБ</span>
+  <form method="post" action="{{ url_for('upload_files', request_id=req.id) }}" enctype="multipart/form-data" class="dropzone" id="dropzone">
+    <input type="file" name="files" id="doc-input" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" hidden>
+    <svg class="dz-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 16v3a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3"/></svg>
+    <div class="dz-text">
+      <span class="dz-idle">Перетягніть файли сюди або <button type="button" class="btn-link dz-pick">виберіть на комп'ютері</button></span>
+      <span class="dz-busy" hidden>Завантаження…</span>
+      <span class="muted dz-hint">PDF, фото, Word, Excel — до 10 МБ кожен</span>
+      <span class="err dz-error" hidden></span>
+    </div>
+    <noscript><button type="submit" class="btn btn-sm">Завантажити</button></noscript>
   </form>
+  {% elif not req.attachments %}
+  <p class="muted doc-empty">Документів немає.</p>
   {% endif %}
 </div>
 
@@ -653,4 +669,5 @@ document.querySelectorAll('.cp-copy').forEach(b => b.addEventListener('click', a
 }));
 </script>
 {% if can_manage_participants %}<script src="{{ url_for('static', filename='participants.js') }}"></script>{% endif %}
+<script src="{{ url_for('static', filename='documents.js') }}"></script>
 {% endblock %}

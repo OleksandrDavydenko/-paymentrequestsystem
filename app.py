@@ -1933,6 +1933,28 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 INLINE_EXT = {"pdf", "jpg", "jpeg", "png"}  # відкриваються в браузері, решта — скачуються
 
 
+@app.errorhandler(405)
+def method_not_allowed(e):
+    """Дія з форми (POST), яку перервав повторний вхід: після входу браузер повертається на ту саму адресу вже GET.
+    Замість «Method Not Allowed» — назад на сторінку, звідки була дія, з поясненням."""
+    if request.method != "GET":
+        return e
+    m = re.match(r"^/requests/(\d+)/", request.path)
+    if m:
+        target = url_for("request_card", request_id=int(m.group(1))) + ("#documents" if request.path.endswith("/files") else "")
+    elif request.path.startswith("/to-pay"):
+        target = url_for("to_pay")
+    elif request.path.startswith("/admin"):
+        target = url_for("admin_users")
+    elif request.path.startswith("/settings"):
+        target = url_for("notification_settings")
+    else:
+        target = "/"
+    flash("Сеанс входу оновився, тому дію не виконано" +
+          (" і файл не додано" if request.path.endswith("/files") else "") + " — повторіть її, будь ласка.", "error")
+    return redirect(target)
+
+
 @app.errorhandler(413)
 def too_large(_e):
     flash("Файли завеликі: максимум 10 МБ на файл і 25 МБ за раз", "error")
@@ -2001,7 +2023,7 @@ def download_file(file_id, *, context):
         abort(404)
     mimetype = mimetypes.guess_type(att["name"])[0] or "application/octet-stream"
     return send_file(io.BytesIO(data), mimetype=mimetype, download_name=att["name"],
-                     as_attachment=att["ext"] not in INLINE_EXT)
+                     as_attachment=att["ext"] not in INLINE_EXT or request.args.get("download") == "1")
 
 
 @app.route("/files/<file_id>/delete", methods=["POST"])
