@@ -103,7 +103,7 @@
   {% endif %}
 </div>
 
-<form method="post" class="card" id="request-form" novalidate>
+<form method="post" class="card" id="request-form" novalidate autocomplete="off">
   {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
   <fieldset {{ 'disabled' if not editable }}>
 
@@ -184,7 +184,7 @@
     </div>
     <div class="field">
       <label for="amount">Сума</label>
-      <input type="text" inputmode="decimal" id="amount" name="amount"
+      <input type="text" inputmode="decimal" id="amount" name="amount" autocomplete="off"
              value="{{ req.amount_raw if req.amount_raw is defined else (req.amount if req.amount is not none else '') }}"
              class="{{ 'invalid' if errors.amount }}" placeholder="0,00">
       {{ err('amount') }}
@@ -208,14 +208,14 @@
         {% for line in req.lines %}
         <tr>
           <td class="n">{{ loop.index }}</td>
-          <td><input type="text" name="lines-{{ loop.index0 }}-invoice" value="{{ line.invoice }}"></td>
-          <td><input type="text" inputmode="decimal" name="lines-{{ loop.index0 }}-amount" value="{{ line.amount_raw if line.amount_raw is defined else line.amount }}" style="text-align:right"></td>
+          <td><input type="text" name="lines-{{ loop.index0 }}-invoice" value="{{ line.invoice }}" autocomplete="off"></td>
+          <td><input type="text" inputmode="decimal" autocomplete="off" name="lines-{{ loop.index0 }}-amount" value="{{ line.amount_raw if line.amount_raw is defined else line.amount }}" style="text-align:right"></td>
           <td>
             <select name="lines-{{ loop.index0 }}-currency">
               {% for c in CURRENCIES %}<option {{ 'selected' if c == line.currency }}>{{ c }}</option>{% endfor %}{% if line.currency and line.currency not in CURRENCIES %}<option selected>{{ line.currency }}</option>{% endif %}
             </select>
           </td>
-          <td><input type="text" name="lines-{{ loop.index0 }}-deal" value="{{ line.deal }}"></td>
+          <td><input type="text" name="lines-{{ loop.index0 }}-deal" value="{{ line.deal }}" autocomplete="off"></td>
           <td>{% if editable %}<button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button>{% endif %}</td>
         </tr>
         {% endfor %}
@@ -526,10 +526,10 @@
 <template id="line-template">
   <tr>
     <td class="n"></td>
-    <td><input type="text" data-f="invoice"></td>
-    <td><input type="text" inputmode="decimal" data-f="amount" style="text-align:right"></td>
+    <td><input type="text" data-f="invoice" autocomplete="off"></td>
+    <td><input type="text" inputmode="decimal" data-f="amount" autocomplete="off" style="text-align:right"></td>
     <td><select data-f="currency">{% for c in CURRENCIES %}<option>{{ c }}</option>{% endfor %}</select></td>
-    <td><input type="text" data-f="deal"></td>
+    <td><input type="text" data-f="deal" autocomplete="off"></td>
     <td><button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button></td>
   </tr>
 </template>
