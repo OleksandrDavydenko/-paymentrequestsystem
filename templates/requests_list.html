@@ -9,10 +9,10 @@
 {% set as_paid = view == 'paid' %}
 {% if 'initiator' in roles %}
 <nav class="tabs" aria-label="Розділи">
-  <a href="{{ url_for('requests_list') }}" class="tab {{ 'active' if view == 'mine' }}">Створені мною</a>
-  <a href="{{ url_for('requests_list', view='paid') }}" class="tab {{ 'active' if as_paid }}">Оплачені{% if handover_count %} <span class="count" title="Чекають вашого підтвердження передачі готівки">⏳ {{ handover_count }}</span>{% endif %}</a>
+  <a href="{{ url_for('requests.requests_list') }}" class="tab {{ 'active' if view == 'mine' }}">Створені мною</a>
+  <a href="{{ url_for('requests.requests_list', view='paid') }}" class="tab {{ 'active' if as_paid }}">Оплачені{% if handover_count %} <span class="count" title="Чекають вашого підтвердження передачі готівки">⏳ {{ handover_count }}</span>{% endif %}</a>
   {% if participating_total %}
-  <a href="{{ url_for('requests_list', view='participant') }}" class="tab {{ 'active' if as_participant }}">Я учасник</a>
+  <a href="{{ url_for('requests.requests_list', view='participant') }}" class="tab {{ 'active' if as_participant }}">Я учасник</a>
   {% endif %}
 </nav>
 {% endif %}
@@ -21,7 +21,7 @@
     <h1 style="margin:0">{{ 'Заявки, де я учасник' if as_participant else ('Мої оплачені заявки' if as_paid else 'Мої заявки на оплату') }}</h1>
     <span class="spacer"></span>
     {% if 'initiator' in roles %}
-    <a class="btn btn-primary" href="{{ url_for('request_card') }}">+ Створити заявку</a>
+    <a class="btn btn-primary" href="{{ url_for('requests.request_card') }}">+ Створити заявку</a>
     {% endif %}
   </div>
   {% if as_participant %}
@@ -50,8 +50,8 @@
     <tbody>
       {% for r in requests %}
       {% set st = STATUSES[r.status] %}
-      <tr class="clickable" onclick="location.href='{{ url_for('request_card', request_id=r.id) }}'">
-        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('request_card', request_id=r.id) }}">{{ r.number }}</a></td>
+      <tr class="clickable" onclick="location.href='{{ url_for('requests.request_card', request_id=r.id) }}'">
+        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('requests.request_card', request_id=r.id) }}">{{ r.number }}</a></td>
         {% if as_participant %}<td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>{% endif %}
         <td data-label="Дата заявки" data-sort="{{ r.created_at.isoformat() }}">{{ r.created_at | dt }}</td>
         <td data-label="Дата оплати" data-sort="{{ r.pay_date.isoformat() }}">{{ r.pay_date | d }}</td>
@@ -62,7 +62,7 @@
         {% if as_paid %}
         {% set p = paid_entry(r) %}
         <td data-label="Оплачено" data-sort="{{ p.at.isoformat() if p }}">{% if p %}{{ p.at | d }}<div class="muted">{{ p.user_name }}</div>{% else %}<span class="badge {{ st[1] }}">{{ st[0] }}</span>{% endif %}
-          {% if needs_handover(r) %}<a href="{{ url_for('request_card', request_id=r.id) }}#handover" class="badge amber">⏳ підтвердіть передачу</a>{% endif %}</td>
+          {% if needs_handover(r) %}<a href="{{ url_for('requests.request_card', request_id=r.id) }}#handover" class="badge amber">⏳ підтвердіть передачу</a>{% endif %}</td>
         {% else %}
         <td data-label="Статус"><span class="badge {{ st[1] }}">{{ st[0] }}</span>{% if needs_handover(r) %} <span class="badge amber">⏳ передачу не підтверджено</span>{% endif %}</td>
         {% endif %}

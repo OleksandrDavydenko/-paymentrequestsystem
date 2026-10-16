@@ -30,6 +30,22 @@ copy .env.example .env   # заповнити значення
 
 Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 
+## Структура коду
+- `app.py` — лише створення й налаштування додатку (gunicorn `app:app`).
+- `web/` — сторінки: blueprints `requests_routes.py` (заявки), `lists_routes.py` (погодження, усі заявки, відділ),
+  `payments_routes.py` (оплати), `settings_routes.py` (налаштування сповіщень), `admin_routes.py` (адмінка),
+  `api_routes.py` (бот, `/health`); спільне — `auth.py` (вхід і ролі), `listing.py` (фільтри, періоди, підсумки),
+  `request_helpers.py` (форма заявки, маршрут, документи), `formatting.py`, `context.py`, `errors.py`, `background.py`.
+  Назви маршрутів — з префіксом blueprint: `url_for("requests.request_card", …)`.
+- `workflow.py` — правила процесу; `storage/` — сховище заявок; `db_sql.py` / `db_schema.py` — база;
+  модулі довідників і налаштувань (`app_settings.py`, `organizations.py`, `counterparties.py`…).
+
+## Листи про помилки
+`alerts.py`: необроблена помилка сторінки (користувач бачить «Щось пішло не так») або збій фонової задачі —
+лист адміністраторам (група «Адміністратор» + `ADMIN_EMAILS`) з адресою сторінки, користувачем і технічним описом
+(без даних форм). Та сама помилка — не частіше ніж раз на годину для всіх процесів. Надсилається, коли налаштовано
+SMTP, незалежно від «Розсилка увімкнена»; вимикається в «Email-сповіщення». Записується в журнал сповіщень.
+
 ## Тести
 ```
 .venv\Scripts\pip install -r requirements-dev.txt

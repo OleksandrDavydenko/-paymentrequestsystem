@@ -18,26 +18,26 @@
     <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='logo-mark.svg') }}" alt="" width="28" height="28">Система заявок на оплату</a>
     <nav>
       {% if 'initiator' in roles or participating_count %}
-      <a href="{{ url_for('requests_list') }}" class="{{ 'active' if request.endpoint == 'requests_list' }}">Мої заявки</a>
+      <a href="{{ url_for('requests.requests_list') }}" class="{{ 'active' if request.endpoint == 'requests.requests_list' }}">Мої заявки</a>
       {% endif %}
       {% if is_approver %}
-      <a href="{{ url_for('approvals') }}" class="{{ 'active' if request.endpoint == 'approvals' }}">
+      <a href="{{ url_for('lists.approvals') }}" class="{{ 'active' if request.endpoint == 'lists.approvals' }}">
         На погодження{% if queue_count %} <span class="count">{{ queue_count }}</span>{% endif %}
       </a>
       {% endif %}
       {% if sees_departments %}
-      <a href="{{ url_for('department_requests') }}" class="{{ 'active' if request.endpoint == 'department_requests' }}">Заявки відділу</a>
+      <a href="{{ url_for('lists.department_requests') }}" class="{{ 'active' if request.endpoint == 'lists.department_requests' }}">Заявки відділу</a>
       {% endif %}
       {% if can_see_payments %}
-      <a href="{{ url_for('to_pay') }}" class="{{ 'active' if request.endpoint == 'to_pay' }}">
+      <a href="{{ url_for('payments.to_pay') }}" class="{{ 'active' if request.endpoint == 'payments.to_pay' }}">
         До оплати{% if payments_count %} <span class="count">{{ payments_count }}</span>{% endif %}
       </a>
       {% endif %}
       {% if sees_all_requests %}
-      <a href="{{ url_for('admin_requests') }}" class="{{ 'active' if request.endpoint == 'admin_requests' }}">Усі заявки</a>
+      <a href="{{ url_for('lists.admin_requests') }}" class="{{ 'active' if request.endpoint == 'lists.admin_requests' }}">Усі заявки</a>
       {% endif %}
       {% if 'admin' in roles %}
-      <a href="{{ url_for('admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin_users') }}">Адміністрування</a>
+      <a href="{{ url_for('admin.admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin.admin_users') }}">Адміністрування</a>
       {% endif %}
     </nav>
     {% if user_name %}
@@ -54,7 +54,7 @@
           {% for code, label in ROLES.items() if code in roles %}<li>{{ label }}</li>{% endfor %}
         </ul>
         {% endif %}
-        {% if roles %}<a class="ud-link" href="{{ url_for('notification_settings') }}">✉ Сповіщення на пошту</a>{% endif %}
+        {% if roles %}<a class="ud-link" href="{{ url_for('settings.notification_settings') }}">✉ Сповіщення на пошту</a>{% endif %}
         <a class="btn btn-sm" href="{{ url_for('identity.logout') }}">Вийти</a>
       </div>
     </details>
@@ -63,7 +63,7 @@
   {% if test_mode %}
   <div class="test-banner">Тестовий режим: показано демо-дані, нові заявки й зміни не зберігаються в базі,
     {{ 'email-розсилку вимкнено' if test_mail_muted else 'сповіщення надсилаються з позначкою «[ТЕСТ]»' }}.
-    {% if 'admin' in roles %}<a href="{{ url_for('admin_users') }}#process-settings">Повернутися до робочої бази</a>{% endif %}</div>
+    {% if 'admin' in roles %}<a href="{{ url_for('admin.admin_users') }}#process-settings">Повернутися до робочої бази</a>{% endif %}</div>
   {% endif %}
   <main class="{% block main_class %}{% endblock %}">
     {% with messages = get_flashed_messages(with_categories=true) %}

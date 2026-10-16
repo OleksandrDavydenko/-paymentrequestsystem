@@ -55,7 +55,7 @@
       {% set days = days_waiting(r) %}
       {% set p = paid_entry(r) %}
       <tr class="{{ 'overdue' if days >= overdue_days }}">
-        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('request_card', request_id=r.id) }}#handover">{{ r.number }}</a></td>
+        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('requests.request_card', request_id=r.id) }}#handover">{{ r.number }}</a></td>
         <td data-label="Видано" data-sort="{{ r.handover.since.isoformat() }}">{{ r.handover.since | d }}
           {% if p %}<div class="muted">{{ p.user_name }}</div>{% endif %}</td>
         <td data-label="Днів" class="num" data-sort="{{ '%05d' % days }}"><span class="{{ 'days-late' if days >= overdue_days }}">{{ days }}</span></td>
@@ -67,7 +67,7 @@
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>
         <td data-label="Нагадувань" class="num">{{ r.handover.reminders or 0 }}</td>
         <td data-label="Підтвердити">
-          <form method="post" action="{{ url_for('request_handover', request_id=r.id) }}" class="handover-confirm"
+          <form method="post" action="{{ url_for('requests.request_handover', request_id=r.id) }}" class="handover-confirm"
                 data-msg="Підтвердити за автора, що готівку за заявкою № {{ r.number }} передано підряднику?"
                 onsubmit="return confirm(this.dataset.msg)"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ r.version or 0 }}">
             <input type="hidden" name="next" value="{{ request.full_path }}">

@@ -127,8 +127,8 @@ def enabled():
 
 def _link(req):
     base = os.environ.get("APP_BASE_URL", "").rstrip("/")
-    path = url_for("request_card", request_id=req["id"])
-    return base + path if base else url_for("request_card", request_id=req["id"], _external=True)
+    path = url_for("requests.request_card", request_id=req["id"])
+    return base + path if base else url_for("requests.request_card", request_id=req["id"], _external=True)
 
 
 def _money(value):
@@ -311,8 +311,8 @@ def _notify(event, req, actor, comment, target=None):
             "headline": subject_tail[:1].upper() + subject_tail[1:],
             "reason": reason,
             "link": _link(req) + ("#handover" if handover_ask else ""),
-            "settings_link": (os.environ.get("APP_BASE_URL", "").rstrip("/") + url_for("notification_settings"))
-            if os.environ.get("APP_BASE_URL") else url_for("notification_settings", _external=True),
+            "settings_link": (os.environ.get("APP_BASE_URL", "").rstrip("/") + url_for("settings.notification_settings"))
+            if os.environ.get("APP_BASE_URL") else url_for("settings.notification_settings", _external=True),
         })
     for who, why in skipped.items():
         notify_log.record("-", who, "skipped", f"Заявка № {req['number']}: {notify_log.EVENT_LABELS.get(event, event)}",
@@ -341,8 +341,8 @@ def send_handover_reminder(req, days):
             "headline": "Підтвердіть передачу готівки підряднику",
             "reason": "ви автор заявки й отримали готівку, щоб передати її підряднику",
             "link": _link(req) + "#handover",
-            "settings_link": (os.environ.get("APP_BASE_URL", "").rstrip("/") + url_for("notification_settings"))
-            if os.environ.get("APP_BASE_URL") else url_for("notification_settings", _external=True),
+            "settings_link": (os.environ.get("APP_BASE_URL", "").rstrip("/") + url_for("settings.notification_settings"))
+            if os.environ.get("APP_BASE_URL") else url_for("settings.notification_settings", _external=True),
         })
     except Exception:
         logger.exception("Не вдалося підготувати нагадування про передачу готівки")

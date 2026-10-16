@@ -49,8 +49,8 @@
       {% for r in requests %}
       {% set st = STATUSES[r.status] %}
       {% set vh = visible_history(r) %}{% set last = vh[-1] if vh else r.history[-1] %}
-      <tr class="clickable" onclick="location.href='{{ url_for('request_card', request_id=r.id) }}'">
-        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('request_card', request_id=r.id) }}">{{ r.number }}</a></td>
+      <tr class="clickable" onclick="location.href='{{ url_for('requests.request_card', request_id=r.id) }}'">
+        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('requests.request_card', request_id=r.id) }}">{{ r.number }}</a></td>
         <td data-label="Дата заявки" data-sort="{{ r.created_at.isoformat() }}">{{ r.created_at | dt }}</td>
         <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
         {% if show_org %}<td data-label="Організація">{{ payer_label(r) }}</td>{% endif %}

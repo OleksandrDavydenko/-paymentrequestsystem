@@ -9,7 +9,7 @@
   <div class="toolbar">
     <h1 style="margin:0">Журнал сповіщень</h1>
     <span class="spacer"></span>
-    <a class="btn btn-sm" href="{{ url_for('admin_users') }}#mail-settings">← Налаштування пошти й Telegram</a>
+    <a class="btn btn-sm" href="{{ url_for('admin.admin_users') }}#mail-settings">← Налаштування пошти й Telegram</a>
   </div>
   <p class="muted" style="margin-top:0">Пошта й Telegram: кому, коли й про яку заявку надіслано, з яким результатом.
     «Не надсилалось» — кому система могла б надіслати, але не надіслала, і чому (власна дія, вимкнена подія, порожня група ролі).
@@ -30,7 +30,7 @@
     </select>
     <input type="search" name="q" value="{{ q }}" placeholder="Пошта або № заявки" aria-label="Пошук">
     <button type="submit" class="btn btn-sm">Знайти</button>
-    {% if channel or status or q %}<a class="btn btn-sm reset-filters" href="{{ url_for('admin_notifications') }}">✕ Скинути</a>{% endif %}
+    {% if channel or status or q %}<a class="btn btn-sm reset-filters" href="{{ url_for('admin.admin_notifications') }}">✕ Скинути</a>{% endif %}
   </form>
   <div class="table-wrap">
   <table class="stack sortable" id="notification-log">
@@ -42,7 +42,7 @@
         <td data-label="Час" data-sort="{{ r.at.isoformat() if r.at }}">{{ r.at | dt }}</td>
         <td data-label="Канал">{{ CHANNEL_LABELS.get(r.channel, r.channel) }}</td>
         <td data-label="Кому">{{ r.recipient or '—' }}</td>
-        <td data-label="Заявка">{% if r.request_id %}<a href="{{ url_for('request_card', request_id=r.request_id) }}">{{ r.request_number }}</a>{% else %}—{% endif %}</td>
+        <td data-label="Заявка">{% if r.request_id %}<a href="{{ url_for('requests.request_card', request_id=r.request_id) }}">{{ r.request_number }}</a>{% else %}—{% endif %}</td>
         <td data-label="Подія" title="{{ r.subject }}">{{ EVENT_LABELS.get(r.event, r.subject or r.event or '—') }}</td>
         <td data-label="Результат"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
         <td data-label="Деталі" class="muted">{{ r.detail or '' }}</td>

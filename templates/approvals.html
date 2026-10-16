@@ -6,10 +6,10 @@
 
 {% block content %}
 <nav class="tabs" aria-label="Розділи">
-  <a href="{{ url_for('approvals') }}" class="tab {{ 'active' if view == 'queue' }}">Очікують рішення{% if queue_count %} <span class="count">{{ queue_count }}</span>{% endif %}</a>
-  <a href="{{ url_for('approvals', view='processed') }}" class="tab {{ 'active' if view == 'processed' }}">Опрацьовані</a>
+  <a href="{{ url_for('lists.approvals') }}" class="tab {{ 'active' if view == 'queue' }}">Очікують рішення{% if queue_count %} <span class="count">{{ queue_count }}</span>{% endif %}</a>
+  <a href="{{ url_for('lists.approvals', view='processed') }}" class="tab {{ 'active' if view == 'processed' }}">Опрацьовані</a>
   {% if 'cfo' in roles %}
-  <a href="{{ url_for('approvals', view='accountants') }}" class="tab {{ 'active' if view == 'accountants' }}"
+  <a href="{{ url_for('lists.approvals', view='accountants') }}" class="tab {{ 'active' if view == 'accountants' }}"
      title="Заявки, що чекають рішення бухгалтерів">У бухгалтерів{% if accountants_count %} <span class="count">{{ accountants_count }}</span>{% endif %}</a>
   {% endif %}
 </nav>
@@ -49,8 +49,8 @@
     <tbody>
       {% for r in requests %}
       {% set st = STATUSES[r.status] %}
-      <tr class="clickable" onclick="location.href='{{ url_for('request_card', request_id=r.id) }}'">
-        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('request_card', request_id=r.id) }}">{{ r.number }}</a></td>
+      <tr class="clickable" onclick="location.href='{{ url_for('requests.request_card', request_id=r.id) }}'">
+        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('requests.request_card', request_id=r.id) }}">{{ r.number }}</a></td>
         <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
         <td data-label="Дата оплати" data-sort="{{ r.pay_date.isoformat() }}">{{ r.pay_date | d }}</td>
         {% if show_org %}<td data-label="Організація">{{ payer_label(r) }}</td>{% endif %}

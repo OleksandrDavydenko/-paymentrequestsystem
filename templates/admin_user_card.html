@@ -3,7 +3,7 @@
 {% block title %}{{ person.name }} — картка користувача{% endblock %}
 
 {% block content %}
-<a class="back-link" href="{{ url_for('admin_users') }}">← Користувачі та ролі</a>
+<a class="back-link" href="{{ url_for('admin.admin_users') }}">← Користувачі та ролі</a>
 
 <form method="post" id="user-card" class="user-card"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="card uc-head">
@@ -203,7 +203,7 @@
 
   <div class="uc-actions">
     <button type="submit" class="btn btn-primary">Зберегти</button>
-    <a class="btn" href="{{ url_for('admin_users') }}">Скасувати</a>
+    <a class="btn" href="{{ url_for('admin.admin_users') }}">Скасувати</a>
     <span class="muted" id="uc-dirty" hidden>Є незбережені зміни</span>
   </div>
 </form>

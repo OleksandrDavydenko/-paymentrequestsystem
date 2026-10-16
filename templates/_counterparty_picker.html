@@ -5,7 +5,7 @@
   <label for="cp-input">Контрагент</label>
   {% if editable %}
   <div class="exp-picker cp-picker {{ 'invalid' if errors.counterparty_id }}" id="cp-picker"
-       data-initial-name="{{ cp.name if cp else '' }}" data-search-url="{{ url_for('counterparties_search') }}">
+       data-initial-name="{{ cp.name if cp else '' }}" data-search-url="{{ url_for('requests.counterparties_search') }}">
     <input type="hidden" name="counterparty_id" id="counterparty_id" value="{{ req.counterparty_id or '' }}">
     <div class="exp-input-wrap">
       <input type="text" id="cp-input" autocomplete="off" spellcheck="false"
@@ -101,6 +101,6 @@
   </div>
 </dialog>
 <script type="application/json" id="cp-initial">{{ cp_brief | tojson }}</script>
-<script>window.CP_NEW_URL = {{ url_for('counterparty_new') | tojson }};</script>
+<script>window.CP_NEW_URL = {{ url_for('requests.counterparty_new') | tojson }};</script>
 <script src="{{ url_for('static', filename='counterparty-picker.js') }}"></script>
 {% endif %}
