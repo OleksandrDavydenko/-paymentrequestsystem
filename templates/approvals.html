@@ -18,9 +18,9 @@
     <h1 style="margin:0">{{ "Опрацьовані мною" if view == "processed" else ("На погодженні в бухгалтерів" if view == "accountants" else "На погодження") }}</h1>
     <span class="muted">{% for code, label in ROLES.items() if code in roles and code not in ('admin', 'initiator') %}{{ label }}{{ ' · ' if not loop.last }}{% endfor %}</span>
   </div>
-  <form method="get" class="filters filters-row">
+  <form method="get" class="fbar-form">
     {% if view != 'queue' %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
-    {% include "_ref_filters.html" %}
+    {% include "_filter_bar.html" %}
   </form>
 
   <div class="table-wrap">
@@ -67,7 +67,7 @@
         {% endif %}
       </tr>
       {% else %}
-      <tr><td colspan="10" class="empty">{{ "Нічого не знайдено за вибраними фільтрами" if refs.org or refs.cp or refs.exp else ("Ви ще не ухвалили жодного рішення" if view == "processed" else ("Бухгалтери все опрацювали" if view == "accountants" else "Немає заявок, що чекають на ваше рішення")) }}</td></tr>
+      <tr><td colspan="10" class="empty">{{ "Нічого не знайдено за вибраними фільтрами" if fbar.chips else ("Ви ще не ухвалили жодного рішення" if view == "processed" else ("Бухгалтери все опрацювали" if view == "accountants" else "Немає заявок, що чекають на ваше рішення")) }}</td></tr>
       {% endfor %}
     </tbody>
   </table>

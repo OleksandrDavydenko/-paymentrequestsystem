@@ -5,8 +5,8 @@
   <div class="toolbar" style="margin-bottom:12px">
     <h1 style="margin:0">Готівка не підтверджена</h1>
     <span class="spacer"></span>
-    <div class="filters">{% include "_ref_filters.html" %}</div>
   </div>
+  {% include "_filter_bar.html" %}
   {% set period_label = 'Дата видачі' %}
   {% set hide_overdue = true %}
   {% include "_period.html" %}

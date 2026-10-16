@@ -27,17 +27,9 @@
   {% if as_participant %}
   <p class="muted" style="margin-top:0">Заявки колег, до яких вас додали учасником: ви бачите їх, можете коментувати й додавати файли, листи про їхній рух надходять вам так само, як автору.</p>
   {% endif %}
-  <form method="get" class="filters filters-row">
+  <form method="get" class="fbar-form">
     {% if as_participant or as_paid %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
-    {% if not as_paid %}
-    <select name="status" onchange="this.form.submit()" aria-label="Статус" class="{{ 'is-active' if status_filter }}">
-      <option value="">Усі статуси</option>
-      {% for code, (label, _) in STATUSES.items() if as_participant or code != 'paid' %}
-      <option value="{{ code }}" {{ 'selected' if code == status_filter }}>{{ label }}</option>
-      {% endfor %}
-    </select>
-    {% endif %}
-    {% include "_ref_filters.html" %}
+    {% include "_filter_bar.html" %}
   </form>
 
   <div class="table-wrap">

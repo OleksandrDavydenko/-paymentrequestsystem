@@ -86,29 +86,18 @@ def inject_refs():
     return {
         "ORGANIZATIONS": organizations.names(),
         "ORG_OPTIONS": organizations.options(),
-        "ORG_FILTER": organizations.filter_options(),
         "org_name": organizations.name,
         "cp_name": counterparties.name,
         "cp_pending": counterparties.is_pending,
-        # Фільтр «Контрагент»: ті, кого можна вибрати (без уже прив'язаних тимчасових)
-        # Фільтр «Контрагент»: лише ті, що трапляються в заявках (у довіднику — десятки тисяч)
-        "cp_filter_options": lambda: dict(sorted(counterparties.used_names(
-            {r.get("counterparty_id") for r in db.list_all()}).items(), key=lambda kv: kv[1].lower())),
         "pay_account_label": payment_accounts.label,
         "expense_name": expense_label,
         "expense_title": expense_items.get_name,
-        # Фільтр «Стаття витрат»: лише статті, що трапляються в заявках
-        "exp_options": lambda: sorted({r["expense_code"] for r in db.list_all() if r.get("expense_code")},
-                                      key=lambda c: expense_label(c).lower()),
         "CURRENCIES": currencies.codes(),
         "CURRENCY_NAMES": currencies.full_names(),
         "PAYMENT_FORMS": db.PAYMENT_FORMS,
         "CHANNELS": wf.CHANNELS,
         "channel_of": wf.channel_of,
         "dept_name": departments.get_name,
-        # Фільтр «Відділ»: лише відділи, що трапляються в заявках
-        "dep_options": lambda: sorted({r["department"] for r in db.list_all() if r.get("department")},
-                                      key=lambda c: departments.get_name(c).lower()),
         "STATUSES": db.STATUSES,
         "needs_handover": wf.needs_handover,
         "payer_label": payer_label,
@@ -139,14 +128,6 @@ def _parse_code(raw, allowed):
     """Рядковий код довідника (напр. організації з 1С) або None, якщо такого немає."""
     code = (raw or "").strip()
     return code if code and code in allowed else None
-
-
-def _parse_ref(raw, ref):
-    try:
-        key = int(raw)
-    except (TypeError, ValueError):
-        return None
-    return key if key in ref else None
 
 
 def expense_label(code):
@@ -400,29 +381,127 @@ def _load_visible(request_id):
 
 # ---------------------------------------------------------------- фільтри списків
 
-REF_FILTERS = {  # параметр запиту -> (поле заявки, довідник)
-    "org": ("organization_id", None),  # код організації (рядок)
-    "cp": ("counterparty_id", None),  # id контрагента (рядок)
-    "exp": ("expense_code", None),  # код статті витрат (рядок)
-    "dep": ("department", None),  # код відділу автора (рядок)
-}
+# ---------------------------------------------------------------- панель фільтрів (пошук + кнопки з вибором кількох)
+
+def _facet_getters():
+    """ключ параметра -> (назва, функція заявка -> (значення, підпис))."""
+    return {
+        "status": ("Статус", lambda r: (r["status"], wf.STATUSES.get(r["status"], (r["status"],))[0])),
+        "form": ("Форма оплати", lambda r: (wf.channel_of(r), wf.CHANNELS.get(wf.channel_of(r), "—"))),
+        "org": ("Організація", lambda r: (r.get("organization_id"), organizations.name(r.get("organization_id")))),
+        "cp": ("Контрагент", lambda r: (r.get("counterparty_id"), counterparties.name(r.get("counterparty_id")))),
+        "exp": ("Стаття витрат", lambda r: (r.get("expense_code"), expense_label(r.get("expense_code")))),
+        "dep": ("Відділ", lambda r: (r.get("department"), departments.get_name(r.get("department")))),
+        "acc": ("Вид оплати", lambda r: (r.get("payment_account_id") or "none",
+                                         payment_accounts.label(r["payment_account_id"]) if r.get("payment_account_id")
+                                         else "Не вибрано")),
+        "payorg": ("Платимо з", lambda r: ((pay_org(r) or {}).get("code") or "none",
+                                           (pay_org(r) or {}).get("name") or "Не визначено")),
+    }
 
 
-def ref_filters(args):
-    """Вибрані значення фільтрів довідників: {"org": 1, "cp": None, "exp": "01.001"}."""
-    selected = {key: _parse_ref(args.get(key), ref() if callable(ref) else ref)
-                for key, (_, ref) in REF_FILTERS.items() if ref is not None}
-    selected["exp"] = (args.get("exp") or "").strip() or None
-    selected["org"] = _parse_code(args.get("org"), set(organizations.names()))
-    cp = (args.get("cp") or "").strip()
-    selected["cp"] = cp if cp and counterparties.get(cp) else None  # невідомий id — фільтр ігнорується
-    selected["dep"] = (args.get("dep") or "").strip() or None
-    return selected
+def facet_selection(args, keys):
+    """Вибрані значення: {"cp": ["1", "4"], ...} — кожен параметр може повторюватися (?cp=1&cp=4)."""
+    return {k: [v.strip() for v in args.getlist(k) if v and v.strip()] for k in keys}
 
 
-def apply_ref_filters(rows, selected):
-    return [r for r in rows
-            if all(not value or r.get(REF_FILTERS[key][0]) == value for key, value in selected.items())]
+def _fval(getter, r):
+    value = getter(r)[0]
+    return "" if value is None else str(value)
+
+
+def apply_facets(rows, selected, skip=None):
+    getters = _facet_getters()
+    active = [(getters[k][1], set(v)) for k, v in selected.items() if v and k != skip]
+    return [r for r in rows if all(_fval(g_, r) in vals for g_, vals in active)]
+
+
+def search_rows(rows, q):
+    """Пошук одним рядком: усі слова мають знайтися серед № заявки, автора, контрагента (і ЄДРПОУ), статті,
+    відділу, організації, примітки, суми."""
+    words = [w for w in (q or "").lower().split() if w]
+    if not words:
+        return rows
+    out = []
+    for r in rows:
+        cp = counterparties.get(r.get("counterparty_id")) or {}
+        amount = r.get("amount")
+        hay = " ".join(str(x or "") for x in (
+            r.get("number"), r.get("author_name"), r.get("author_email"), cp.get("name"), cp.get("edrpou"),
+            expense_label(r.get("expense_code")), departments.get_name(r.get("department")),
+            organizations.name(r.get("organization_id")) if r.get("organization_id") else "", r.get("note"),
+            amount, money(amount) if amount is not None else "", money(amount).replace(" ", "") if amount is not None else "",
+        )).lower()
+        if all(w in hay for w in words):
+            out.append(r)
+    return out
+
+
+def url_without(key, value=None):
+    """Поточна адреса без одного значення фільтра (або без усього параметра)."""
+    args = request.args.to_dict(flat=False)
+    if value is None:
+        args.pop(key, None)
+    else:
+        args[key] = [v for v in args.get(key, []) if v != value]
+    return url_for(request.endpoint, **{k: v for k, v in args.items() if v})
+
+
+def filter_bar(base_rows, rows, selected, keys, q):
+    """Дані для _filter_bar.html: кнопки-фільтри з варіантами й кількістю, активні чипи, підсумок."""
+    getters = _facet_getters()
+    facets = []
+    chips = []
+    for key in keys:
+        title, getter = getters[key]
+        counts, labels = {}, {}
+        for r in apply_facets(base_rows, selected, skip=key):
+            value, label = _fval(getter, r), getter(r)[1]
+            if not value:
+                continue
+            counts[value] = counts.get(value, 0) + 1
+            labels[value] = label or value
+        chosen = selected.get(key) or []
+        for v in chosen:
+            labels.setdefault(v, v)
+            counts.setdefault(v, 0)
+        if not labels:
+            continue
+        order = list(wf.STATUSES) if key == "status" else None
+        opts = sorted(labels, key=lambda v: (order.index(v) if order and v in order else 0,
+                                             v in ("none",), str(labels[v]).lower()))
+        facets.append({"key": key, "title": title, "selected": chosen,
+                       "options": [{"value": v, "label": labels[v], "count": counts[v], "checked": v in chosen}
+                                   for v in opts]})
+        chips += [{"label": f"{title}: {labels[v]}", "url": url_without(key, v)} for v in chosen]
+    if q:
+        chips.insert(0, {"label": f"Пошук: «{q}»", "url": url_without("q")})
+    keep = {k: v for k, v in request.args.to_dict(flat=False).items() if k in ("view", "date_field")}
+    sums = {}
+    for r in rows:
+        sums[r["currency"]] = sums.get(r["currency"], Decimal(0)) + r["amount"]
+    return {"q": q, "facets": facets, "chips": chips, "count": len(rows),
+            "sums": sorted(sums.items(), key=lambda kv: _currency_order(kv[0])),
+            "active": sum(len(f["selected"]) for f in facets), "reset_url": url_for(request.endpoint, **keep)}
+
+
+def _filtered(source, keys):
+    """Пошук + фільтри для сторінки: (рядки, дані панелі)."""
+    q = (request.args.get("q") or "").strip()
+    base = search_rows(source, q)
+    selected = facet_selection(request.args, keys)
+    rows = apply_facets(base, selected)
+    return rows, filter_bar(base, rows, selected, keys, q)
+
+
+def _ref_keys(show_dep=True, extra_before=(), extra_after=()):
+    keys = list(extra_before)
+    if app_settings.get("org_field_mode") != "accountant":
+        keys.append("org")
+    keys += ["cp", "exp"]
+    if show_dep:
+        keys.append("dep")
+    return keys + list(extra_after)
 
 
 # ---------------------------------------------------------------- маршрути
@@ -445,8 +524,6 @@ def _home_redirect(*, context):
 @auth.login_required
 @requires()
 def requests_list(*, context):
-    status = request.args.get("status") if request.args.get("status") in db.STATUSES else ""
-    refs = ref_filters(request.args)
     participating = db.list_participating(g.user["email"])
     view = request.args.get("view") if request.args.get("view") in ("participant", "paid") else "mine"
     if "initiator" not in g.roles:
@@ -454,23 +531,22 @@ def requests_list(*, context):
     if view == "participant" and not participating and "initiator" not in g.roles:
         return redirect(_home())
     if view == "participant":
-        source = [r for r in participating if not status or r["status"] == status]
+        source = participating
     elif view == "paid":  # оплачені — окремою вкладкою, найсвіжіша оплата першою
         source = sorted(db.list_requests(g.user["email"], "paid"),
                         key=lambda r: (wf.paid_entry(r) or {}).get("at") or r["created_at"], reverse=True)
     else:  # «Створені мною» — заявки в роботі, без оплачених
-        source = [r for r in db.list_requests(g.user["email"], status or None) if r["status"] != "paid"]
+        source = [r for r in db.list_requests(g.user["email"]) if r["status"] != "paid"]
+    rows, fbar = _filtered(source, _ref_keys(show_dep=False, extra_before=() if view == "paid" else ("status",)))
     return render_template(
         "requests_list.html",
         user_name=g.user["name"],
-        requests=apply_ref_filters(source, refs),
-        status_filter=status,
-        refs=refs,
+        requests=rows,
+        fbar=fbar,
         view=view,
         participating_total=len(participating),
         handover_count=sum(1 for r in db.list_requests(g.user["email"], "paid") if wf.needs_handover(r)),
         paid_entry=wf.paid_entry,
-        show_dep_filter=False,
     )
 
 
@@ -478,17 +554,17 @@ def requests_list(*, context):
 @auth.login_required
 @requires(*wf.APPROVER_ROLES)
 def approvals(*, context):
-    refs = ref_filters(request.args)
     view = request.args.get("view") if request.args.get("view") in ("processed", "accountants") else "queue"
     if view == "accountants" and "cfo" not in g.roles:
         abort(403)
     source = {"processed": lambda: db.list_processed(g.roles), "accountants": db.list_at_accountants,
               "queue": lambda: db.list_queue(g.roles)}[view]()
+    rows, fbar = _filtered(source, _ref_keys(extra_before=("form",)))
     return render_template(
         "approvals.html",
         user_name=g.user["name"],
-        requests=apply_ref_filters(source, refs),
-        refs=refs,
+        requests=rows,
+        fbar=fbar,
         view=view,
         processed_entry=lambda r: wf.processed_entry(r, g.roles),
         accountants_count=len(db.list_at_accountants()) if "cfo" in g.roles else 0,
@@ -1452,8 +1528,6 @@ def to_pay(*, context):
     if view == "handover":
         return _handover_view(handover_rows, today)
     all_rows = db.list_paid(roles) if view == "paid" else db.list_to_pay(roles)
-    form_filter = request.args.get("form") if request.args.get("form") in wf.CHANNELS else ""
-    refs = ref_filters(request.args)
     period, d_from, d_to = _date_filter(request.args, today)
 
     def period_date(r):
@@ -1461,13 +1535,8 @@ def to_pay(*, context):
         entry = wf.paid_entry(r) if view == "paid" else None
         return entry["at"].date() if entry else r["pay_date"]
 
-    acc_filter = request.args.get("acc", "")
-    payorg_filter = request.args.get("payorg", "")
-    rows = [r for r in apply_ref_filters(all_rows, refs)
-            if (not form_filter or wf.channel_of(r) == form_filter)
-            and (not acc_filter or str(r.get("payment_account_id") or "none") == acc_filter)
-            and (not payorg_filter or ((pay_org(r) or {}).get("code") or "none") == payorg_filter)
-            and _in_period(period_date(r), d_from, d_to)]
+    rows, fbar = _filtered([r for r in all_rows if _in_period(period_date(r), d_from, d_to)],
+                           _ref_keys(extra_before=("form", "acc", "payorg")))
     account_totals, org_totals = {}, {}
     for r in rows:
         key = payment_accounts.label(r.get("payment_account_id")) if r.get("payment_account_id") else "Не вибрано"
@@ -1481,14 +1550,10 @@ def to_pay(*, context):
     return render_template(
         "to_pay.html",
         **_handover_tab(handover_rows),
-        acc_filter=acc_filter,
-        account_options=sorted({r.get("payment_account_id") for r in all_rows if r.get("payment_account_id")},
-                               key=lambda a: payment_accounts.label(a).lower()),
+        fbar=fbar,
         has_rows=bool(all_rows),
         account_totals=sorted(account_totals.items()),
         org_totals=sorted(org_totals.items(), key=lambda kv: (kv[0] == "Не визначено", kv[0].lower())),
-        payorg_filter=payorg_filter,
-        payorg_options=_payorg_options(all_rows),
         blocked=blocked,
         no_account=no_account,
         pending_cp_mode=app_settings.get("pending_cp_payment"),
@@ -1499,14 +1564,10 @@ def to_pay(*, context):
         totals=currency_totals(rows, today),
         plan=payment_plan(rows),
         today=today,
-        form_filter=form_filter,
-        refs=refs,
         period=period,
         d_from=d_from,
         d_to=d_to,
         presets=date_presets(today),
-        # Фільтр за формою оплати має сенс, якщо видно більше однієї форми
-        visible_forms=[f for f in wf.CHANNELS if any(wf.channel_of(r) == f for r in all_rows)],
         payable={r["id"] for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
                  and r["id"] not in blocked and r["id"] not in no_account},
         # Мої заявки до оплати, які зараз не можна оплатити, — з причиною
@@ -1515,12 +1576,6 @@ def to_pay(*, context):
                 for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
                 and (r["id"] in blocked or r["id"] in no_account)},
     )
-
-
-def _payorg_options(rows):
-    """Організації-платники, що трапляються в рядках: [(код, назва)] за назвою."""
-    seen = {o["code"]: o["name"] for o in (pay_org(r) for r in rows) if o}
-    return sorted(seen.items(), key=lambda kv: kv[1].lower())
 
 
 def _handover_rows(roles):
@@ -1538,9 +1593,8 @@ def _handover_tab(rows):
 
 
 def _handover_view(all_rows, today):
-    refs = ref_filters(request.args)
     period, d_from, d_to = _date_filter(request.args, today)
-    rows = [r for r in apply_ref_filters(all_rows, refs) if _in_period(r["handover"]["since"], d_from, d_to)]
+    rows, fbar = _filtered([r for r in all_rows if _in_period(r["handover"]["since"], d_from, d_to)], _ref_keys())
     by_author = {}
     for r in rows:
         a = by_author.setdefault(r["author_email"].lower(), {"name": r["author_name"], "count": 0, "sums": {}})
@@ -1556,12 +1610,12 @@ def _handover_view(all_rows, today):
         view="handover",
         user_name=g.user["name"],
         requests=rows,
+        fbar=fbar,
         by_author=sorted(by_author.values(), key=lambda a: a["name"].lower()),
         days_waiting=lambda r: wf.handover_days(r, today),
         overdue_days=remind_days or 1,
         max_reminders=wf.HANDOVER_MAX_REMINDERS,
         today=today,
-        refs=refs,
         period=period,
         d_from=d_from,
         d_to=d_to,
@@ -1591,29 +1645,12 @@ def department_requests(*, context):
 def _requests_overview(source, title, table_id, **extra):
     today = clock.today()
     args = request.args
-    status = args.get("status") if args.get("status") in wf.STATUSES else ""
-    form_filter = args.get("form") if args.get("form") in wf.CHANNELS else ""
-    refs = ref_filters(args)
     date_field = "pay" if args.get("date_field") == "pay" else "created"
     period, d_from, d_to = _date_filter(args, today)
-    q = (args.get("q") or "").strip().lower()
-
-    def matches(r):
-        if status and r["status"] != status:
-            return False
-        if form_filter and wf.channel_of(r) != form_filter:
-            return False
-        value = r["pay_date"] if date_field == "pay" else r["created_at"].date()
-        if not _in_period(value, d_from, d_to):
-            return False
-        if q:
-            haystack = " ".join([r["number"], r["author_name"], r["author_email"], r.get("note") or "",
-                                 counterparties.name(r.get("counterparty_id")),
-                                 departments.get_name(r.get("department"))]).lower()
-            return q in haystack
-        return True
-
-    rows = [r for r in apply_ref_filters(source, refs) if matches(r)]
+    in_period = [r for r in source
+                 if _in_period(r["pay_date"] if date_field == "pay" else r["created_at"].date(), d_from, d_to)]
+    rows, fbar = _filtered(in_period, _ref_keys(show_dep=extra.get("show_dep_filter", True),
+                                                extra_before=("status", "form")))
     return render_template(
         "admin_requests.html",
         title=title,
@@ -1623,14 +1660,11 @@ def _requests_overview(source, title, table_id, **extra):
         requests=rows,
         totals=currency_totals(rows, today),
         today=today,
-        status_filter=status,
-        form_filter=form_filter,
-        refs=refs,
+        fbar=fbar,
         date_field=date_field,
         period=period,
         d_from=d_from,
         d_to=d_to,
-        q=args.get("q", ""),
         presets=date_presets(today),
         ACTIONS=wf.ACTIONS,
     )

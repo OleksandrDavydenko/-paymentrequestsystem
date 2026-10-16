@@ -1,0 +1,51 @@
+{# Панель фільтрів: пошук одним рядком + кнопки-фільтри з пошуком і вибором кількох значень + активні чипи.
+   Вставляється всередину GET-форми сторінки. Очікує fbar = filter_bar(...) з app.py. #}
+<div class="fbar" data-fbar>
+  <div class="fbar-row">
+    <label class="fbar-search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M20 20l-3.5-3.5"/></svg>
+      <input type="search" name="q" value="{{ fbar.q }}" autocomplete="off" data-fbar-q
+             placeholder="Пошук: № заявки, контрагент, ЄДРПОУ, примітка, сума…" aria-label="Пошук заявок">
+    </label>
+    {% if fbar.facets %}
+    <button type="button" class="btn btn-sm fbar-toggle" data-fbar-toggle aria-expanded="false">
+      Фільтри{% if fbar.active %} <span class="fbar-badge">{{ fbar.active }}</span>{% endif %}</button>
+    {% endif %}
+  </div>
+  {% if fbar.facets %}
+  <div class="fbar-facets" data-fbar-facets>
+    {% for f in fbar.facets %}
+    <details class="fpop {{ 'is-active' if f.selected }}" data-key="{{ f.key }}">
+      <summary>{{ f.title }}{% if f.selected %} · {{ f.selected | length }}{% endif %}
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg></summary>
+      <div class="fpop-panel">
+        {% if f.options | length > 7 %}
+        <input type="search" class="fpop-search" placeholder="Пошук…" autocomplete="off" aria-label="Пошук: {{ f.title }}">
+        <div class="fpop-found muted" hidden></div>
+        {% endif %}
+        <div class="fpop-list">
+          {% for o in f.options %}
+          <label class="fpop-opt" data-label="{{ o.label | lower }}" data-value="{{ o.value }}">
+            <input type="checkbox" name="{{ f.key }}" value="{{ o.value }}" {{ 'checked' if o.checked }}>
+            <span class="fpop-text">{{ o.label }}</span><span class="fpop-n">{{ o.count }}</span>
+          </label>
+          {% endfor %}
+        </div>
+        <div class="fpop-actions">
+          <button type="submit" class="btn btn-primary btn-sm">Застосувати</button>
+          <button type="button" class="btn btn-sm" data-fpop-clear>Очистити</button>
+        </div>
+      </div>
+    </details>
+    {% endfor %}
+  </div>
+  {% endif %}
+  {% if fbar.chips %}
+  <div class="fbar-chips">
+    {% for c in fbar.chips %}<a class="fchip" href="{{ c.url }}" title="Прибрати фільтр">{{ c.label }} <span aria-hidden="true">✕</span></a>{% endfor %}
+    <a class="fchip-reset" href="{{ fbar.reset_url }}">Скинути все</a>
+  </div>
+  {% endif %}
+  <div class="fbar-found">Знайдено {{ fbar.count }} {{ 'заявку' if fbar.count % 10 == 1 and fbar.count % 100 != 11 else ('заявки' if fbar.count % 10 in (2, 3, 4) and fbar.count % 100 not in (12, 13, 14) else 'заявок') }}{% for cur, v in fbar.sums %}{{ ' · ' if loop.first else ' + ' }}{{ v | money }} {{ cur }}{% endfor %}</div>
+</div>
+<script src="{{ url_for('static', filename='filter-bar.js') }}" defer></script>
