@@ -4,6 +4,10 @@
 зашифрованим (secret_box). Листи ставляться в чергу й надсилаються у фоновому потоці,
 щоб дії в системі не чекали пошти. Токен Microsoft Graph (app_token) потрібен лише
 для читання складу груп ролей — щоб знати, кому з погоджувачів надіслати лист.
+
+З базою черга — таблиця mail_outbox: лист не губиться при перезапуску сайту, кожен лист надсилає рівно
+один процес, а налаштування SMTP (з паролем) у черзі не зберігаються — їх бере config_provider
+у момент відправки.
 """
 import logging
 import os
@@ -12,13 +16,16 @@ import smtplib
 import socket
 import ssl
 import threading
+import time
 from collections import deque
+from datetime import timedelta
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
 import msal
 
 import clock
+import db_sql
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +43,10 @@ _app = None
 _queue = queue.Queue()
 _worker = None
 _worker_lock = threading.Lock()
+_wake = threading.Event()
 LOG = deque(maxlen=50)  # останні листи: {at, to, subject, ok, error}
+config_provider = None   # () -> налаштування SMTP; задає notifications (для черги в базі)
+STALE_AFTER = timedelta(minutes=10)  # лист «узяв» процес, що зупинився, — через 10 хв його візьме інший
 
 
 class MailError(Exception):
@@ -153,16 +163,59 @@ def _run():
             _queue.task_done()
 
 
-def enqueue(cfg, to, subject, html, meta=None):
-    """Поставити лист у чергу (надсилається у фоні). meta — для журналу сповіщень (заявка, подія)."""
+def process_outbox(limit=20):
+    """Надіслати листи з черги в базі, які ще ніхто не надсилає. Повертає кількість спроб."""
+    n = 0
+    while True:
+        now = clock.now()
+        rows = db_sql.mail_take(limit, now, now - STALE_AFTER)
+        if not rows:
+            return n
+        cfg = config_provider() if config_provider else {}
+        for r in rows:
+            error = deliver(cfg, r["to_addr"], r["subject"], r["html"], db_sql.loads(r["meta"]) if r["meta"] else None)
+            db_sql.mail_finish(r["id"], "failed" if error else "sent", error, clock.now())
+            n += 1
+
+
+def _run_outbox():
+    while True:
+        _wake.wait(timeout=30)  # лист з цього процесу — одразу; з інших процесів і після перезапуску — до 30 с
+        _wake.clear()
+        try:
+            process_outbox()
+        except Exception:
+            logger.exception("Помилка відправки черги листів")
+
+
+def start_worker():
+    """Запустити фонову відправку (раз на процес)."""
     global _worker
     with _worker_lock:
         if _worker is None or not _worker.is_alive():
-            _worker = threading.Thread(target=_run, name="mailer", daemon=True)
+            target = _run_outbox if db_sql.configured() else _run
+            _worker = threading.Thread(target=target, name="mailer", daemon=True)
             _worker.start()
+
+
+def enqueue(cfg, to, subject, html, meta=None):
+    """Поставити лист у чергу (надсилається у фоні). meta — для журналу сповіщень (заявка, подія)."""
+    start_worker()
+    if db_sql.configured():
+        db_sql.mail_add({"to_addr": to, "subject": subject[:500], "html": html, "status": "queued",
+                         "meta": db_sql.dumps(meta) if meta else None, "created_at": clock.now()})
+        _wake.set()
+        return
     _queue.put((cfg, to, subject, html, meta))
 
 
-def wait():
+def wait(timeout=30):
     """Дочекатися відправки всієї черги (для тестів)."""
+    if db_sql.configured():
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            process_outbox()
+            if not db_sql.mail_pending():
+                break
+            time.sleep(0.05)
     _queue.join()

@@ -149,3 +149,7 @@ def status():
     data = _linked()
     return {"enabled": enabled(), "last_poll": _state["last_poll"], "linked": len(data.get("emails") or []),
             "linked_updated": data.get("updated_at"), "counts": counts() if enabled() else {}}
+
+
+# Інший процес сайту оновив список — перечитати (docstore.sync)
+docstore.register("telegram_linked", lambda: _state.update(linked=None))

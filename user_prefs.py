@@ -198,3 +198,7 @@ def clear_alt(email):
         for k in ("alt_email", "alt_verified", "alt_token_hash", "alt_sent_at"):
             entry.pop(k, None)
         _write()
+
+
+# Інший процес сайту змінив документ — перечитати (docstore.sync)
+docstore.register("user_prefs", reload)

@@ -46,7 +46,7 @@ def _env(tmp):
 
 # Сценарії, які працюють лише зі сховищем у пам'яті: самі підключають свою базу або перевіряють
 # JSON-файли налаштувань (з базою налаштування зберігаються в ній)
-MEMORY_ONLY = {"db_test", "storage_equiv_test", "stage10_test", "stage11_test", "stage12_test", "stage15_test"}
+MEMORY_ONLY = {"db_test", "storage_equiv_test", "multiprocess_test", "stage10_test", "stage11_test", "stage12_test", "stage15_test"}
 CASES = [pytest.param(s, mode, id=f"{s.stem}-{mode}") for s in SCRIPTS for mode in ("memory", "sql")
          if mode == "memory" or s.stem not in MEMORY_ONLY]
 

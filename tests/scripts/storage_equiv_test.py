@@ -95,6 +95,15 @@ for field, key in (("created", "created_at"), ("pay", "pay_date"), ("paid", "pai
         period_ok &= exact == hinted and set(hinted) <= {r["id"] for r in dbs.scope_rows(scope, roles, "od@ftpua.com")}
 check("period hint in SQL is exact", period_ok)
 
+# «Опрацьовані» за датою рішення
+decided_ok = True
+for roles_ in ({"acc_resident"}, {"cfo"}, {"acc_cash", "dept_head"}):
+    roles = RoleSet(roles_, head_departments=("BA",))
+    want = [id_map[r["id"]] for r in mem.scope_rows("processed", roles, "") if r["sort_at"].date() >= d_from]
+    got = [r["id"] for r in dbs.scope_rows("processed", roles, "", period=("decided", d_from, None))]
+    decided_ok &= want == got
+check("processed: decision-date window in SQL is exact", decided_ok)
+
 # ---------- reindex не змінює результат, а після зміни похідних колонок — відновлює
 import sqlalchemy as sa, db_sql
 with db_sql.engine().begin() as c:

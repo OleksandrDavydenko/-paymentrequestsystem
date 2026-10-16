@@ -123,7 +123,10 @@ def start_migration():
     """Один раз після запуску — у фоні, щоб не затримувати сайт."""
     if _migration["started"] or not configured():
         return
-    _migration["started"] = True
+    with _lock:  # кілька потоків обробляють запити одночасно — запускаємо рівно один раз
+        if _migration["started"]:
+            return
+        _migration["started"] = True
 
     def run():
         try:

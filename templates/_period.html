@@ -1,9 +1,16 @@
 {# Фільтр періоду: швидкі чипи + поля «з / по». Очікує presets, period, d_from, d_to.
+   recent_default — архівний список: за замовчуванням останні 12 місяців, «За весь час» — ?period=all.
    Поля from/to мають бути всередині батьківської GET-форми. #}
 <div class="period">
   <div class="chips">
+    {% if recent_default %}
+    {% if period == 'all' %}<input type="hidden" name="period" value="all">{% endif %}
+    <a class="chip {{ 'active' if period == 'all' }}"
+       href="{{ url_with({'period': 'all', 'from': None, 'to': None}) }}">За весь час</a>
+    {% else %}
     <a class="chip {{ 'active' if not period and not d_from and not d_to }}"
        href="{{ url_with({'period': None, 'from': None, 'to': None}) }}">Усі</a>
+    {% endif %}
     {% for code, (label, _, _) in presets.items() if not (code == 'overdue' and hide_overdue) %}
     <a class="chip {{ 'active' if period == code }} {{ 'chip-red' if code == 'overdue' }}"
        href="{{ url_with({'period': code, 'from': None, 'to': None}) }}">{{ label }}</a>

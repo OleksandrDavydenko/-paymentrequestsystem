@@ -19,7 +19,7 @@
   request_seq          — видача номерів нових заявок (унікальні навіть для кількох процесів);
   schema_meta          — службові значення (версія похідних колонок, зсув нумерації);
   documents            — налаштування й довідники системи (те, що раніше лежало в JSON-файлах у /home/data).
-Нові колонки й індекси додаються до наявних таблиць автоматично (storage/schema.py).
+Нові колонки й індекси додаються до наявних таблиць автоматично (db_schema.py).
 """
 import json
 import logging
@@ -188,7 +188,39 @@ documents_t = sa.Table(
     sa.Column("name", sa.Unicode(100), primary_key=True),
     sa.Column("data", sa.UnicodeText, nullable=False),
     sa.Column("updated_at", sa.DateTime),
+    sa.Column("version", sa.Integer, nullable=False, server_default=sa.text("0")),  # лічильник змін документа
 )
+
+mail_t = sa.Table(
+    "mail_outbox", metadata,   # черга листів: не губиться при перезапуску, кожен лист надсилає один процес
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("to_addr", sa.Unicode(320), nullable=False),
+    sa.Column("subject", sa.Unicode(500), nullable=False),
+    sa.Column("html", sa.UnicodeText, nullable=False),
+    sa.Column("meta", sa.UnicodeText),                        # для журналу сповіщень (JSON)
+    sa.Column("status", sa.Unicode(20), nullable=False),      # queued / taken / sent / failed
+    sa.Column("created_at", sa.DateTime),
+    sa.Column("taken_at", sa.DateTime),
+    sa.Column("done_at", sa.DateTime),
+    sa.Column("error", sa.Unicode(1000)),
+)
+sa.Index("ix_mail_status", mail_t.c.status, mail_t.c.id)
+
+lease_t = sa.Table(
+    "job_lease", metadata,     # фонові задачі: виконує той процес, що взяв «оренду»
+    sa.Column("name", sa.Unicode(100), primary_key=True),
+    sa.Column("owner", sa.Unicode(100)),
+    sa.Column("until", sa.DateTime),
+    sa.Column("last_run", sa.DateTime),
+)
+
+sessions_t = sa.Table(
+    "web_sessions", metadata,  # сеанси входу (спільні для всіх процесів сайту)
+    sa.Column("id", sa.Unicode(255), primary_key=True),
+    sa.Column("data", sa.LargeBinary, nullable=False),
+    sa.Column("expires_at", sa.DateTime, nullable=False),
+)
+sa.Index("ix_sessions_expires", sessions_t.c.expires_at)
 
 
 def configured():
@@ -248,7 +280,8 @@ def engine():
                 else:
                     eng = sa.create_engine("mssql+pyodbc://", creator=_azure_connect, future=True,
                                            pool_pre_ping=True, pool_recycle=1800, fast_executemany=False)
-                metadata.create_all(eng)
+                import db_schema  # таблиці, нові колонки й індекси (див. db_schema.py)
+                db_schema.upgrade(eng)
                 _engine = eng
     return _engine
 
@@ -325,12 +358,48 @@ def get_document(name):
     return None if text is None else json.loads(text)
 
 
-def put_document(name, data):
+def get_document_v(name):
+    """(вміст, версія) або (None, None), якщо документа ще немає."""
+    with engine().connect() as c:
+        row = c.execute(sa.select(documents_t.c.data, documents_t.c.version).where(documents_t.c.name == name)).first()
+    return (None, None) if row is None else (json.loads(row.data), row.version)
+
+
+def put_document_v(name, data, expected):
+    """Записати документ, якщо його версія в базі = expected (None — документа ще немає).
+    Повертає (успіх, версія в базі після спроби)."""
     import clock
-    with engine().begin() as c:
-        c.execute(documents_t.delete().where(documents_t.c.name == name))
-        c.execute(documents_t.insert().values(name=name, data=json.dumps(data, ensure_ascii=False),
-                                              updated_at=clock.now()))
+    text = json.dumps(data, ensure_ascii=False)
+    t = documents_t
+    try:
+        with engine().begin() as c:
+            if expected is None:
+                current = c.execute(sa.select(t.c.version).where(t.c.name == name)).scalar()
+                if current is not None:
+                    return False, current
+                c.execute(t.insert().values(name=name, data=text, version=1, updated_at=clock.now()))
+                return True, 1
+            done = c.execute(t.update().where(t.c.name == name, t.c.version == expected)
+                             .values(data=text, version=expected + 1, updated_at=clock.now())).rowcount == 1
+            if done:
+                return True, expected + 1
+            return False, c.execute(sa.select(t.c.version).where(t.c.name == name)).scalar()
+    except sa.exc.IntegrityError:  # інший процес щойно створив цей документ
+        return False, None
+
+
+def put_document(name, data):
+    """Записати документ без перевірки версії (перенесення з файлу, тести)."""
+    for _ in range(5):
+        _, version = get_document_v(name)
+        if put_document_v(name, data, version)[0]:
+            return
+
+
+def document_versions():
+    """{назва: версія} усіх документів — для docstore.sync (один маленький запит)."""
+    with engine().connect() as c:
+        return {r.name: r.version for r in c.execute(sa.select(documents_t.c.name, documents_t.c.version))}
 
 
 # ---------------------------------------------------------------- черга повідомлень для Telegram-бота
@@ -340,16 +409,24 @@ def telegram_add(row):
         return c.execute(telegram_t.insert().values(**row)).inserted_primary_key[0]
 
 
+def _take(table, limit, now, stale_before):
+    """Забрати до limit рядків черги: нові й ті, що взяли давно, але не завершили. Кожен рядок забирає
+    рівно один процес (умовне оновлення рядка за рядком). Повертає забрані рядки."""
+    free = (table.c.status == "queued") | ((table.c.status == "taken") & (table.c.taken_at < stale_before))
+    with engine().connect() as c:
+        ids = list(c.execute(sa.select(table.c.id).where(free).order_by(table.c.id).limit(limit)).scalars())
+    taken = []
+    for msg_id in ids:
+        with engine().begin() as c:
+            if c.execute(table.update().where(table.c.id == msg_id, free)
+                         .values(status="taken", taken_at=now)).rowcount == 1:
+                taken.append(dict(c.execute(sa.select(table).where(table.c.id == msg_id)).mappings().one()))
+    return taken
+
+
 def telegram_take(limit, now, stale_before):
     """Позначити «взяті» до limit повідомлень: нові й ті, що взяли давно, але не підтвердили. Повертає рядки."""
-    with engine().begin() as c:
-        rows = c.execute(sa.select(telegram_t).where(
-            (telegram_t.c.status == "queued") | ((telegram_t.c.status == "taken") & (telegram_t.c.taken_at < stale_before))
-        ).order_by(telegram_t.c.id).limit(limit)).mappings().all()
-        ids = [r["id"] for r in rows]
-        if ids:
-            c.execute(telegram_t.update().where(telegram_t.c.id.in_(ids)).values(status="taken", taken_at=now))
-    return [dict(r) for r in rows]
+    return _take(telegram_t, limit, now, stale_before)
 
 
 def telegram_finish(msg_id, status, error, now):
@@ -366,6 +443,92 @@ def telegram_counts():
     with engine().connect() as c:
         rows = c.execute(sa.select(telegram_t.c.status, sa.func.count()).group_by(telegram_t.c.status)).all()
     return {r[0]: r[1] for r in rows}
+
+
+# ---------------------------------------------------------------- черга листів
+
+def mail_add(row):
+    with engine().begin() as c:
+        return c.execute(mail_t.insert().values(**row)).inserted_primary_key[0]
+
+
+def mail_take(limit, now, stale_before):
+    return _take(mail_t, limit, now, stale_before)
+
+
+def mail_finish(msg_id, status, error, now):
+    with engine().begin() as c:
+        c.execute(mail_t.update().where(mail_t.c.id == msg_id)
+                  .values(status=status, error=(error or None) and error[:1000], done_at=now))
+
+
+def mail_pending():
+    with engine().connect() as c:
+        return c.execute(sa.select(sa.func.count()).select_from(mail_t)
+                         .where(mail_t.c.status.in_(["queued", "taken"]))).scalar() or 0
+
+
+def mail_cleanup(before):
+    """Прибрати надіслані й невдалі листи, старші за before (журнал сповіщень лишається). Повертає кількість."""
+    with engine().begin() as c:
+        return c.execute(mail_t.delete().where(mail_t.c.status.in_(["sent", "failed"]),
+                                               mail_t.c.created_at < before)).rowcount
+
+
+# ---------------------------------------------------------------- фонові задачі: «оренда»
+
+def lease_acquire(name, owner, now, until):
+    """Взяти задачу name до часу until, якщо її зараз ніхто не тримає. True — виконує цей процес."""
+    t = lease_t
+    with engine().begin() as c:
+        if c.execute(t.update().where(t.c.name == name, (t.c.until == None) | (t.c.until < now))  # noqa: E711
+                     .values(owner=owner, until=until, last_run=now)).rowcount == 1:
+            return True
+        if c.execute(sa.select(t.c.name).where(t.c.name == name)).first() is not None:
+            return False
+    try:
+        with engine().begin() as c:
+            c.execute(t.insert().values(name=name, owner=owner, until=until, last_run=now))
+        return True
+    except sa.exc.IntegrityError:  # інший процес щойно взяв
+        return False
+
+
+def lease_info():
+    with engine().connect() as c:
+        return {r.name: {"owner": r.owner, "until": r.until, "last_run": r.last_run}
+                for r in c.execute(sa.select(lease_t))}
+
+
+# ---------------------------------------------------------------- сеанси входу
+
+def session_get(sid, now):
+    with engine().connect() as c:
+        return c.execute(sa.select(sessions_t.c.data)
+                         .where(sessions_t.c.id == sid, sessions_t.c.expires_at > now)).scalar()
+
+
+def session_set(sid, data, expires_at):
+    t = sessions_t
+    with engine().begin() as c:
+        if c.execute(t.update().where(t.c.id == sid).values(data=data, expires_at=expires_at)).rowcount == 1:
+            return
+    try:
+        with engine().begin() as c:
+            c.execute(t.insert().values(id=sid, data=data, expires_at=expires_at))
+    except sa.exc.IntegrityError:  # той самий сеанс щойно записав інший запит
+        with engine().begin() as c:
+            c.execute(t.update().where(t.c.id == sid).values(data=data, expires_at=expires_at))
+
+
+def session_delete(sid):
+    with engine().begin() as c:
+        c.execute(sessions_t.delete().where(sessions_t.c.id == sid))
+
+
+def session_cleanup(now):
+    with engine().begin() as c:
+        return c.execute(sessions_t.delete().where(sessions_t.c.expires_at <= now)).rowcount
 
 
 # ---------------------------------------------------------------- журнал сповіщень

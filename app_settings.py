@@ -86,3 +86,7 @@ def set(key, value, updated_by):
         _load()[key] = {"value": value, "updated_by": updated_by,
                         "updated_at": clock.now().isoformat(timespec="seconds")}
         docstore.write("app_settings", _path(), _data)
+
+
+# Інший процес сайту змінив документ — перечитати (docstore.sync)
+docstore.register("app_settings", reload)

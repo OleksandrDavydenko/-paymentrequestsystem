@@ -29,6 +29,17 @@ jobs:
       - name: Run tests
         run: python -m pytest -n auto -q
 
+      # Та сама команда запуску, що й в App Service: gunicorn має підхопити gunicorn.conf.py (потоки)
+      - name: Smoke test with gunicorn
+        run: |
+          CLIENT_ID=x TENANT_ID=x CLIENT_SECRET=x FLASK_SECRET_KEY=x REDIRECT_URI=http://localhost/getAToken \
+            gunicorn --bind=127.0.0.1:8000 --timeout 600 app:app --daemon --pid /tmp/gunicorn.pid --error-logfile /tmp/gunicorn.log
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/health > /tmp/health.json && break; sleep 1; done
+          cat /tmp/health.json; echo
+          grep -q '"status":"ok"' /tmp/health.json
+          grep -q "Using worker: gthread" /tmp/gunicorn.log
+          kill "$(cat /tmp/gunicorn.pid)"
+
       # Залежності встановить сам App Service (SCM_DO_BUILD_DURING_DEPLOYMENT=true)
       - name: Deploy
         uses: azure/webapps-deploy@v3

@@ -117,6 +117,9 @@ def smtp_config():
     }
 
 
+mailer.config_provider = smtp_config  # черга листів у базі бере налаштування в момент відправки
+
+
 def enabled():
     return bool(app_settings.get("mail_enabled") and app_settings.get("mail_sender") and app_settings.get("smtp_host"))
 

@@ -20,8 +20,15 @@
   </div>
   <form method="get" class="fbar-form">
     {% if view != 'queue' %}<input type="hidden" name="view" value="{{ view }}">{% endif %}
+    {% if view == 'processed' and all_time %}<input type="hidden" name="period" value="all">{% endif %}
     {% include "_filter_bar.html" %}
   </form>
+  {% if view == 'processed' %}
+  <div class="period"><div class="chips">
+    <a class="chip {{ 'active' if not all_time }}" href="{{ url_with({'period': None}) }}">12 місяців</a>
+    <a class="chip {{ 'active' if all_time }}" href="{{ url_with({'period': 'all'}) }}">За весь час</a>
+  </div></div>
+  {% endif %}
 
   <div class="table-wrap">
   <table class="stack sortable" id="{{ ('processed' if view == 'processed' else 'approvals') ~ ('' if show_org else '-noorg') }}">

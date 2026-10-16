@@ -80,3 +80,7 @@ def search(query, limit=10):
     if len(q) < 2:
         return []
     return [u for u in active_users() if q in u["name"].lower() or q in u["email"].lower()][:limit]
+
+
+# Інший процес сайту змінив документ — перечитати (docstore.sync)
+docstore.register("user_directory", reload)

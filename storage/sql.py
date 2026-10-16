@@ -19,6 +19,7 @@ from datetime import datetime, time, timedelta
 import sqlalchemy as sa
 
 import clock
+import db_schema as schema
 import db_sql
 import workflow as wf
 from db_sql import files_t as F
@@ -28,7 +29,7 @@ from db_sql import participants_t as P
 from db_sql import requests_t as R
 from db_sql import rev_t, seq_t
 
-from . import derive, schema, scopes
+from . import derive, scopes
 from .errors import StaleRequestError
 
 logger = logging.getLogger(__name__)
@@ -55,8 +56,7 @@ def _engine():
     if _ready_engine is not eng:
         with _ready_lock:
             if _ready_engine is not eng:
-                schema.upgrade(eng)
-                with eng.connect() as c:
+                with eng.connect() as c:  # схему вже оновив db_sql.engine() (db_schema.upgrade)
                     done = schema.meta_get(c, "derived_version")
                 if done != DERIVED_VERSION:
                     n = reindex(eng)
@@ -305,10 +305,15 @@ def scope_rows(scope, roles, email, period=None):
     if scope in scopes.ACTIVE:
         return scopes.light_rows(scope, list(_active().values()), roles, email)
     cols = list(LIGHT_COLUMNS)
+    where = _scope_where(scope, roles, email)
     if scope == "processed":
-        cols.append(sa.select(sa.func.max(H.c.at)).where(*_processed_conditions(roles))
-                    .scalar_subquery().label("sort_at"))
-    stmt = sa.select(*cols).where(*_scope_where(scope, roles, email), *_period_where(period))
+        decided_at = sa.select(sa.func.max(H.c.at)).where(*_processed_conditions(roles)).scalar_subquery()
+        cols.append(decided_at.label("sort_at"))
+        if period and period[0] == "decided" and period[1]:  # рішення, ухвалені з дати
+            where.append(decided_at >= datetime.combine(period[1], time.min))
+    elif period:
+        where += _period_where(period)
+    stmt = sa.select(*cols).where(*where)
     with _engine().connect() as c:
         rows = [_light(r) for r in c.execute(stmt)]
     return scopes.sort_rows(scope, rows)

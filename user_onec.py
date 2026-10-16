@@ -61,3 +61,7 @@ def set_link(oid, email, guid, onec_name, updated_by):
         else:
             d.pop(oid, None)
         docstore.write("user_onec", _path(), d)
+
+
+# Інший процес сайту змінив документ — перечитати (docstore.sync)
+docstore.register("user_onec", reload)

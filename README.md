@@ -191,7 +191,7 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
   `CREATE USER [PaymentRequestSystem] FROM EXTERNAL PROVIDER` + ролі db_datareader / db_datawriter / db_ddladmin.
   Сервер — Microsoft Entra-only, тариф бази Basic. Потрібен ODBC Driver 17/18 for SQL Server (є в образі App Service;
   `/health` показує знайдені драйвери).
-- Таблиці, нові колонки й індекси створюються самі (`storage/schema.py`): `requests` (уся заявка в JSON `data` +
+- Таблиці, нові колонки й індекси створюються самі (`db_schema.py`): `requests` (уся заявка в JSON `data` +
   похідні колонки для списків і звітів), `request_history` (лише дописується — журнал аудиту), `request_lines`,
   `request_participants`, `request_files`, `request_rev`, `request_seq`, `schema_meta`, `documents`
   (налаштування й довідники системи). Колонки ніколи не видаляються автоматично.

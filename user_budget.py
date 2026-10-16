@@ -103,3 +103,7 @@ def summary(settings):
     else:
         parts += [(d, "dep") for d in settings.get("departments") or []]
     return parts
+
+
+# Інший процес сайту змінив документ — перечитати (docstore.sync)
+docstore.register("user_budget", reload)

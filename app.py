@@ -24,6 +24,7 @@ import currencies
 import rates
 import db_sql
 import departments
+import docstore
 import filestore
 import org_structure
 import organizations
@@ -31,10 +32,12 @@ import payment_accounts
 import payment_types
 import user_onec
 import graph
+import jobs
 import mailer
 import notifications
 import notify_log
 import secret_box
+import sessions_db
 import telegram_notify
 import user_prefs
 import user_budget
@@ -57,6 +60,8 @@ app.config.update(
     WTF_CSRF_TIME_LIMIT=None,
     MAX_CONTENT_LENGTH=25 * 1024 * 1024,
 )
+if db_sql.configured():  # сеанси входу в базі — спільні для всіх процесів і екземплярів сайту
+    app.config.update(SESSION_TYPE="cachelib", SESSION_CACHELIB=sessions_db.DbSessionCache())
 # App Service приймає HTTPS на проксі, а до Flask передає HTTP.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # Кожна POST-форма має містити csrf_token, fetch-запити — заголовок X-CSRFToken (див. base.html)
@@ -398,19 +403,20 @@ def _load_visible(request_id):
 # ---------------------------------------------------------------- панель фільтрів (пошук + кнопки з вибором кількох)
 
 def _facet_getters():
-    """ключ параметра -> (назва, функція легкий рядок заявки -> (значення, підпис)). Списки працюють з легкими
-    рядками (storage/derive.py): фільтри, пошук, кількості й суми — без завантаження повних заявок."""
+    """ключ параметра -> (назва, легкий рядок -> значення, значення -> підпис). Списки працюють з легкими
+    рядками (storage/derive.py): фільтри, пошук, кількості й суми — без завантаження повних заявок;
+    підписи з довідників обчислюються один раз на значення, а не на кожен рядок."""
     return {
-        "status": ("Статус", lambda r: (r["status"], wf.STATUSES.get(r["status"], (r["status"],))[0])),
-        "form": ("Форма оплати", lambda r: (r["channel"], wf.CHANNELS.get(r["channel"], "—"))),
-        "org": ("Організація", lambda r: (r.get("organization_id"), organizations.name(r.get("organization_id")))),
-        "cp": ("Контрагент", lambda r: (r.get("counterparty_id"), counterparties.name(r.get("counterparty_id")))),
-        "exp": ("Стаття витрат", lambda r: (r.get("expense_code"), expense_label(r.get("expense_code")))),
-        "dep": ("Відділ", lambda r: (r.get("department"), departments.get_name(r.get("department")))),
-        "acc": ("Вид оплати", lambda r: (r.get("payment_account_id") or "none",
-                                         payment_accounts.label(r["payment_account_id"]) if r.get("payment_account_id")
-                                         else "Не вибрано")),
-        "payorg": ("Платимо з", lambda r: (r["pay_org"] or "none", db.derive.pay_org_name(r["pay_org"]) or "Не визначено")),
+        "status": ("Статус", lambda r: r["status"], lambda v: wf.STATUSES.get(v, (v,))[0]),
+        "form": ("Форма оплати", lambda r: r["channel"], lambda v: wf.CHANNELS.get(v, "—")),
+        "org": ("Організація", lambda r: r.get("organization_id"), organizations.name),
+        "cp": ("Контрагент", lambda r: r.get("counterparty_id"), counterparties.name),
+        "exp": ("Стаття витрат", lambda r: r.get("expense_code"), expense_label),
+        "dep": ("Відділ", lambda r: r.get("department"), departments.get_name),
+        "acc": ("Вид оплати", lambda r: r.get("payment_account_id") or "none",
+                lambda v: payment_accounts.label(v) if v != "none" else "Не вибрано"),
+        "payorg": ("Платимо з", lambda r: r["pay_org"] or "none",
+                   lambda v: db.derive.pay_org_name(v) if v != "none" else "Не визначено"),
     }
 
 
@@ -419,8 +425,8 @@ def facet_selection(args, keys):
     return {k: [v.strip() for v in args.getlist(k) if v and v.strip()] for k in keys}
 
 
-def _fval(getter, r):
-    value = getter(r)[0]
+def _fval(value_of, r):
+    value = value_of(r)
     return "" if value is None else str(value)
 
 
@@ -437,13 +443,21 @@ def search_rows(rows, q):
     if not words:
         return rows
     out = []
+    labels = {}  # підписи з довідників — один раз на значення
+
+    def label(kind, value, fn):
+        key = (kind, value)
+        if key not in labels:
+            labels[key] = fn(value)
+        return labels[key]
+
     for r in rows:
-        cp = counterparties.get(r.get("counterparty_id")) or {}
+        cp = label("cp", r.get("counterparty_id"), lambda v: counterparties.get(v) or {})
         amount = r.get("amount")
         hay = " ".join(str(x or "") for x in (
             r.get("number"), r.get("author_name"), r.get("author_email"), cp.get("name"), cp.get("edrpou"),
-            expense_label(r.get("expense_code")), departments.get_name(r.get("department")),
-            organizations.name(r.get("organization_id")) if r.get("organization_id") else "", r.get("note"),
+            label("exp", r.get("expense_code"), expense_label), label("dep", r.get("department"), departments.get_name),
+            label("org", r.get("organization_id"), lambda v: organizations.name(v) if v else ""), r.get("note"),
             amount, money(amount) if amount is not None else "", money(amount).replace(" ", "") if amount is not None else "",
         )).lower()
         if all(w in hay for w in words):
@@ -467,14 +481,13 @@ def filter_bar(base_rows, rows, selected, keys, q):
     facets = []
     chips = []
     for key in keys:
-        title, getter = getters[key]
-        counts, labels = {}, {}
+        title, value_of, label_of = getters[key]
+        counts = {}
         for r in apply_facets(base_rows, selected, skip=key):
-            value, label = _fval(getter, r), getter(r)[1]
-            if not value:
-                continue
-            counts[value] = counts.get(value, 0) + 1
-            labels[value] = label or value
+            value = _fval(value_of, r)
+            if value:
+                counts[value] = counts.get(value, 0) + 1
+        labels = {v: label_of(v) or v for v in counts}
         chosen = selected.get(key) or []
         for v in chosen:
             labels.setdefault(v, v)
@@ -590,7 +603,13 @@ def approvals(*, context):
     if view == "accountants" and "cfo" not in g.roles:
         abort(403)
     scope = {"processed": "processed", "accountants": "at_accountants", "queue": "queue"}[view]
-    found, fbar = _filtered(db.scope_rows(scope, g.roles, g.user["email"]), _ref_keys(extra_before=("form",)))
+    # «Опрацьовані» — архів рішень: за замовчуванням за останні 12 місяців
+    all_time = request.args.get("period") == "all"
+    since = None if all_time or view != "processed" else clock.today() - timedelta(days=RECENT_DAYS)
+    source = db.scope_rows(scope, g.roles, g.user["email"], period=("decided", since, None) if since else None)
+    if since:
+        source = [r for r in source if r["sort_at"].date() >= since]
+    found, fbar = _filtered(source, _ref_keys(extra_before=("form",)))
     rows, page = _page(found)
     return render_template(
         "approvals.html",
@@ -600,6 +619,7 @@ def approvals(*, context):
         fbar=fbar,
         view=view,
         processed_entry=lambda r: wf.processed_entry(r, g.roles),
+        all_time=all_time,
         accountants_count=db.count("at_accountants") if "cfo" in g.roles else 0,
         accountant_role=wf.accountant_role,
         ACTIONS=wf.ACTIONS,
@@ -1172,14 +1192,28 @@ def payment_plan(rows):
     }
 
 
-def _date_filter(args, today):
-    """Період з параметрів ?period= або ?from=&to=. Повертає (код пресету, з, по)."""
-    presets = date_presets(today)
+RECENT_DAYS = 365  # архівні списки за замовчуванням — за останні 12 місяців
+
+
+def recent_presets(today):
+    """Пресети архівних списків («Усі заявки», «Оплачені»…): «12 місяців» (за замовчуванням) + звичайні."""
+    return {"recent": ("12 місяців", today - timedelta(days=RECENT_DAYS), None), **date_presets(today)}
+
+
+def _date_filter(args, today, recent=False):
+    """Період з параметрів ?period= або ?from=&to=. Повертає (код пресету, з, по).
+    recent — архівний список: без параметрів — останні 12 місяців, ?period=all — за весь час."""
+    presets = recent_presets(today) if recent else date_presets(today)
     period = args.get("period", "")
+    d_from, d_to = _parse_date(args.get("from")), _parse_date(args.get("to"))
+    if recent and (d_from or d_to):
+        return "", d_from, d_to  # введені дати — важливіші за «За весь час» (воно передається прихованим полем)
     if period in presets:
         _, d_from, d_to = presets[period]
         return period, d_from, d_to
-    return "", _parse_date(args.get("from")), _parse_date(args.get("to"))
+    if recent:
+        return ("all", None, None) if period == "all" else ("recent", *presets["recent"][1:])
+    return "", d_from, d_to
 
 
 def _in_period(value, d_from, d_to):
@@ -1573,7 +1607,7 @@ def to_pay(*, context):
     handover_rows = _handover_rows(roles)
     if view == "handover":
         return _handover_view(handover_rows, today)
-    period, d_from, d_to = _date_filter(request.args, today)
+    period, d_from, d_to = _date_filter(request.args, today, recent=view == "paid")
     if view == "paid":
         all_rows = db.scope_rows("paid", roles, g.user["email"], period=("paid", d_from, d_to))
     else:
@@ -1617,7 +1651,8 @@ def to_pay(*, context):
         period=period,
         d_from=d_from,
         d_to=d_to,
-        presets=date_presets(today),
+        presets=recent_presets(today) if view == "paid" else date_presets(today),
+        recent_default=view == "paid",
         payable={r["id"] for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
                  and r["id"] not in blocked and r["id"] not in no_account},
         # Мої заявки до оплати, які зараз не можна оплатити, — з причиною
@@ -1694,7 +1729,7 @@ def _requests_overview(scope, title, table_id, **extra):
     today = clock.today()
     args = request.args
     date_field = "pay" if args.get("date_field") == "pay" else "created"
-    period, d_from, d_to = _date_filter(args, today)
+    period, d_from, d_to = _date_filter(args, today, recent=True)
     source = db.scope_rows(scope, g.roles, g.user["email"], period=(date_field, d_from, d_to))
     in_period = [r for r in source
                  if _in_period(r["pay_date"] if date_field == "pay" else r["created_at"].date(), d_from, d_to)]
@@ -1716,7 +1751,8 @@ def _requests_overview(scope, title, table_id, **extra):
         period=period,
         d_from=d_from,
         d_to=d_to,
-        presets=date_presets(today),
+        presets=recent_presets(today),
+        recent_default=True,
         ACTIONS=wf.ACTIONS,
     )
 
@@ -2233,8 +2269,10 @@ def delete_file(file_id, *, context):
 
 @app.template_global()
 def url_with(changes):
-    """Поточна адреса з заміненими параметрами запиту (None/"" — прибрати параметр)."""
-    args = request.args.to_dict()
+    """Поточна адреса з заміненими параметрами запиту (None/"" — прибрати параметр). Повторювані параметри
+    (кілька вибраних значень фільтра, ?cp=1&cp=4) зберігаються; «Показати ще» скидається."""
+    args = request.args.to_dict(flat=False)
+    args.pop("limit", None)
     for key, value in changes.items():
         if value in (None, ""):
             args.pop(key, None)
@@ -2273,6 +2311,7 @@ def _public_base_url():
 
 def run_handover_reminders(today=None):
     """Нагадати авторам, які не підтвердили передачу готівки. Повертає номери заявок, яким надіслано."""
+    docstore.sync()  # фоновий потік: налаштування могли змінитися в іншому процесі
     every = app_settings.get("cash_handover_remind_days") or 0
     if not app_settings.get("cash_handover_confirm") or every <= 0 or notifications.test_mode():
         return []
@@ -2292,13 +2331,25 @@ def run_handover_reminders(today=None):
     return sent
 
 
+def run_maintenance():
+    """Щоденне обслуговування бази: перерахунок похідних колонок заявок (довідники з 1С могли змінитися),
+    прибирання прострочених сеансів і надісланих листів, старших за 30 днів (журнал сповіщень лишається)."""
+    if not db_sql.configured():
+        return {}
+    return {"reindexed": db.sql.reindex(), "sessions_removed": sessions_db.cleanup(),
+            "mail_removed": db_sql.mail_cleanup(clock.now() - timedelta(days=30))}
+
+
 def _reminder_loop():
+    """Фонові задачі. Кожну виконує лише один процес сайту (jobs.run — «оренда» в базі)."""
     time.sleep(60)
     while True:
-        try:
-            run_handover_reminders()
-        except Exception:
-            logging.getLogger(__name__).exception("Помилка нагадувань про передачу готівки")
+        for name, every, fn in (("handover_reminders", jobs.HOUR - timedelta(minutes=5), run_handover_reminders),
+                                ("maintenance", jobs.DAY - timedelta(minutes=5), run_maintenance)):
+            try:
+                jobs.run(name, every, fn)
+            except Exception:
+                logging.getLogger(__name__).exception("Помилка фонової задачі %s", name)
         time.sleep(REMINDER_INTERVAL)
 
 
@@ -2312,7 +2363,17 @@ def _start_background():
     with _reminders_lock:
         if not _reminders_started:
             _reminders_started = True
-            threading.Thread(target=_reminder_loop, name="handover-reminders", daemon=True).start()
+            threading.Thread(target=_reminder_loop, name="background-jobs", daemon=True).start()
+            mailer.start_worker()  # листи, що лишилися в черзі після перезапуску
+
+
+@app.before_request
+def _sync_shared_state():
+    """Налаштування й довідники, змінені іншими процесами сайту, — перечитати (один маленький запит)."""
+    try:
+        docstore.sync()
+    except Exception:
+        logging.getLogger(__name__).exception("Не вдалося перевірити зміни налаштувань")
 
 
 # ---------------------------------------------------------------- API для Telegram-бота (tb_ftp)

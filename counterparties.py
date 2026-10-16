@@ -348,3 +348,7 @@ def status():
     st = _table.status()
     st["pending"] = len(pending_items())
     return st
+
+
+# Інший процес сайту змінив документ — перечитати (docstore.sync)
+docstore.register("counterparties", reload)

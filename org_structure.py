@@ -241,3 +241,7 @@ def is_head_of(email, department):
     """Чи очолює людина з цією поштою відділ (для «автор — керівник відділу»)."""
     head = head_of(department)
     return bool(head) and head.get("email", "").lower() == (email or "").lower()
+
+
+# Інший процес сайту змінив документ — перечитати (docstore.sync)
+docstore.register("org_structure", reload)
