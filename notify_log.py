@@ -27,7 +27,7 @@ EVENT_LABELS = {
     "reject": "відхилено", "pay": "оплачено", "admin_status": "статус змінив адмін", "comment": "коментар",
     "participant_add": "додано учасника", "handover": "передача готівки", "handover_reminder": "нагадування про готівку",
     "fallback": "запасний лист", "test": "тестове", "confirm_email": "підтвердження пошти",
-    "error_alert": "помилка сайту",
+    "error_alert": "помилка сайту", "withdraw": "відкликано автором", "cancel": "скасовано автором",
 }
 CHANNELS = {"email": "Пошта", "telegram": "Telegram", "-": "—"}
 

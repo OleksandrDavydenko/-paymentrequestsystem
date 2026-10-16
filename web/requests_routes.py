@@ -2,6 +2,7 @@
 import io
 import logging
 import mimetypes
+from copy import deepcopy
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 
@@ -167,6 +168,7 @@ def request_card(request_id=None, *, context):
         editable=wf.can_edit(req, roles, user["email"]),
         can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
         actions=[a for a in available if a != "submit"],
+        author_actions=wf.author_actions(req, roles, user["email"]) if req["id"] else [],
         acting_role=wf.acting_role(req, roles, user["email"]) or (
             "cfo" if wf.cfo_can_intervene(req, roles, user["email"]) else None),
         cfo_intervene=wf.cfo_can_intervene(req, roles, user["email"]),
@@ -174,6 +176,7 @@ def request_card(request_id=None, *, context):
         self_blocked=wf.self_approval_blocked(req, user["email"])
         and wf.acting_role(req, roles, user["email"], ignore_self=True) is not None,
         accountant_role_of_req=wf.accountant_role(req),
+        author_comment=session.pop("author_comment", ""),
         can_submit="submit" in available,
         stages=wf.stage_states(req),
         ACTIONS=wf.ACTIONS,
@@ -419,6 +422,32 @@ def request_action(request_id, *, context):
     flash(f"Заявка № {req['number']}: {wf.ACTIONS[action][1].lower()}", "success")
     return redirect(url_for("payments.to_pay") if action == "pay" or request.form.get("next") == "to_pay"
                     else url_for("lists.approvals"))
+
+
+@bp.route("/requests/<int:request_id>/author-action", methods=["POST"])
+@auth.login_required
+@requires("initiator")
+def author_action(request_id, *, context):
+    """Автор відкликає заявку на редагування або скасовує її."""
+    req = _load_visible(request_id)
+    action, comment = request.form.get("action"), request.form.get("comment", "")
+    before = deepcopy(req)
+    try:
+        if action == "withdraw":
+            wf.withdraw(req, g.user, g.roles, comment)
+        elif action == "cancel":
+            wf.cancel(req, g.user, g.roles, comment)
+        else:
+            abort(400)
+    except wf.WorkflowError as e:
+        flash(str(e), "error")
+        session["author_comment"] = comment
+        return redirect(url_for("requests.request_card", request_id=request_id) + "#author-actions")
+    db.save_request(req)
+    notifications.notify(action, req, g.user, comment=comment, before=before)
+    flash(f"Заявка № {req['number']}: " + ("відкликано — виправте й відправте на погодження знову"
+                                          if action == "withdraw" else "скасовано"), "success")
+    return redirect(url_for("requests.request_card", request_id=request_id))
 
 
 @bp.route("/requests/<int:request_id>/comment", methods=["POST"])

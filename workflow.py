@@ -157,9 +157,10 @@ STATUSES = {
     "paid": ("Оплачено", "blue"),
     "rework": ("На доопрацюванні", "orange"),
     "rejected": ("Відхилено", "red"),
+    "cancelled": ("Скасовано", "grey"),  # автор сам закрив заявку (рішення погоджувача — «Відхилено»)
 }
 EDITABLE_STATUSES = {"draft", "rework"}
-CLOSED_STATUSES = {"paid", "rejected"}
+CLOSED_STATUSES = {"paid", "rejected", "cancelled"}
 
 # Смуга маршруту в картці: (статус етапу, назва)
 STAGES = [
@@ -190,6 +191,8 @@ ACTIONS = {
     "handover": (None, "Готівку передано підряднику", "green", False),
     "handover_undo": (None, "Підтвердження передачі скасовано", "purple", True),
     "cfo_threshold": (None, "Поріг фіндиректора", "grey", False),
+    "withdraw": ("Відкликати на редагування", "Відкликано автором на редагування", "orange", False),
+    "cancel": ("Скасувати заявку", "Скасовано автором", "grey", True),
 }
 # Записи історії, які бачать лише ті, хто бачить «Вид оплати»
 PAYMENT_ACCOUNT_ACTIONS = {"pay_account"}
@@ -396,8 +399,9 @@ def admin_set_status(req, new_status, user, comment, handover=False):
         req["route_mode"] = "parallel"
     elif new_status in ("accountant", "cfo"):
         req["route_mode"] = "sequential"
-    if new_status in ("cfo", "approval"):
-        req["cfo_step"] = True
+    if new_status == "cfo":
+        req["cfo_step"] = True  # адмін явно передає рішення фіндиректору
+    # «На погодженні»: фіндиректор — лише якщо так вирішено за сумою при відправці (поріг у USD)
     start_handover(req, handover and new_status == "paid")
     add_history(req, "admin_status", user, "admin", comment, old, new_status)
 
@@ -498,6 +502,63 @@ def mark_reminded(req, today=None):
     h = req["handover"]
     h["reminders"] = h.get("reminders", 0) + 1
     h["last_reminder"] = today or clock.today()
+
+
+# ---------------------------------------------------------------- дії автора: відкликати й скасувати
+
+WITHDRAW_STATUSES = APPROVAL_STAGES                      # поки заявку погоджують
+CANCEL_STATUSES = EDITABLE_STATUSES | APPROVAL_STAGES     # до «До оплати»: там гроші вже в процесі
+
+
+def _authors_own(req, roles, user_email):
+    return "initiator" in roles and is_author(req, user_email)
+
+
+def can_withdraw(req, roles, user_email):
+    """Автор забирає заявку з погодження, щоб виправити й відправити знову (маршрут — з початку)."""
+    return _authors_own(req, roles, user_email) and req["status"] in WITHDRAW_STATUSES
+
+
+def can_cancel(req, roles, user_email):
+    """Автор сам закриває заявку — у чернетці, на доопрацюванні або поки її погоджують."""
+    return _authors_own(req, roles, user_email) and req["status"] in CANCEL_STATUSES
+
+
+def author_actions(req, roles, user_email):
+    return [a for a, ok in (("withdraw", can_withdraw(req, roles, user_email)),
+                            ("cancel", can_cancel(req, roles, user_email))) if ok]
+
+
+def round_approvers(req):
+    """Хто вже погодив заявку в поточному колі (після останньої відправки): [(пошта, роль)]."""
+    out = []
+    for h in reversed(req.get("history") or []):
+        if h["action"] == "submit":
+            break
+        if h["action"] == "approve" and h.get("user_email") and h.get("role") in APPROVER_ROLES:
+            out.append((h["user_email"], h["role"]))
+    return list(reversed(out))
+
+
+def withdraw(req, user, roles, comment=""):
+    """Відкликати на редагування: заявка повертається в чернетку, погодження скидаються. Кидає WorkflowError."""
+    if not can_withdraw(req, roles, user["email"]):
+        raise WorkflowError("Відкликати можна лише власну заявку, поки її погоджують")
+    old = req["status"]
+    req["status"], req["approvals"] = "draft", {}
+    add_history(req, "withdraw", user, "initiator", (comment or "").strip()[:MAX_COMMENT], old, "draft")
+
+
+def cancel(req, user, roles, comment):
+    """Скасувати заявку (закрити рішенням автора). Причина обов'язкова. Кидає WorkflowError."""
+    comment = (comment or "").strip()
+    if not can_cancel(req, roles, user["email"]):
+        raise WorkflowError("Скасувати можна лише власну заявку до того, як її погоджено до оплати")
+    if not comment:
+        raise WorkflowError("Вкажіть причину скасування — вона буде видна в історії заявки")
+    old = req["status"]
+    req["status"], req["approvals"] = "cancelled", {}
+    add_history(req, "cancel", user, "initiator", comment[:MAX_COMMENT], old, "cancelled")
 
 
 def add_comment(req, user, role, text, files=()):
@@ -746,8 +807,8 @@ def stage_states(req):
                 for code, name in stages]
     last = next((h for h in reversed(req.get("history", []))
                  if h["to_status"] == status and h["from_status"] == "approval"), None)
-    if status in ("rework", "rejected") and last:
-        stage = _role_stage(last["role"])
+    if status in ("rework", "rejected", "cancelled") and last:
+        stage = _role_stage(last["role"]) if status != "cancelled" else None
         mark = "returned" if status == "rework" else "rejected"
         return [(name, mark if code == stage else "todo") for code, name in stages]
     if status == "paid":

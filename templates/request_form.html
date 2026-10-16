@@ -294,6 +294,25 @@
 </form>
 {% endif %}
 
+{% if author_actions %}
+<form method="post" action="{{ url_for('requests.author_action', request_id=req.id) }}" class="card decision author-actions" id="author-actions"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
+  <h2>Дії автора</h2>
+  <p class="muted" style="margin-top:0">
+    {% if 'withdraw' in author_actions %}<strong>Відкликати на редагування</strong> — заявка повернеться вам у чернетку;
+      погодження, якщо вже були, скидаються, а після виправлення маршрут почнеться спочатку. {% endif %}
+    <strong>Скасувати заявку</strong> — закрити її остаточно (вкажіть причину). Ті, у кого заявка чекала рішення або
+    хто вже її погодив, отримають повідомлення.</p>
+  <textarea name="comment" maxlength="2000" placeholder="Коментар (для скасування — обов'язково: чому заявка більше не потрібна)">{{ author_comment }}</textarea>
+  <div class="decision-buttons">
+    {% if 'withdraw' in author_actions %}
+    <button type="submit" name="action" value="withdraw" class="btn btn-orange">{{ ACTIONS['withdraw'][0] }}</button>
+    {% endif %}
+    <button type="submit" name="action" value="cancel" class="btn btn-red"
+            onclick="return confirm('Скасувати заявку № {{ req.number }}? Її не можна буде відправити знову.')">{{ ACTIONS['cancel'][0] }}</button>
+  </div>
+</form>
+{% endif %}
+
 {% if handover_pending or handover_done %}
 {% set mine = req.author_email | lower == current_email | lower %}
 <div class="card handover {{ 'handover-pending' if handover_pending }}" id="handover">

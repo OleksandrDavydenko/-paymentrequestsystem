@@ -33,6 +33,7 @@ AUTHOR_EVENTS = {
     "pay": "my_paid",
     "admin_status": "my_admin_status",
     "comment": "my_comment",
+    "cancel": "my_rejected",  # автор скасував — учасникам (сам автор — ініціатор дії)
 }
 
 SUBJECTS = {
@@ -42,6 +43,8 @@ SUBJECTS = {
     "pay": "оплачено",
     "admin_status": "статус змінено адміністратором",
     "comment": "новий коментар",
+    "withdraw": "відкликано автором на редагування",
+    "cancel": "скасовано автором",
     "task_pay": "чекає оплати",
     "task_new": "чекає вашого рішення",
     "participant_add": "вас додано учасником",
@@ -167,20 +170,22 @@ def _send(to, subject, template_args):
     html = render_template("email/notification.html", **template_args)
     address = user_prefs.delivery_address(to, app_settings.get("allow_custom_email"))
     req = template_args["req"]
+    reason = template_args.get("reason") or ""  # чому людина отримує сповіщення — видно в журналі
     meta = {"request_id": req.get("id"), "number": req.get("number"), "event": template_args.get("event", ""),
-            "recipient": to}
+            "recipient": to, "detail": reason}
     channel = user_prefs.channel(to) if telegram_notify.enabled() else "email"
     lookup = user_prefs.telegram_lookup(to)
     if channel != "email" and telegram_notify.is_linked(lookup) is False:
         channel = "email"  # бот людину не знає — одразу листом
-        meta["detail"] = f"вибрано Telegram, але бот не знає {lookup} — листом"
+        meta["detail"] = "; ".join(x for x in (reason, f"вибрано Telegram, але бот не знає {lookup} — листом") if x)
     if channel in ("telegram", "both"):
         only_telegram = channel == "telegram"
         text = ("🧪 <b>ТЕСТ</b> — демо-дані системи заявок\n" if test_mode() else "") + telegram_text(template_args)
         msg_id = telegram_notify.enqueue(to, text, template_args.get("link"),
                                          subject if only_telegram else None, html if only_telegram else None)
         notify_log.record("telegram", to, "queued", subject, meta["request_id"], meta["number"], meta["event"],
-                          detail=f"бот шукає за {lookup}" if lookup != to.lower() else "", ref=f"tg:{msg_id}")
+                          detail="; ".join(x for x in (reason, f"бот шукає за {lookup}" if lookup != to.lower() else "") if x),
+                          ref=f"tg:{msg_id}")
     if channel in ("email", "both"):
         mailer.enqueue(smtp_config(), address, subject, html, meta)
 
@@ -205,7 +210,7 @@ telegram_notify.on_fallback = _fallback_mail
 telegram_notify.on_result = _telegram_result
 
 
-def notify(event, req, actor, comment="", target=None):
+def notify(event, req, actor, comment="", target=None, before=None):
     """Надіслати листи після події event ("submit", "approve", "rework", "reject", "pay",
     "admin_status", "comment", "participant_add" — target: пошта доданого). Помилки не ламають дію."""
     if muted_by_test_mode():
@@ -215,13 +220,13 @@ def notify(event, req, actor, comment="", target=None):
                           req.get("id"), req.get("number"), event, detail="розсилку вимкнено в адмінці (або не налаштовано SMTP)")
         return []
     try:
-        return _notify(event, req, actor, comment, target)
+        return _notify(event, req, actor, comment, target, before)
     except Exception:
         logger.exception("Помилка підготовки сповіщень")
         return []
 
 
-def _notify(event, req, actor, comment, target=None):
+def _notify(event, req, actor, comment, target=None, before=None):
     actor_email = (actor.get("email") or "").lower()
     last = wf.last_action(req)  # без службових приміток, інакше «статус не змінився» і погоджувачі без листа
     status_changed = last.get("from_status") != last.get("to_status")
@@ -269,6 +274,18 @@ def _notify(event, req, actor, comment, target=None):
                 if kind == "task_new" and wf.self_approval_blocked(req, m["email"]):
                     continue  # власну заявку погоджує інша людина (параметр «Розподіл обов'язків»)
                 add(m["email"], "task_new", f"ви — {wf.ROLES.get(role, role).lower()}", SUBJECTS[kind])
+
+    # 2а. Автор відкликав або скасував заявку (before — стан до дії): тим, у кого вона чекала рішення,
+    #     і тим, хто вже погодив її в цьому колі
+    if event in ("withdraw", "cancel") and before:
+        for role in responsible_roles(before):
+            members = org_structure.heads_of(before.get("department")) if role == "dept_head"                 else cached_role_members(role)
+            for m in members:
+                add(m["email"], "task_withdrawn", f"заявка чекала вашого рішення ({wf.ROLES.get(role, role).lower()})",
+                    SUBJECTS[event])
+        for email, role in wf.round_approvers(before):
+            add(email, "task_withdrawn", f"ви вже погодили цю заявку ({wf.ROLES.get(role, role).lower()})",
+                SUBJECTS[event])
 
     # 2б. Нова заявка відділу — керівнику і тим, хто бачить заявки відділу (якщо ввімкнули)
     if event == "submit" and req.get("department"):
