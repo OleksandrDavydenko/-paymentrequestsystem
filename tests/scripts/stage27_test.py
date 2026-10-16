@@ -114,10 +114,22 @@ check("known not linked: straight to email", any(to == "res@ftpua.com" for to, _
 # ---------- тестовий режим
 app_settings.set("data_mode", "test", "t")
 import db_sql
-db_sql.configured = lambda: True  # тестовий режим діє лише з базою — імітуємо
-check("test mode muted", notifications.muted_by_test_mode())
-db_sql.configured = lambda: False
+was = app_settings.get("mail_enabled")
+
+def muted_with_db():
+    real = db_sql.configured
+    db_sql.configured = lambda: True  # тестовий режим діє лише з базою — імітуємо
+    try:
+        return notifications.muted_by_test_mode()
+    finally:
+        db_sql.configured = real
+
+app_settings.set("mail_enabled", False, "t")  # перехід у тестовий режим знімає «Розсилка увімкнена»
+check("test mode muted", muted_with_db())
+app_settings.set("mail_enabled", True, "t")
+check("test mode + mailing ticked: not muted ([ТЕСТ])", not muted_with_db())
 app_settings.set("data_mode", "work", "t")
+app_settings.set("mail_enabled", was, "t")
 
 # ---------- адмінка
 login("admin@ftpua.com", ["g-a"])

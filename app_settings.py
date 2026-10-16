@@ -37,7 +37,7 @@ DEFAULTS = {
     "cfo_threshold_usd": 1000,  # режим «Погоджує від суми»: фіндиректор погоджує заявки від цієї суми в еквіваленті USD  # фіндиректор: approve — погоджує, observe — лише спостерігає (погоджує тільки бухгалтер)
     "cp_onec_owner": "accountant",  # хто заводить нового контрагента в 1С і прив'язує в заявці: accountant | admin
     "data_mode": "work",
-    "test_mode_mail": False,  # у тестовому режимі розсилка за замовчуванням вимкнена; True — надсилати з позначкою «[ТЕСТ]»
+    "mail_enabled_work": None,  # стан «Розсилка увімкнена» до переходу в тестовий режим — відновлюється при поверненні
     "org_field_mode": "organization",  # що вибирає ініціатор: organization — організацію, payer — лише платника  # що показує система, коли підключено базу: work — робочі заявки, test — демо-дані
 }
 
@@ -57,7 +57,23 @@ def _load():
             _data = docstore.read("app_settings", _path())
         except (OSError, ValueError):
             _data = {}
+        _migrate_test_mode_mail(_data)
     return _data
+
+
+def _migrate_test_mode_mail(data):
+    """Раніше в тестовому режимі розсилку вмикав окремий перемикач test_mode_mail. Тепер перехід у тестовий
+    режим сам вимикає «Розсилка увімкнена». Якщо зараз тестовий режим і старий перемикач був вимкнений —
+    вимкнути розсилку (листи не підуть несподівано) і запам'ятати її стан для повернення до робочої бази."""
+    if "test_mode_mail" not in data:
+        return
+    old = data.pop("test_mode_mail") or {}
+    stamp = {"updated_by": "система", "updated_at": clock.now().isoformat(timespec="seconds")}
+    if ((data.get("data_mode") or {}).get("value") == "test" and not old.get("value")
+            and (data.get("mail_enabled") or {}).get("value")):
+        data["mail_enabled_work"] = {"value": True, **stamp}
+        data["mail_enabled"] = {"value": False, **stamp}
+    docstore.write("app_settings", _path(), data)
 
 
 def reload():

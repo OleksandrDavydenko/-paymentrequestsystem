@@ -153,18 +153,16 @@ check("test mode: demo requests shown", len(db.list_all()) > 10 and "000000020" 
 check("banner for everyone", "Тестовий режим" in c.get("/admin/requests").get_data(as_text=True))
 check("banner: mail off", "email-розсилку вимкнено" in c.get("/admin/requests").get_data(as_text=True))
 admin_page = c.get("/admin/users").get_data(as_text=True)
-check("admin: test-mode mail switch (off), mail section says off", 'name="test_mode_mail"' in admin_page
-      and "вимкнено на час тестового режиму" in admin_page)
+check("switching to test mode unticks 'mailing on', no separate switch",
+      app_settings.get("mail_enabled") is False and app_settings.get("mail_enabled_work") is True
+      and 'name="test_mode_mail"' not in admin_page and "розсилку вимкнено автоматично" in admin_page)
 login("author@ftpua.com", ["g-i"])
 c.post("/requests/new", data={**BASE, "action": "submit"})
 mailer.wait()
 check("test mode: mailing off by default", sent == [])
-login("admin@ftpua.com", ["g-a"])
-c.post("/admin/settings", data={"approval_mode": "sequential", "dept_head_mode": "view", "pending_cp_payment": "block",
-                                "cfo_mode": "approve", "cp_onec_owner": "accountant", "data_mode": "test",
-                                "test_mode_mail_sent": "1", "test_mode_mail": "1"})
-check("test-mode mail switched on", app_settings.get("test_mode_mail") is True
-      and "позначкою «[ТЕСТ]»" in c.get("/admin/requests").get_data(as_text=True))
+app_settings.set("mail_enabled", True, "admin@ftpua.com")  # адмін сам ставить галочку «Розсилка увімкнена»
+check("mailing ticked in test mode -> banner says [ТЕСТ]",
+      "позначкою «[ТЕСТ]»" in c.get("/admin/requests").get_data(as_text=True))
 login("author@ftpua.com", ["g-i"])
 c.post("/requests/new", data={**BASE, "action": "submit"})
 mailer.wait()
@@ -179,5 +177,24 @@ c.post("/admin/settings", data={"approval_mode": "sequential", "dept_head_mode":
                                 "cfo_mode": "approve", "cp_onec_owner": "accountant", "data_mode": "work"})
 check("back to work: only db requests", sorted(r["id"] for r in db.list_all()) == [1, 2]
       and "Тестовий режим" not in c.get("/admin/requests").get_data(as_text=True))
+check("back to work: mailing as before test mode", app_settings.get("mail_enabled") is True
+      and app_settings.get("mail_enabled_work") is None)
+c.post("/admin/settings", data={"approval_mode": "sequential", "dept_head_mode": "view", "pending_cp_payment": "block",
+                                "cfo_mode": "approve", "cp_onec_owner": "accountant", "data_mode": "test"})
+app_settings.set("mail_enabled", False, "t")  # розсилка була вимкнена й до тестового режиму
+app_settings.set("mail_enabled_work", False, "t")
+c.post("/admin/settings", data={"approval_mode": "sequential", "dept_head_mode": "view", "pending_cp_payment": "block",
+                                "cfo_mode": "approve", "cp_onec_owner": "accountant", "data_mode": "work"})
+check("mailing that was off stays off after test mode", app_settings.get("mail_enabled") is False)
+
+# ---------- старий перемикач test_mode_mail переноситься один раз
+doc = db_sql.get_document("app_settings")
+doc.update(data_mode={"value": "test"}, mail_enabled={"value": True}, test_mode_mail={"value": False})
+doc.pop("mail_enabled_work", None)
+db_sql.put_document("app_settings", doc)
+app_settings.reload()
+check("legacy: test mode + old switch off -> mailing off, remembered for work",
+      app_settings.get("mail_enabled") is False and app_settings.get("mail_enabled_work") is True
+      and "test_mode_mail" not in db_sql.get_document("app_settings"))
 
 print("ALL OK" if ok else "SOME FAILED")

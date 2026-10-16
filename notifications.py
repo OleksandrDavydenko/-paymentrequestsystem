@@ -70,8 +70,9 @@ def test_mode():
 
 
 def muted_by_test_mode():
-    """У тестовому режимі розсилка (пошта й Telegram) за замовчуванням вимкнена — якщо адмін не ввімкнув її окремо."""
-    return test_mode() and not app_settings.get("test_mode_mail")
+    """Тестовий режим і розсилку вимкнено (при переході в тестовий режим вона вимикається автоматично;
+    адмін може ввімкнути її в «Email-сповіщення» — тоді листи й Telegram з позначкою «[ТЕСТ]»)."""
+    return test_mode() and not app_settings.get("mail_enabled")
 
 
 def cp_pending_check(cp_id):
@@ -326,7 +327,7 @@ def send_handover_reminder(req, days):
     """Нагадування автору: підтвердіть, що передали готівку підряднику. Лише автору й без особистих
     налаштувань (це контроль, його вимикає тільки адмін). Потрібен контекст запиту Flask (для посилань).
     Повертає True, якщо лист поставлено в чергу."""
-    if not enabled() or muted_by_test_mode():
+    if not enabled() or test_mode():  # нагадування про готівку в тестовому режимі — ніколи
         return False
     try:
         _send(req["author_email"], f"Заявка № {req['number']}: {SUBJECTS['handover_reminder']}", {
