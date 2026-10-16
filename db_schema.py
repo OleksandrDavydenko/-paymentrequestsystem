@@ -2,6 +2,8 @@
 
 Таблиці описані в db_sql.py. metadata.create_all створює відсутні таблиці, але не чіпає наявні, тож тут:
   • відсутні колонки додаються ALTER TABLE … ADD (лише нові колонки з nullable або значенням за замовчуванням);
+  • SQL Server: колонки дати, описані як DATETIME2, а в старій базі — DATETIME (округлення до ~3 мс),
+    розширюються (індекси з цією колонкою перестворюються);
   • відсутні індекси створюються;
   • службові рядки: request_rev (лічильник змін) і зсув нумерації заявок (schema_meta).
 Кожен крок можна повторювати: якщо два процеси оновлюють схему одночасно, другий побачить, що все вже є.
@@ -35,6 +37,29 @@ def _add_missing_columns(eng):
                 names = {c["name"].lower() for c in sa.inspect(eng).get_columns(table.name)}
                 if col.name.lower() not in names:
                     raise
+
+
+def _widen_datetimes(eng):
+    if eng.dialect.name != "mssql":
+        return
+    insp = sa.inspect(eng)
+    for table in db_sql.metadata.sorted_tables:
+        if not insp.has_table(table.name):
+            continue
+        actual = {c["name"].lower(): type(c["type"]).__name__ for c in insp.get_columns(table.name)}
+        existing = {i["name"] for i in insp.get_indexes(table.name) if i.get("name")}
+        for col in table.columns:
+            if (type(col.type.dialect_impl(eng.dialect)).__name__ != "DATETIME2"
+                    or actual.get(col.name.lower()) != "DATETIME"):
+                continue
+            with eng.begin() as c:
+                for idx in table.indexes:
+                    if col.name in [x.name for x in idx.columns] and idx.name in existing:
+                        c.execute(sa.text(f"DROP INDEX {idx.name} ON {table.name}"))
+                c.execute(sa.text(f"ALTER TABLE {table.name} ALTER COLUMN {col.name} DATETIME2 "
+                                  + ("NULL" if col.nullable else "NOT NULL")))
+            logger.info("Колонку %s.%s розширено до DATETIME2", table.name, col.name)
+            existing = {i["name"] for i in sa.inspect(eng).get_indexes(table.name) if i.get("name")}
 
 
 def _add_missing_indexes(eng):
@@ -83,5 +108,6 @@ def upgrade(eng):
     """Довести схему до опису в db_sql.py. Викликається один раз на процес (storage/sql.py)."""
     db_sql.metadata.create_all(eng)
     _add_missing_columns(eng)
-    _add_missing_indexes(eng)
+    _widen_datetimes(eng)
+    _add_missing_indexes(eng)  # зокрема ті, що перестворюються після розширення колонок
     _init_rows(eng)

@@ -1,0 +1,83 @@
+name: Tests
+
+# Усі тести: у пам'яті, на SQLite і на справжньому SQL Server (контейнер — та сама СУБД, що й Azure SQL).
+# Запускаються для кожної гілки й pull request, а для main — з deploy.yml перед деплоєм.
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_call:
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    env:
+      # Пароль тимчасового контейнера SQL Server, що існує лише під час цього запуску (не секрет)
+      MSSQL_SA_PASSWORD: "Ci-${{ github.run_id }}-x9!Q"
+    services:
+      mssql:
+        image: mcr.microsoft.com/mssql/server:2022-latest
+        env:
+          ACCEPT_EULA: "Y"
+          MSSQL_SA_PASSWORD: "Ci-${{ github.run_id }}-x9!Q"
+        ports:
+          - 1433:1433
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: ODBC Driver 18 for SQL Server
+        run: |
+          if ! odbcinst -q -d | grep -q "ODBC Driver 18 for SQL Server"; then
+            curl -sSL https://packages.microsoft.com/keys/microsoft.asc | sudo tee /etc/apt/trusted.gpg.d/microsoft.asc > /dev/null
+            curl -sSL "https://packages.microsoft.com/config/ubuntu/$(lsb_release -rs)/prod.list" \
+              | sudo tee /etc/apt/sources.list.d/mssql-release.list > /dev/null
+            sudo apt-get update -q
+            sudo ACCEPT_EULA=Y apt-get install -y -q msodbcsql18
+          fi
+          odbcinst -q -d
+
+      - name: Install dependencies, check app imports
+        run: |
+          pip install -r requirements-dev.txt
+          CLIENT_ID=x TENANT_ID=x CLIENT_SECRET=x FLASK_SECRET_KEY=x \
+            REDIRECT_URI=http://localhost/getAToken python -c "import app"
+
+      - name: Wait for SQL Server
+        run: |
+          python - <<'EOF'
+          import os, time, urllib.parse
+          import sqlalchemy as sa
+          pw = urllib.parse.quote_plus(os.environ["MSSQL_SA_PASSWORD"])
+          url = (f"mssql+pyodbc://sa:{pw}@127.0.0.1:1433/master"
+                 "?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes")
+          for i in range(60):
+              try:
+                  with sa.create_engine(url).connect() as c:
+                      print(c.execute(sa.text("SELECT @@VERSION")).scalar().splitlines()[0])
+                  break
+              except Exception as e:
+                  if i == 59:
+                      raise
+                  time.sleep(2)
+          with open(os.environ["GITHUB_ENV"], "a") as f:
+              f.write(f"TEST_MSSQL_URL={url}\n")
+          EOF
+
+      # Якщо хоч один тест не пройшов — деплою не буде
+      - name: Run tests (memory, SQLite, SQL Server)
+        run: python -m pytest -n auto -q
+
+      # Та сама команда запуску, що й в App Service: gunicorn має підхопити gunicorn.conf.py (потоки)
+      - name: Smoke test with gunicorn
+        run: |
+          CLIENT_ID=x TENANT_ID=x CLIENT_SECRET=x FLASK_SECRET_KEY=x REDIRECT_URI=http://localhost/getAToken \
+            gunicorn --bind=127.0.0.1:8000 --timeout 600 app:app --daemon --pid /tmp/gunicorn.pid --error-logfile /tmp/gunicorn.log
+          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/health > /tmp/health.json && break; sleep 1; done
+          cat /tmp/health.json; echo
+          grep -q '"status":"ok"' /tmp/health.json
+          grep -q "Using worker: gthread" /tmp/gunicorn.log
+          kill "$(cat /tmp/gunicorn.pid)"

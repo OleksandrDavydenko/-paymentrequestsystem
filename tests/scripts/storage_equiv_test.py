@@ -5,7 +5,7 @@ from copy import deepcopy
 from datetime import date, timedelta
 sys.path.insert(0, os.getcwd())
 tmp = tempfile.mkdtemp()
-os.environ.update(UPLOAD_DIR=tmp, DATABASE_URL="sqlite:///" + os.path.join(tmp, "eq.db").replace("\\", "/"))
+os.environ.update(UPLOAD_DIR=tmp, DATABASE_URL=os.environ.get("TEST_DATABASE_URL") or "sqlite:///" + os.path.join(tmp, "eq.db").replace("\\", "/"))
 import storage
 import storage.memory as mem
 import storage.sql as dbs

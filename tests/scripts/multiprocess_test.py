@@ -4,7 +4,7 @@ import os, subprocess, sys, tempfile, textwrap
 from datetime import timedelta
 sys.path.insert(0, os.getcwd())
 tmp = tempfile.mkdtemp()
-os.environ.update(UPLOAD_DIR=tmp, DATABASE_URL="sqlite:///" + os.path.join(tmp, "mp.db").replace("\\", "/"),
+os.environ.update(UPLOAD_DIR=tmp, DATABASE_URL=os.environ.get("TEST_DATABASE_URL") or "sqlite:///" + os.path.join(tmp, "mp.db").replace("\\", "/"),
                   APP_SETTINGS_FILE=os.path.join(tmp, "s.json"))
 import app_settings, clock, db_sql, docstore, jobs, mailer, sessions_db
 import storage.sql as dbs

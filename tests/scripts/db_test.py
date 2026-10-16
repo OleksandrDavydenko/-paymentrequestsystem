@@ -10,7 +10,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
                   USER_DIRECTORY_FILE=os.path.join(tmp, "d.json"), ORG_STRUCTURE_FILE=os.path.join(tmp, "o.json"),
                   COUNTERPARTIES_PENDING_FILE=os.path.join(tmp, "cp.json"), USER_BUDGET_FILE=os.path.join(tmp, "b.json"),
                   USER_ONEC_FILE=os.path.join(tmp, "u1c.json"),
-                  DATABASE_URL="sqlite:///" + os.path.join(tmp, "test.db").replace("\\", "/"),
+                  DATABASE_URL=os.environ.get("TEST_DATABASE_URL") or "sqlite:///" + os.path.join(tmp, "test.db").replace("\\", "/"),
                   GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", GROUP_ACC_RESIDENT="g-r", GROUP_ACC_CASH="g-c", GROUP_CFO="g-f",
                   ADMIN_EMAILS="")
 import app as m
@@ -41,7 +41,7 @@ c = m.app.test_client()
 
 check("db mode: work store empty (no demo)", db.list_all() == [] and db_sql.configured() and db.work_mode())
 h = c.get("/health")
-check("health: sqlite, 0 requests", h.status_code == 200 and h.get_json()["db"] == "sqlite" and h.get_json()["requests"] == 0)
+check("health: db, 0 requests", h.status_code == 200 and h.get_json()["db"] == db_sql.kind() and h.get_json()["requests"] == 0)
 
 # ---------- налаштування: перенесення з файлу і запис у базу
 check("settings migrated from file", app_settings.get("cfo_mode") == "observe")

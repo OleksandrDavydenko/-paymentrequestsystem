@@ -7,38 +7,17 @@ on:
 
 env:
   AZURE_WEBAPP_NAME: PaymentRequestSystem   # назва ресурсу App Service
-  PYTHON_VERSION: "3.12"
 
 jobs:
+  # Усі тести (у пам'яті, SQLite, SQL Server) і перевірка запуску gunicorn — див. tests.yml
+  tests:
+    uses: ./.github/workflows/tests.yml
+
   build-and-deploy:
+    needs: tests   # якщо хоч один тест не пройшов — деплою не буде
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Check dependencies install and app imports
-        run: |
-          pip install -r requirements-dev.txt
-          CLIENT_ID=x TENANT_ID=x CLIENT_SECRET=x FLASK_SECRET_KEY=x \
-            REDIRECT_URI=http://localhost/getAToken python -c "import app"
-
-      # Якщо хоч один тест не пройшов — деплою не буде
-      - name: Run tests
-        run: python -m pytest -n auto -q
-
-      # Та сама команда запуску, що й в App Service: gunicorn має підхопити gunicorn.conf.py (потоки)
-      - name: Smoke test with gunicorn
-        run: |
-          CLIENT_ID=x TENANT_ID=x CLIENT_SECRET=x FLASK_SECRET_KEY=x REDIRECT_URI=http://localhost/getAToken \
-            gunicorn --bind=127.0.0.1:8000 --timeout 600 app:app --daemon --pid /tmp/gunicorn.pid --error-logfile /tmp/gunicorn.log
-          for i in $(seq 1 30); do curl -sf http://127.0.0.1:8000/health > /tmp/health.json && break; sleep 1; done
-          cat /tmp/health.json; echo
-          grep -q '"status":"ok"' /tmp/health.json
-          grep -q "Using worker: gthread" /tmp/gunicorn.log
-          kill "$(cat /tmp/gunicorn.pid)"
 
       # Залежності встановить сам App Service (SCM_DO_BUILD_DURING_DEPLOYMENT=true)
       - name: Deploy
