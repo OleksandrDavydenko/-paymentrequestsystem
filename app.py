@@ -2256,6 +2256,18 @@ def admin_telegram_test(*, context):
     return redirect(url_for("admin_users") + "#mail-settings")
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return app.send_static_file("favicon.ico")
+
+
+@app.template_global()
+def abs_static(filename):
+    """Абсолютна адреса статичного файлу — для листів (поза сайтом відносні адреси не працюють)."""
+    base = os.environ.get("APP_BASE_URL", "").rstrip("/")
+    return base + url_for("static", filename=filename) if base else url_for("static", filename=filename, _external=True)
+
+
 @app.route("/health")
 def health():
     """Стан сайту й бази даних (без персональних даних)."""

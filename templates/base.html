@@ -5,10 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Заявки на оплату{% endblock %}</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
+  <link rel="icon" href="{{ url_for('static', filename='favicon-32.png') }}" sizes="32x32" type="image/png">
+  <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" sizes="any">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='apple-touch-icon.png') }}">
+  <link rel="manifest" href="{{ url_for('static', filename='site.webmanifest') }}">
+  <meta name="theme-color" content="#0f6cbd">
 </head>
 <body>
   <header>
-    <a class="brand" href="/">Система заявок на оплату</a>
+    <a class="brand" href="/"><img class="brand-logo" src="{{ url_for('static', filename='logo-mark.svg') }}" alt="" width="28" height="28">Система заявок на оплату</a>
     <nav>
       {% if 'initiator' in roles or participating_count %}
       <a href="{{ url_for('requests_list') }}" class="{{ 'active' if request.endpoint == 'requests_list' }}">Мої заявки</a>
