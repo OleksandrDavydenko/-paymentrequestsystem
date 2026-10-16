@@ -3,7 +3,7 @@
 {% block title %}Сповіщення на пошту{% endblock %}
 
 {% block content %}
-<form method="post" class="card notif-settings">
+<form method="post" class="card notif-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <h1>Сповіщення на пошту</h1>
 
   {% if not mail_enabled %}
@@ -94,7 +94,7 @@
   </div>
 </form>
 {% if allow_custom %}
-<form method="post" action="{{ url_for('notification_address') }}" id="addr-form" hidden></form>
+<form method="post" action="{{ url_for('notification_address') }}" id="addr-form" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"></form>
 {% endif %}
 <script>
   const addrInput = document.getElementById('addr-input');

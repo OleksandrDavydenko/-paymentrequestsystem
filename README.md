@@ -30,8 +30,20 @@ copy .env.example .env   # заповнити значення
 
 Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 
+## Тести
+```
+.venv\Scripts\pip install -r requirements-dev.txt
+.venv\Scripts\python -m pytest -n auto        # усі (паралельно, ~1,5 хв)
+.venv\Scripts\python -m pytest -k stage30     # один сценарій
+```
+Сценарії — у `tests/scripts/*_test.py`; кожен запускається в окремому процесі (`tests/test_scripts.py`) з власною
+тимчасовою папкою, фіктивними обліковими даними і без робочих змінних (бази, Power BI, Blob, Telegram, пошти),
+тож тести ніколи не чіпають робочі дані. Новий сценарій: файл `tests/scripts/<назва>_test.py`, що друкує
+`PASS …` / `FAIL …` і в кінці `ALL OK`. GitHub Actions запускає тести перед кожним деплоєм — якщо хоч один
+не пройшов, деплой не відбувається.
+
 ## Деплой
-Кожен push у `main` деплоїться через GitHub Actions (`.github/workflows/deploy.yml`).
+Кожен push у `main` деплоїться через GitHub Actions (`.github/workflows/deploy.yml`) — після тестів.
 Потрібен секрет репозиторію `AZURE_WEBAPP_PUBLISH_PROFILE` — вміст publish profile з App Service
 (App Service → Configuration → SCM Basic Auth Publishing = On → Overview → Download publish profile).
 
@@ -211,6 +223,14 @@ Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
 (`/admin/notifications`). Кожен лист і повідомлення Telegram (у черзі → надіслано / немає в боті / помилка), а також
 «не надсилалось» — кому система могла б надіслати й чому ні: власна дія, вимкнена подія, порожня група ролі,
 вимкнена розсилка. Фільтри: канал, результат, пошта або № заявки.
+
+## Захист форм (CSRF)
+Кожна POST-форма містить прихований `csrf_token` (`<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">`
+одразу після `<form method="post">`), fetch-запити — заголовок `X-CSRFToken` з `<meta name="csrf-token">` у `base.html`
+(Flask-WTF `CSRFProtect`). Без дійсного токена дія не виконується: користувач повертається на сторінку з
+поясненням «Сторінка застаріла…» (fetch — JSON 400). Токен діє весь сеанс входу. Виняток — API Telegram-бота
+(`/api/telegram/*`, захищено ключем `X-Api-Key`). Cookie сеансу: `Secure` (на HTTPS), `HttpOnly`, `SameSite=Lax`.
+Тест `csrf_test.py` перевіряє, що в кожній POST-формі шаблонів є токен.
 
 ## Секрети
 - Секрети (`CLIENT_SECRET`, `FLASK_SECRET_KEY`, publish profile) — **лише** в App Service → Environment variables,

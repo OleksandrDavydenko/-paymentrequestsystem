@@ -210,7 +210,8 @@
     btn.disabled = true;
     try {
       const resp = await fetch(window.CP_NEW_URL, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch' },
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Requested-With': 'fetch',
+          'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content },
         body: JSON.stringify({ resident: isResident() ? '1' : '0', edrpou: f('edrpou').value, country: f('country').value,
           name: f('name').value, note: f('note').value }),
       });
@@ -225,6 +226,8 @@
       } else if (data.item) {
         ['edrpou', 'country', 'name', 'note'].forEach(k => { f(k).value = ''; });
         choose(data.item);
+      } else if (data.error) {
+        $('cp-new-error').textContent = data.error;
       }
     } catch (e) {
       $('cp-new-error').textContent = 'Не вдалося зберегти — перевірте з\'єднання і спробуйте ще раз';

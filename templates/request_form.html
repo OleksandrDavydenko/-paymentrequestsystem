@@ -85,7 +85,7 @@
     {% if editable %}
     <span class="muted participants-pending" id="participants-pending" hidden>Зміни учасників збережуться разом із заявкою</span>
     {% else %}
-    <form method="post" action="{{ url_for('request_participants', request_id=req.id) }}" id="participants-form" class="participants-save" hidden>
+    <form method="post" action="{{ url_for('request_participants', request_id=req.id) }}" id="participants-form" class="participants-save" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="set">
       <button type="submit" class="btn btn-sm btn-primary">Зберегти учасників</button>
       <button type="button" class="btn btn-sm" id="participants-reset">Скасувати</button>
@@ -103,7 +103,7 @@
   {% endif %}
 </div>
 
-<form method="post" class="card" id="request-form" novalidate autocomplete="off">
+<form method="post" class="card" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
   <fieldset {{ 'disabled' if not editable }}>
 
@@ -258,7 +258,7 @@
 {% if actions %}
 
 
-<form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision">
+<form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   {% if cfo_intervene %}
   <h2>Втручання фіндиректора</h2>
   <p class="muted" style="margin-top:0">Заявка чекає рішення {{ ROLES[accountant_role_of_req] | lower if accountant_role_of_req else 'бухгалтера' }}.
@@ -311,7 +311,7 @@
     {% if handover.reminders %}<span class="muted">Нагадувань надіслано: {{ handover.reminders }}.</span>{% endif %}
   </p>
   {% if can_confirm_handover %}
-  <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form">
+  <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Дата передачі
       <input type="date" name="date" value="{{ today.isoformat() }}" min="{{ handover.since.isoformat() }}" max="{{ today.isoformat() }}" required></label>
     <input type="text" name="comment" maxlength="2000" aria-label="Коментар"
@@ -326,7 +326,7 @@
   {% if 'admin' in roles %}
   <details class="handover-undo">
     <summary class="muted">Адміністратор: скасувати підтвердження</summary>
-    <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form">
+    <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <input type="hidden" name="action" value="undo">
       <input type="text" name="comment" required maxlength="2000" placeholder="Причина (обов'язково)" aria-label="Причина">
       <button type="submit" class="btn btn-purple btn-sm">Скасувати підтвердження</button>
@@ -338,7 +338,7 @@
 {% endif %}
 
 {% if can_see_account and req.id and not account_required %}
-<form method="post" action="{{ url_for('request_payment_account', request_id=req.id) }}" class="card pay-account" id="payment-account">
+<form method="post" action="{{ url_for('request_payment_account', request_id=req.id) }}" class="card pay-account" id="payment-account"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="section-head">
     <h2>Вид оплати</h2>
     <span class="muted">бачать і змінюють лише бухгалтери, фіндиректор і адміністратор</span>
@@ -375,12 +375,12 @@
     <dd><span>{{ value }}</span> <button type="button" class="btn-link cp-copy" data-copy="{{ value }}" title="Скопіювати">⧉</button></dd>
     {% endfor %}
   </dl>
-  <form method="post" action="{{ url_for('counterparty_check', cp_id=cp.id) }}" class="cp-link-form">
+  <form method="post" action="{{ url_for('counterparty_check', cp_id=cp.id) }}" class="cp-link-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ url_for('request_card', request_id=req.id) }}">
     <button type="submit" class="btn btn-primary btn-sm" {{ 'disabled' if not cp.edrpou }}>⟳ Перевірити в 1С зараз</button>
     <span class="muted">{% if cp.edrpou %}Шукає в 1С контрагента з ЄДРПОУ {{ cp.edrpou }} і прив'язує його — одразу після того, як його завели в 1С.{% else %}ЄДРПОУ не вказано — знайдіть контрагента в 1С вручну нижче.{% endif %}</span>
   </form>
-  <form method="post" action="{{ url_for('counterparty_link', cp_id=cp.id) }}" class="cp-link-form cp-manual" autocomplete="off">
+  <form method="post" action="{{ url_for('counterparty_link', cp_id=cp.id) }}" class="cp-link-form cp-manual" autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="next" value="{{ url_for('request_card', request_id=req.id) }}">
     <input type="hidden" name="onec_id" id="cp-link-id" value="{{ cp_suggested.id if cp_suggested else '' }}">
     <label for="cp-link-search">Або прив'язати вручну:</label>
@@ -400,7 +400,7 @@
 <details class="card admin-status" id="admin-status" {{ 'open' if admin_comment }}>
   <summary><h2>Адміністратор: змінити статус</h2><span class="muted">поточний — {{ STATUSES[req.status][0] }}</span></summary>
   <form method="post" action="{{ url_for('admin_change_status', request_id=req.id) }}"
-        data-msg="Змінити статус заявки № {{ req.number }}?" onsubmit="return confirm(this.dataset.msg)">
+        data-msg="Змінити статус заявки № {{ req.number }}?" onsubmit="return confirm(this.dataset.msg)"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <p class="muted">Для виправлення помилок, наприклад якщо заявка помилково потрапила до оплати.
       Зміна записується в історію погодження разом із причиною.</p>
     <div class="admin-status-row">
@@ -438,7 +438,7 @@
         <a class="doc-btn" href="{{ url_for('download_file', file_id=f.id, download=1) }}" title="Скачати" aria-label="Скачати {{ f.name }}">
           <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></a>
         {% if req.status not in CLOSED_STATUSES and f.user_email | lower == current_email | lower %}
-        <form method="post" action="{{ url_for('delete_file', file_id=f.id) }}" data-msg="Видалити «{{ f.name }}»?" onsubmit="return confirm(this.dataset.msg)">
+        <form method="post" action="{{ url_for('delete_file', file_id=f.id) }}" data-msg="Видалити «{{ f.name }}»?" onsubmit="return confirm(this.dataset.msg)"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <button type="submit" class="doc-btn doc-del" title="Видалити" aria-label="Видалити {{ f.name }}">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 7h14M10 7V5h4v2M7 7l1 13h8l1-13"/></svg></button>
         </form>
@@ -452,7 +452,7 @@
   {% if not req.id %}
     <p class="muted doc-empty">Щоб додати документи, спочатку запишіть заявку.</p>
   {% elif can_attach %}
-  <form method="post" action="{{ url_for('upload_files', request_id=req.id) }}" enctype="multipart/form-data" class="dropzone" id="dropzone">
+  <form method="post" action="{{ url_for('upload_files', request_id=req.id) }}" enctype="multipart/form-data" class="dropzone" id="dropzone"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="file" name="files" id="doc-input" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" hidden>
     <svg class="dz-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 16v3a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3"/></svg>
     <div class="dz-text">
@@ -470,7 +470,7 @@
 
 {% if req.id %}
 <form method="post" action="{{ url_for('request_comment', request_id=req.id) }}" class="card comment-form" id="comment"
-      enctype="multipart/form-data">
+      enctype="multipart/form-data"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <h2 class="card-title">Коментар</h2>
   <textarea name="comment" maxlength="2000"
             placeholder="Питання чи уточнення щодо заявки — статус не зміниться, коментар побачать усі учасники">{{ comment_draft }}</textarea>

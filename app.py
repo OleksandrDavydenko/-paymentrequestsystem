@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 
 from dotenv import load_dotenv
 from flask import Flask, abort, flash, g, redirect, render_template, request, send_file, session, url_for
+from flask_wtf.csrf import CSRFError, CSRFProtect
 from werkzeug.middleware.proxy_fix import ProxyFix
 import identity.flask
 
@@ -48,10 +49,18 @@ app.config.update(
     SECRET_KEY=os.environ["FLASK_SECRET_KEY"],
     SESSION_TYPE="filesystem",  # сесії зберігаються на сервері, не в cookie
     SESSION_PERMANENT=False,
+    # Cookie сеансу: лише HTTPS (крім локального запуску) і не надсилається з POST-запитами з чужих сайтів
+    SESSION_COOKIE_SECURE=os.environ.get("REDIRECT_URI", "").startswith("https://"),
+    SESSION_COOKIE_HTTPONLY=True,
+    SESSION_COOKIE_SAMESITE="Lax",
+    # Захист форм (CSRF): токен діє весь сеанс входу — форма, відкрита зранку, спрацює й увечері
+    WTF_CSRF_TIME_LIMIT=None,
     MAX_CONTENT_LENGTH=25 * 1024 * 1024,
 )
 # App Service приймає HTTPS на проксі, а до Flask передає HTTP.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
+# Кожна POST-форма має містити csrf_token, fetch-запити — заголовок X-CSRFToken (див. base.html)
+csrf = CSRFProtect(app)
 
 # Single-tenant authority: увійти можуть лише користувачі нашого тенанту Entra ID.
 auth = identity.flask.Auth(
@@ -2033,26 +2042,42 @@ MAX_FILE_SIZE = 10 * 1024 * 1024
 INLINE_EXT = {"pdf", "jpg", "jpeg", "png"}  # відкриваються в браузері, решта — скачуються
 
 
+def _back_target(path):
+    """Сторінка, на яку повернути користувача, якщо дію з форми не виконано."""
+    m = re.match(r"^/requests/(\d+)(/|$)", path)
+    if m:
+        return url_for("request_card", request_id=int(m.group(1))) + ("#documents" if path.endswith("/files") else "")
+    if path.startswith("/requests/new"):
+        return url_for("request_card")
+    if path.startswith("/to-pay"):
+        return url_for("to_pay")
+    if path.startswith("/admin"):
+        return url_for("admin_users")
+    if path.startswith("/settings"):
+        return url_for("notification_settings")
+    return "/"
+
+
 @app.errorhandler(405)
 def method_not_allowed(e):
     """Дія з форми (POST), яку перервав повторний вхід: після входу браузер повертається на ту саму адресу вже GET.
     Замість «Method Not Allowed» — назад на сторінку, звідки була дія, з поясненням."""
     if request.method != "GET":
         return e
-    m = re.match(r"^/requests/(\d+)/", request.path)
-    if m:
-        target = url_for("request_card", request_id=int(m.group(1))) + ("#documents" if request.path.endswith("/files") else "")
-    elif request.path.startswith("/to-pay"):
-        target = url_for("to_pay")
-    elif request.path.startswith("/admin"):
-        target = url_for("admin_users")
-    elif request.path.startswith("/settings"):
-        target = url_for("notification_settings")
-    else:
-        target = "/"
     flash("Сеанс входу оновився, тому дію не виконано" +
           (" і файл не додано" if request.path.endswith("/files") else "") + " — повторіть її, будь ласка.", "error")
-    return redirect(target)
+    return redirect(_back_target(request.path))
+
+
+@app.errorhandler(CSRFError)
+def csrf_error(e):
+    """Форма без дійсного токена: сторінку відкрито до повторного входу або запит прийшов з чужого сайту."""
+    logging.getLogger(__name__).warning("CSRF: %s %s — %s", request.method, request.path, e.description)
+    message = "Сторінка застаріла (оновився сеанс входу), тому дію не виконано — повторіть її, будь ласка."
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"error": message}, 400
+    flash(message, "error")
+    return redirect(_back_target(request.path))
 
 
 @app.errorhandler(413)
@@ -2258,6 +2283,7 @@ def telegram_outbox():
 
 
 @app.route("/api/telegram/ack", methods=["POST"])
+@csrf.exempt  # бот не має сеансу входу — захищено ключем X-Api-Key
 def telegram_ack():
     _bot_guard()
     data = request.get_json(silent=True) or {}
@@ -2265,6 +2291,7 @@ def telegram_ack():
 
 
 @app.route("/api/telegram/linked", methods=["POST"])
+@csrf.exempt  # бот не має сеансу входу — захищено ключем X-Api-Key
 def telegram_linked():
     _bot_guard()
     data = request.get_json(silent=True) or {}
