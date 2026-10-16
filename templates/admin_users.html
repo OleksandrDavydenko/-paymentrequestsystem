@@ -335,6 +335,20 @@
   {% endfor %}
   <div class="route-summary">Маршрут: <strong id="route-summary">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value, cfo_threshold) }}</strong></div>
 
+  <div class="budget-section-title">Розподіл обов'язків</div>
+  <input type="hidden" name="no_self_approval_sent" value="1">
+  <label class="mode-option">
+    <input type="checkbox" name="no_self_approval" value="1" {{ 'checked' if no_self_approval }}>
+    <span>
+      <strong>Автор не може погоджувати свою заявку</strong>
+      <span class="muted">— навіть якщо має роль бухгалтера, фіндиректора чи керівника відділу</span>
+      <span class="mode-hint">«Принцип чотирьох очей»: кожну заявку погоджує хтось, крім автора. Власні заявки не з'являються
+        в його «На погодження», а в картці замість кнопок рішення — пояснення. Оплатити вже погоджену заявку автор-бухгалтер
+        може. Якщо погоджувач — єдина людина зі своєю роллю, його заявки на цьому етапі чекатимуть: тоді рішення ухвалює
+        адміністратор («Змінити статус» у картці заявки). Діє одразу, зокрема для заявок, що вже на погодженні.</span>
+    </span>
+  </label>
+
   <div class="budget-section-title">Вид оплати</div>
   <input type="hidden" name="require_payment_account_sent" value="1">
   <label class="mode-option">

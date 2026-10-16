@@ -337,7 +337,7 @@ def inject_roles():
         "is_approver": bool(_deciding_roles(roles)) or "cfo" in roles,
         "sees_departments": bool(roles & {"dept_head", "dept_viewer"}),
         "participating_count": len(db.list_participating(g.user["email"])) if getattr(g, "user", None) else 0,
-        "queue_count": len(db.list_queue(roles)) if roles & wf.APPROVER_ROLES else 0,
+        "queue_count": len(db.list_queue(roles, g.user["email"])) if roles & wf.APPROVER_ROLES else 0,
         "can_see_payments": wf.can_see_payments(roles),
         "sees_all_requests": _sees_all_requests(roles),
         "test_mode": notifications.test_mode(),
@@ -558,7 +558,7 @@ def approvals(*, context):
     if view == "accountants" and "cfo" not in g.roles:
         abort(403)
     source = {"processed": lambda: db.list_processed(g.roles), "accountants": db.list_at_accountants,
-              "queue": lambda: db.list_queue(g.roles)}[view]()
+              "queue": lambda: db.list_queue(g.roles, g.user["email"])}[view]()
     rows, fbar = _filtered(source, _ref_keys(extra_before=("form",)))
     return render_template(
         "approvals.html",
@@ -672,6 +672,9 @@ def request_card(request_id=None, *, context):
         acting_role=wf.acting_role(req, roles, user["email"]) or (
             "cfo" if wf.cfo_can_intervene(req, roles, user["email"]) else None),
         cfo_intervene=wf.cfo_can_intervene(req, roles, user["email"]),
+        # Автор має роль погоджувача, але погоджувати власну заявку заборонено (налаштування адміністратора)
+        self_blocked=wf.self_approval_blocked(req, user["email"])
+        and wf.acting_role(req, roles, user["email"], ignore_self=True) is not None,
         accountant_role_of_req=wf.accountant_role(req),
         can_submit="submit" in available,
         stages=wf.stage_states(req),
@@ -1472,6 +1475,12 @@ def admin_settings(*, context):
         app_settings.set("require_payment_account", require_acc, g.user["email"])
         flash("«Вид оплати» при погодженні бухгалтером: " + ("обов'язковий" if require_acc else "необов'язковий"), "success")
         changed = True
+    if "no_self_approval_sent" in request.form:
+        no_self = request.form.get("no_self_approval") == "1"
+        if no_self != bool(app_settings.get("no_self_approval")):
+            app_settings.set("no_self_approval", no_self, g.user["email"])
+            flash("Автор погоджує власну заявку: " + ("заборонено" if no_self else "дозволено"), "success")
+            changed = True
     if "cash_handover_sent" in request.form:
         handover_on = request.form.get("cash_handover_confirm") == "1"
         try:
@@ -1772,6 +1781,7 @@ def admin_users(*, context):
                              for cid in [c["id"] for c in counterparties.pending_items()]},
         pending_cp=app_settings.info("pending_cp_payment"),
         require_payment_account=app_settings.get("require_payment_account"),
+        no_self_approval=app_settings.get("no_self_approval"),
         cash_handover_confirm=app_settings.get("cash_handover_confirm"),
         cash_handover_remind_days=app_settings.get("cash_handover_remind_days"),
         handover_max_reminders=wf.HANDOVER_MAX_REMINDERS,

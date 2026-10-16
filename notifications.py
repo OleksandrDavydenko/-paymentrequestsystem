@@ -262,6 +262,8 @@ def _notify(event, req, actor, comment, target=None):
             if not members:
                 no_members(role)
             for m in members:
+                if kind == "task_new" and wf.self_approval_blocked(req, m["email"]):
+                    continue  # власну заявку погоджує інша людина (параметр «Розподіл обов'язків»)
                 add(m["email"], "task_new", f"ви — {wf.ROLES.get(role, role).lower()}", SUBJECTS[kind])
 
     # 2б. Нова заявка відділу — керівнику і тим, хто бачить заявки відділу (якщо ввімкнули)

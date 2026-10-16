@@ -356,9 +356,9 @@ def list_participating(email):
     return sorted(rows, key=lambda r: r["created_at"], reverse=True)
 
 
-def list_queue(roles):
+def list_queue(roles, user_email=""):
     """Заявки, що чекають на рішення однієї з ролей (черга «На погодження»)."""
-    rows = [r for r in _reqs().values() if workflow.in_queue(r, roles)]
+    rows = [r for r in _reqs().values() if workflow.in_queue(r, roles, user_email)]
     return sorted(rows, key=lambda r: r["history"][-1]["at"])
 
 

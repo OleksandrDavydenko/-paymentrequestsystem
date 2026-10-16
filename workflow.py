@@ -3,6 +3,7 @@
 Права перевіряються за МНОЖИНОЮ ролей користувача (ролей може бути кілька).
 """
 
+import app_settings
 import clock
 import organizations
 
@@ -280,8 +281,21 @@ def pending_roles(req):
     return [r for r in parallel_roles(req) if r not in done]
 
 
-def acting_role(req, roles, user_email):
-    """Роль, якою користувач може діяти на поточному етапі, або None."""
+# Етапи погодження (не відправка автором і не оплата) — на них діє «Автор не погоджує свою заявку»
+APPROVAL_STAGES = {"dept_head", "accountant", "cfo", "approval"}
+
+
+def self_approval_blocked(req, user_email):
+    """Увімкнено «Автор не може погоджувати свою заявку», заявка на погодженні, а користувач — її автор."""
+    return (req["status"] in APPROVAL_STAGES and is_author(req, user_email)
+            and bool(app_settings.get("no_self_approval")))
+
+
+def acting_role(req, roles, user_email, ignore_self=False):
+    """Роль, якою користувач може діяти на поточному етапі, або None.
+    ignore_self — не враховувати заборону погоджувати власну заявку (щоб пояснити, чому рішення недоступне)."""
+    if not ignore_self and self_approval_blocked(req, user_email):
+        return None
     if req["status"] == "approval":
         return next((r for r in pending_roles(req) if r in roles), None)
     actor = stage_actor(req)
@@ -292,9 +306,12 @@ def acting_role(req, roles, user_email):
     return actor if actor in roles else None
 
 
-def in_queue(req, roles):
+def in_queue(req, roles, user_email=""):
     """Чи чекає заявка на рішення однієї з ролей погоджувача (для «На погодження»).
-    Етап «До оплати» сюди не входить — він у окремому розділі."""
+    Етап «До оплати» сюди не входить — він у окремому розділі. Власні заявки автора не потрапляють
+    у його чергу, якщо їх погоджувати заборонено."""
+    if user_email and self_approval_blocked(req, user_email):
+        return False
     if req["status"] == "approval":
         return any(r in roles for r in pending_roles(req))
     actor = stage_actor(req)
@@ -558,6 +575,8 @@ def cfo_can_intervene(req, roles, user_email=""):
     """Фіндиректор як керівник бухгалтерів: повернути або відхилити заявку, що чекає бухгалтера
     (погоджує все одно бухгалтер). Лише коли сам фіндиректор на цьому етапі не діє іншою роллю."""
     if "cfo" not in roles or acting_role(req, roles, user_email) is not None:
+        return False
+    if self_approval_blocked(req, user_email):
         return False
     if req["status"] == "accountant":
         return True
