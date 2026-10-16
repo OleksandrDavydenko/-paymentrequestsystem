@@ -387,11 +387,16 @@ table.sortable tr.selected td:first-child { background: #e8f1fb; }
 @media (max-width: 760px) { .route-hint { grid-column: 1; } }
 
 /* ---------- Вкладки «До оплати / Оплачені» ---------- */
-.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid #e1e5ea; }
-.tab { padding: 8px 16px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 600; }
+.tabs { display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 2px solid #e1e5ea; overflow-x: auto; overflow-y: hidden;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.tabs::-webkit-scrollbar { display: none; }
+.tab { padding: 8px 16px; color: var(--muted); text-decoration: none; border-bottom: 2px solid transparent; margin-bottom: -2px; font-weight: 600;
+  white-space: nowrap; flex: none; display: inline-flex; align-items: center; }
 .tab:hover { color: var(--text); }
 .tab.active { color: var(--primary); border-bottom-color: var(--primary); }
-.tab .count { background: var(--primary); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 12px; margin-left: 4px; }
+.tab .count { background: var(--primary); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 12px; margin-left: 6px;
+  white-space: nowrap; line-height: 18px; display: inline-block; }
+@media (max-width: 760px) { .tab { padding: 8px 12px; } }
 .tab .muted-count { background: #e1e5ea; color: var(--muted); }
 
 /* ---------- Зміна статусу адміністратором ---------- */
