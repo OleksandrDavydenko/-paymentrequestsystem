@@ -67,6 +67,13 @@ jobs:
               f.write(f"TEST_MSSQL_URL={url}\n")
           EOF
 
+      # Сценарії на SQL Server не мають тихо пропускатися (напр., якщо змінна не дійшла до тестів)
+      - name: Check SQL Server cases are collected
+        run: |
+          n=$(python -m pytest --collect-only -q | grep -c -- "-mssql]" || true)
+          echo "SQL Server cases: $n"
+          test "$n" -ge 30
+
       # Якщо хоч один тест не пройшов — деплою не буде
       - name: Run tests (memory, SQLite, SQL Server)
         run: python -m pytest -n auto -q
