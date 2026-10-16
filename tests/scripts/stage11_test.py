@@ -6,7 +6,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "settings.
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -24,7 +24,7 @@ graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
 # Бухгалтер при погодженні вибирає «Вид оплати» — у старих тестах підставляємо перший доступний
-import payment_accounts as _pa, mock_data as _md
+import payment_accounts as _pa, storage as _md
 _orig_post = c.post
 def _post(url, data=None, **kw):
     if isinstance(data, dict) and data.get("action") == "approve" and "payment_account_id" not in data and url.endswith("/action"):
@@ -41,7 +41,7 @@ BASE = {"pay_date": "2026-10-20", "counterparty_id": "1", "organization_id": "1"
 # --- налаштування
 login("i@ftpua.com", ["g-i"])
 check("non-admin settings -> 403", c.post("/admin/settings", data={"approval_mode": "parallel"}).status_code == 403)
-c.post("/requests/new", data=BASE); seq_id = max(db._REQUESTS)
+c.post("/requests/new", data=BASE); seq_id = db.last_id()
 check("default sequential -> accountant", db.get_request(seq_id)["status"] == "accountant")
 
 login("od@ftpua.com", ["g-a"])
@@ -55,7 +55,7 @@ check("admin page shows block", "Налаштування процесу" in c.g
 
 # --- паралельно
 login("i@ftpua.com", ["g-i"])
-c.post("/requests/new", data=BASE); pid = max(db._REQUESTS)
+c.post("/requests/new", data=BASE); pid = db.last_id()
 r = db.get_request(pid)
 check("parallel submit -> approval", r["status"] == "approval" and r["route_mode"] == "parallel")
 login("cfo@ftpua.com", ["g-f"]); cfo_sees = inq(pid)
@@ -83,7 +83,7 @@ check("both approved -> to_pay", db.get_request(pid)["status"] == "to_pay")
 
 # rework resets approvals; resubmission needs both again
 login("i@ftpua.com", ["g-i"])
-c.post("/requests/new", data=BASE); pid2 = max(db._REQUESTS)
+c.post("/requests/new", data=BASE); pid2 = db.last_id()
 login("res@ftpua.com", ["g-r"]); c.post(f"/requests/{pid2}/action", data={"action": "approve"})
 login("cfo@ftpua.com", ["g-f"]); c.post(f"/requests/{pid2}/action", data={"action": "rework", "comment": "Додайте акт"})
 r = db.get_request(pid2)

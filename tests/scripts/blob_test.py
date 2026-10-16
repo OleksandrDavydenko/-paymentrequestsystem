@@ -43,7 +43,7 @@ filestore.start_migration = lambda: None  # у тесті переносимо �
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import mailer, notifications
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -60,18 +60,19 @@ c = m.app.test_client()
 check("health: blob", c.get("/health").get_json()["files"] == "blob")
 rid = next(r["id"] for r in db.list_all() if r["author_email"] == "od@ftpua.com" and r["status"] in ("draft", "rework"))
 r = c.post(f"/requests/{rid}/files", data={"files": (io.BytesIO(b"%PDF-1.4 test"), "Рахунок.pdf")}, content_type="multipart/form-data")
-att = db._REQUESTS[rid]["attachments"][-1]
+att = db.get_request(rid)["attachments"][-1]
 name = f"{att['id']}.pdf"
 check("upload goes to blob, not disk", fake.blobs.get(name) == b"%PDF-1.4 test" and fake.types[name] == "application/pdf"
       and not os.path.exists(os.path.join(up, name)))
 d = c.get(f"/files/{att['id']}")
 check("download from blob (inline pdf)", d.status_code == 200 and d.data == b"%PDF-1.4 test" and d.mimetype == "application/pdf")
 c.post(f"/files/{att['id']}/delete")
-check("delete removes blob", name not in fake.blobs and not any(a["id"] == att["id"] for a in db._REQUESTS[rid]["attachments"]))
+check("delete removes blob", name not in fake.blobs and not any(a["id"] == att["id"] for a in db.get_request(rid)["attachments"]))
 
 # старий файл з диска: відкриття — з диска й заодно в Blob
-db._REQUESTS[rid]["attachments"].append({"id": "oldfile123", "name": "old.pdf", "ext": "pdf", "size": 8,
-                                         "at": db._REQUESTS[rid]["created_at"], "user_name": "A", "user_email": "od@ftpua.com"})
+_r = db.get_request(rid); _r["attachments"].append({"id": "oldfile123", "name": "old.pdf", "ext": "pdf", "size": 8,
+                                         "at": db.get_request(rid)["created_at"], "user_name": "A", "user_email": "od@ftpua.com"})
+db.save_request(_r)
 d = c.get("/files/oldfile123")
 check("old disk file served + copied to blob", d.data == b"%PDF old" and fake.blobs.get("oldfile123.pdf") == b"%PDF old"
       and os.path.exists(os.path.join(up, "oldfile123.pdf")))
@@ -84,10 +85,10 @@ check("missing everywhere -> 404", c.get("/files/doesnotexist").status_code == 4
 # збій Blob при завантаженні — зрозуміле повідомлення, нічого не додано
 orig = fake.upload_blob
 fake.upload_blob = lambda *a, **k: (_ for _ in ()).throw(RuntimeError("403 AuthorizationPermissionMismatch"))
-n = len(db._REQUESTS[rid]["attachments"])
+n = len(db.get_request(rid)["attachments"])
 r = c.post(f"/requests/{rid}/files", data={"files": (io.BytesIO(b"x"), "a.pdf")}, content_type="multipart/form-data",
            follow_redirects=True)
-check("blob failure: not attached, message", len(db._REQUESTS[rid]["attachments"]) == n and "не вдалося зберегти" in r.get_data(as_text=True))
+check("blob failure: not attached, message", len(db.get_request(rid)["attachments"]) == n and "не вдалося зберегти" in r.get_data(as_text=True))
 fake.upload_blob = orig
 
 print("ALL OK" if ok else "SOME FAILED")

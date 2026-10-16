@@ -6,7 +6,7 @@ os.environ.update(UPLOAD_DIR=tempfile.mkdtemp(), GROUP_ADMIN="g-admin", GROUP_IN
 import app as m
 import user_budget; user_budget.get = lambda oid: {'direct': True, 'all_departments': True, 'departments': []}
 import graph
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -22,7 +22,7 @@ m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".j
 c = m.app.test_client()
 
 # Бухгалтер при погодженні вибирає «Вид оплати» — у старих тестах підставляємо перший доступний
-import payment_accounts as _pa, mock_data as _md
+import payment_accounts as _pa, storage as _md
 _orig_post = c.post
 def _post(url, data=None, **kw):
     if isinstance(data, dict) and data.get("action") == "approve" and "payment_account_id" not in data and url.endswith("/action"):
@@ -42,7 +42,7 @@ login("i@ftpua.com", ["g-init"])
 CASES = {"cash": ("cash", "4"), "bank_resident": ("bank", "1"), "bank_nonresident": ("bank", "4")}
 for form, (pf, org) in CASES.items():
     c.post("/requests/new", data={**BASE, "payment_form": pf, "organization_id": org, "cash_receiver": "contractor"})
-    ids[form] = max(db._REQUESTS)
+    ids[form] = db.last_id()
     check(f"{form}: submitted to accountant stage", db.get_request(ids[form])["status"] == "accountant")
 check("old 'bank_resident' value rejected", c.post("/requests/new", data={**BASE, "payment_form": "bank_resident"}).status_code == 200)
 check("cash from Litbia still goes to cashier", db.get_request(ids["cash"])["organization_id"] == "4")

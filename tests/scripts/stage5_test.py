@@ -7,7 +7,7 @@ os.environ.update(UPLOAD_DIR=tempfile.mkdtemp(), GROUP_ADMIN="g-admin", GROUP_IN
                   GROUP_CFO="g-cfo", ADMIN_EMAILS="")
 import app as m
 import user_budget; user_budget.get = lambda oid: {'direct': True, 'all_departments': True, 'departments': []}
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -53,19 +53,19 @@ login("i@ftpua.com", ["g-init"])
 check("initiator -> 403", c.get("/admin/requests").status_code == 403)
 login("admin@ftpua.com", ["g-admin"])
 t = c.get("/admin/requests").get_data(as_text=True)
-check(f"admin sees all {len(db._REQUESTS)}", rows(t) == len(db._REQUESTS))
+check(f"admin sees all {len(db.list_all())}", rows(t) == len(db.list_all()))
 check("admin nav has Усі заявки", "Усі заявки" in t)
 check("admin-only / -> all requests", c.get("/").headers["Location"].endswith("/admin/requests"))
 check("filter status draft", rows(c.get("/admin/requests?status=draft").get_data(as_text=True)) ==
-      sum(1 for r in db._REQUESTS.values() if r["status"] == "draft"))
+      sum(1 for r in db.list_all() if r["status"] == "draft"))
 check("filter form cash", rows(c.get("/admin/requests?form=cash").get_data(as_text=True)) ==
-      sum(1 for r in db._REQUESTS.values() if r["payment_form"] == "cash"))
+      sum(1 for r in db.list_all() if r["payment_form"] == "cash"))
 check("search Maersk", rows(c.get("/admin/requests?q=maersk").get_data(as_text=True)) ==
-      sum(1 for r in db._REQUESTS.values() if r["counterparty_id"] == "5"))
+      sum(1 for r in db.list_all() if r["counterparty_id"] == "5"))
 check("search by number", rows(c.get("/admin/requests?q=000000009").get_data(as_text=True)) == 1)
-n_pay = sum(1 for r in db._REQUESTS.values() if date(2026, 10, 1) <= r["pay_date"] <= date(2026, 10, 31))
+n_pay = sum(1 for r in db.list_all() if date(2026, 10, 1) <= r["pay_date"] <= date(2026, 10, 31))
 check("pay-date range", rows(c.get("/admin/requests?date_field=pay&from=2026-10-01&to=2026-10-31").get_data(as_text=True)) == n_pay)
-n_cr = sum(1 for r in db._REQUESTS.values() if r["created_at"].date() <= date(2026, 9, 10))
+n_cr = sum(1 for r in db.list_all() if r["created_at"].date() <= date(2026, 9, 10))
 check("created-date range", rows(c.get("/admin/requests?date_field=created&to=2026-09-10").get_data(as_text=True)) == n_cr)
 
 r = c.get("/requests/5")

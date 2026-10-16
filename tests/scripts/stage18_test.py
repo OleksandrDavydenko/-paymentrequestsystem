@@ -11,7 +11,7 @@ import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications, user_prefs, clock
 import workflow as wf
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -49,7 +49,7 @@ check("no cash receiver choice in form", "cash_receiver" not in page and "Хто
 def new_cash(form="cash", author=AUTHOR):
     login(author, INIT)
     c.post("/requests/new", data={**BASE, "payment_form": form, "action": "submit"})
-    return max(db._REQUESTS)
+    return db.last_id()
 
 def to_paid(rid):
     login("cash@ftpua.com", CASH)
@@ -58,10 +58,10 @@ def to_paid(rid):
     c.post(f"/requests/{rid}/action", data={"action": "approve"})
     login("cash@ftpua.com", CASH)
     c.post(f"/requests/{rid}/action", data={"action": "pay", "comment": "РКО 12"})
-    return db._REQUESTS[rid]
+    return db.get_request(rid)
 
 rid = new_cash()
-check("cash request submitted", db._REQUESTS[rid]["status"] == "accountant")
+check("cash request submitted", db.get_request(rid)["status"] == "accountant")
 login("cash@ftpua.com", CASH)
 c.post(f"/requests/{rid}/action", data={"action": "approve", "payment_account_id": "5"})
 login("cfo@ftpua.com", CFO)
@@ -70,10 +70,10 @@ login("cash@ftpua.com", CASH)
 check("pay panel explains handover", "після «Оплачено» він" in c.get(f"/requests/{rid}").get_data(as_text=True))
 c.post(f"/requests/{rid}/action", data={"action": "pay", "comment": "РКО 12"})
 flush()
-req = db._REQUESTS[rid]
+req = db.get_request(rid)
 check("pay -> handover pending (every cash request)", req["status"] == "paid" and wf.needs_handover(req) and req["handover"]["since"] == today)
 # повторно — для перевірки листа автору
-db._REQUESTS[rid]["status"] = "to_pay"; db._REQUESTS[rid].pop("handover")
+_r = db.get_request(rid); _r["status"] = "to_pay"; _r.pop("handover"); db.save_request(_r)
 flush()
 req = to_paid(rid)
 check("pay -> handover pending", req["status"] == "paid" and wf.needs_handover(req) and req["handover"]["since"] == today)
@@ -97,7 +97,7 @@ tp = c.get("/to-pay").get_data(as_text=True)
 check("cash accountant: tab with count", "Готівка не підтверджена" in tp and "view=handover" in tp)
 hv = c.get("/to-pay?view=handover")
 hp = hv.get_data(as_text=True)
-check("handover view lists request + by-author", hv.status_code == 200 and db._REQUESTS[rid]["number"] in hp and "У кого скільки готівки" in hp)
+check("handover view lists request + by-author", hv.status_code == 200 and db.get_request(rid)["number"] in hp and "У кого скільки готівки" in hp)
 check("demo pending (№20) listed, confirmed (№21) not", "000000020" in hp and "000000021" not in hp)
 login("cfo@ftpua.com", CFO)
 check("cfo: no tab, 403", "view=handover" not in c.get("/to-pay").get_data(as_text=True) and c.get("/to-pay?view=handover").status_code == 403)
@@ -111,13 +111,13 @@ login("cfo@ftpua.com", CFO)
 check("cfo cannot confirm -> 403", c.post(f"/requests/{rid}/handover", data={"date": today.isoformat()}).status_code == 403)
 login(AUTHOR, INIT)
 c.post(f"/requests/{rid}/handover", data={"date": (today - timedelta(days=1)).isoformat()})
-check("date before payout rejected", wf.needs_handover(db._REQUESTS[rid]))
+check("date before payout rejected", wf.needs_handover(db.get_request(rid)))
 r = c.post(f"/requests/{rid}/handover", data={"date": (today + timedelta(days=1)).isoformat()}, follow_redirects=True)
-check("future date rejected", wf.needs_handover(db._REQUESTS[rid]) and "в майбутньому" in r.get_data(as_text=True))
+check("future date rejected", wf.needs_handover(db.get_request(rid)) and "в майбутньому" in r.get_data(as_text=True))
 user_prefs.save("cash@ftpua.com", True, {**user_prefs.get("cash@ftpua.com")["events"], "handover_done": True})
 flush()
 c.post(f"/requests/{rid}/handover", data={"date": today.isoformat(), "comment": "Передав на об'єкті"})
-req = db._REQUESTS[rid]
+req = db.get_request(rid)
 h = req["history"][-1]
 check("author confirmed", wf.handover_done(req) and req["handover"]["date"] == today and not req["handover"]["on_behalf"]
       and h["action"] == "handover" and h["role"] == "initiator" and "Передав на об'єкті" in h["comment"])
@@ -135,18 +135,18 @@ login("admin@ftpua.com", ADMIN)
 page = c.get(f"/requests/{rid}").get_data(as_text=True)
 check("admin sees undo", "Скасувати підтвердження" in page)
 c.post(f"/requests/{rid}/handover", data={"action": "undo", "comment": ""})
-check("undo without reason rejected", wf.handover_done(db._REQUESTS[rid]))
+check("undo without reason rejected", wf.handover_done(db.get_request(rid)))
 login(AUTHOR, INIT)
 check("non-admin undo -> 403", c.post(f"/requests/{rid}/handover", data={"action": "undo", "comment": "x"}).status_code == 403)
 login("admin@ftpua.com", ADMIN)
 c.post(f"/requests/{rid}/handover", data={"action": "undo", "comment": "Помилково натиснули"})
-check("admin undo -> pending again", wf.needs_handover(db._REQUESTS[rid]) and db._REQUESTS[rid]["history"][-1]["action"] == "handover_undo")
+check("admin undo -> pending again", wf.needs_handover(db.get_request(rid)) and db.get_request(rid)["history"][-1]["action"] == "handover_undo")
 
 # ---------- бухгалтер за автора, з вкладки
 login("cash@ftpua.com", CASH)
 flush()
 r = c.post(f"/requests/{rid}/handover", data={"date": today.isoformat(), "next": "/to-pay?view=handover"})
-req = db._REQUESTS[rid]
+req = db.get_request(rid)
 mails = flush()
 am = [x for x in mails if x["to"] == AUTHOR]
 check("author notified when confirmed on behalf", am and "за вас" in am[0]["subject"]
@@ -165,7 +165,7 @@ login("cfo@ftpua.com", CFO)
 c.post(f"/requests/{rid2}/action", data={"action": "approve"})
 login("res@ftpua.com", RES)
 c.post(f"/requests/{rid2}/action", data={"action": "pay"})
-req2 = db._REQUESTS[rid2]
+req2 = db.get_request(rid2)
 check("bank paid -> no handover", req2["status"] == "paid" and "handover" not in req2)
 rid3 = new_cash()
 req3 = to_paid(rid3)
@@ -174,37 +174,37 @@ check("second cash -> handover", wf.needs_handover(req3))
 # ---------- адмін змінює статус
 login("admin@ftpua.com", ADMIN)
 c.post(f"/requests/{rid3}/admin-status", data={"status": "to_pay", "comment": "помилка"})
-check("admin: paid -> to_pay clears handover", "handover" not in db._REQUESTS[rid3])
+check("admin: paid -> to_pay clears handover", "handover" not in db.get_request(rid3))
 c.post(f"/requests/{rid3}/admin-status", data={"status": "paid", "comment": "оплачено"})
-check("admin: -> paid starts handover", wf.needs_handover(db._REQUESTS[rid3]))
+check("admin: -> paid starts handover", wf.needs_handover(db.get_request(rid3)))
 
 # ---------- нагадування
 app_settings.set("cash_handover_remind_days", 1, "t")
-for r_ in db._REQUESTS.values():
+for r_ in db.list_all():
     if wf.needs_handover(r_):
         r_["handover"]["since"] = today - timedelta(days=2)
         r_["handover"]["reminders"], r_["handover"]["last_reminder"] = 0, None
+        db.save_request(r_)
 # автор вимкнув усі листи — нагадування все одно приходять
 user_prefs.save(AUTHOR, False, user_prefs.get(AUTHOR)["events"])
 flush()
 done = m.run_handover_reminders()
 mails = flush()
-print("DBG", done, sorted({x["to"] for x in mails}))
-check("reminder sent to author only", db._REQUESTS[rid3]["number"] in done
+check("reminder sent to author only", db.get_request(rid3)["number"] in done
       and any(x["to"] == AUTHOR and "нагадування" in x["subject"] for x in mails)
       and all(x["to"] in (AUTHOR, "od@ftpua.com", "i.petrenko@ftpua.com") for x in mails))
 check("reminder mail: days + link", any("2 дн." in x["html"] and "#handover" in x["html"] for x in mails if x["to"] == AUTHOR))
-check("counter + date stored", db._REQUESTS[rid3]["handover"]["reminders"] == 1 and db._REQUESTS[rid3]["handover"]["last_reminder"] == today)
+check("counter + date stored", db.get_request(rid3)["handover"]["reminders"] == 1 and db.get_request(rid3)["handover"]["last_reminder"] == today)
 check("not again same day", m.run_handover_reminders() == [])
 for i in range(1, 10):
     m.run_handover_reminders(today + timedelta(days=i))
-check("max 5 reminders", db._REQUESTS[rid3]["handover"]["reminders"] == wf.HANDOVER_MAX_REMINDERS)
-db._REQUESTS[rid3]["handover"].update(reminders=0, last_reminder=None)
+check("max 5 reminders", db.get_request(rid3)["handover"]["reminders"] == wf.HANDOVER_MAX_REMINDERS)
+_r = db.get_request(rid3); _r["handover"].update(reminders=0, last_reminder=None); db.save_request(_r)
 app_settings.set("cash_handover_remind_days", 0, "t")
 check("remind_days=0 -> none", m.run_handover_reminders() == [])
 app_settings.set("cash_handover_remind_days", 1, "t")
 app_settings.set("mail_enabled", False, "t")
-check("mail off -> not counted", m.run_handover_reminders() == [] and db._REQUESTS[rid3]["handover"]["reminders"] == 0)
+check("mail off -> not counted", m.run_handover_reminders() == [] and db.get_request(rid3)["handover"]["reminders"] == 0)
 app_settings.set("mail_enabled", True, "t")
 flush()
 
@@ -224,8 +224,8 @@ login(AUTHOR, INIT)
 page = c.get("/requests/new").get_data(as_text=True)
 check("off: no receiver field", 'id="cash-receiver-field"' not in page)
 c.post("/requests/new", data={**BASE, "action": "submit"})
-rid4 = max(db._REQUESTS)
-check("off: cash request without receiver accepted", db._REQUESTS[rid4]["status"] == "accountant")
+rid4 = db.last_id()
+check("off: cash request without receiver accepted", db.get_request(rid4)["status"] == "accountant")
 req4 = to_paid(rid4)
 check("off: no handover", "handover" not in req4)
 login("cash@ftpua.com", CASH)

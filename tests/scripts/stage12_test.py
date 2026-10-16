@@ -7,7 +7,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import mailer, notifications, user_prefs, app_settings
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -34,7 +34,7 @@ import graph; graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
 # Бухгалтер при погодженні вибирає «Вид оплати» — у старих тестах підставляємо перший доступний
-import payment_accounts as _pa, mock_data as _md
+import payment_accounts as _pa, storage as _md
 _orig_post = c.post
 def _post(url, data=None, **kw):
     if isinstance(data, dict) and data.get("action") == "approve" and "payment_account_id" not in data and url.endswith("/action"):
@@ -52,7 +52,7 @@ BASE = {"pay_date": "2026-10-20", "counterparty_id": "1", "organization_id": "1"
 
 # ---- вимкнено за замовчуванням
 login("i@ftpua.com", ["g-i"])
-c.post("/requests/new", data=BASE); rid = max(db._REQUESTS)
+c.post("/requests/new", data=BASE); rid = db.last_id()
 check("mail disabled by default -> nothing sent", flush() == [])
 
 # ---- адмін налаштовує
@@ -89,7 +89,7 @@ check("admin page shows mail block + log", "Email-сповіщення" in c.get
 
 # ---- послідовно: submit -> бухгалтер
 login("i@ftpua.com", ["g-i"])
-c.post("/requests/new", data=BASE); rid = max(db._REQUESTS)
+c.post("/requests/new", data=BASE); rid = db.last_id()
 msgs = flush()
 check("submit -> resident accountant notified", to(msgs) == ["res@ftpua.com"] and "чекає вашого рішення" in msgs[0]["subject"])
 check("mail has number + link + amount", db.get_request(rid)["number"] in msgs[0]["html"] and f"/requests/{rid}" in msgs[0]["html"] and "500,00" in msgs[0]["html"])
@@ -139,7 +139,7 @@ check("author with mail off gets nothing", "i@ftpua.com" not in to(flush()))
 login("od@ftpua.com", ["g-a"])
 c.post("/admin/settings", data={"approval_mode": "parallel"})
 login("i2@ftpua.com", ["g-i"])
-c.post("/requests/new", data={**BASE, "payment_form": "cash", "cash_receiver": "contractor"}); pid = max(db._REQUESTS)
+c.post("/requests/new", data={**BASE, "payment_form": "cash", "cash_receiver": "contractor"}); pid = db.last_id()
 check("parallel submit -> cashier + both cfo", to(flush()) == ["cash@ftpua.com", "cfo2@ftpua.com", "cfo@ftpua.com"])
 login("cash@ftpua.com", ["g-c"])
 c.post(f"/requests/{pid}/action", data={"action": "approve"})

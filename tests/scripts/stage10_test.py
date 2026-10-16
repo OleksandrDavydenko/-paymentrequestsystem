@@ -7,7 +7,7 @@ os.environ.update(UPLOAD_DIR=tmp, USER_BUDGET_FILE=os.path.join(tmp, "budget.jso
 import app as m
 import expense_items as ei
 import user_budget as ub
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -119,7 +119,7 @@ check("kind passed to picker", {i["code"]: i["kind"] for i in data}["B1"] == "al
 r = c.post("/requests/new", data={**BASE, "expense_code": "B2"})
 check("other department rejected", r.status_code == 200 and "не входить у ваш бюджет" in r.get_data(as_text=True))
 r = c.post("/requests/new", data={**BASE, "expense_code": "B1"})
-rid = max(db._REQUESTS)
+rid = db.last_id()
 check("allowed item saved", r.status_code == 302 and db.get_request(rid)["expense_code"] == "B1")
 # Адмін звузив бюджет — стара стаття заявки все одно приймається
 ub.save_settings("u-ira", "ira@ftpua.com", "Ірина", direct=True, all_departments=False, departments=[], updated_by="x")

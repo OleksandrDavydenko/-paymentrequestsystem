@@ -10,7 +10,7 @@ import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications, organizations
 import workflow as wf
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -58,16 +58,16 @@ def submit(payer, form="bank", org=None):
     if org:
         data["organization_id"] = org  # ініціатор не може задати організацію в цьому режимі
     c.post("/requests/new", data=data)
-    return max(db._REQUESTS)
+    return db.last_id()
 
 rn = submit("nonresident", org="1")
-r = db._REQUESTS[rn]
+r = db.get_request(rn)
 check("foreign + bank -> nonresident accountant, org ignored", r["status"] == "accountant" and r["payer"] == "nonresident"
       and r.get("organization_id") is None and wf.accountant_role(r) == "acc_nonresident")
 rr = submit("resident")
-check("ukrainian + bank -> resident accountant", wf.accountant_role(db._REQUESTS[rr]) == "acc_resident")
+check("ukrainian + bank -> resident accountant", wf.accountant_role(db.get_request(rr)) == "acc_resident")
 rc = submit("nonresident", form="cash")
-check("cash -> cash accountant", wf.accountant_role(db._REQUESTS[rc]) == "acc_cash")
+check("cash -> cash accountant", wf.accountant_role(db.get_request(rc)) == "acc_cash")
 lst = c.get("/requests").get_data(as_text=True)
 check("list: payer label", "Іноземна компанія" in lst and "вкаже бухгалтер" not in lst)
 
@@ -77,25 +77,25 @@ page = c.get(f"/requests/{rn}").get_data(as_text=True)
 panel = page.split('class="card decision"')[1].split("</form>")[0]
 check("decision panel: no organization select", 'name="organization_id"' not in panel and 'id="organization"' not in page)
 c.post(f"/requests/{rn}/action", data={"action": "approve"})
-check("accountant approves without org -> cfo", db._REQUESTS[rn]["status"] == "cfo" and not db._REQUESTS[rn].get("organization_id"))
+check("accountant approves without org -> cfo", db.get_request(rn)["status"] == "cfo" and not db.get_request(rn).get("organization_id"))
 login("cfo@ftpua.com", CFO)
 c.post(f"/requests/{rn}/action", data={"action": "approve"})
 login("non@ftpua.com", NON)
 c.post(f"/requests/{rn}/action", data={"action": "pay"})
-check("paid without org", db._REQUESTS[rn]["status"] == "paid")
+check("paid without org", db.get_request(rn)["status"] == "paid")
 check("to-pay/paid list shows payer", "Іноземна компанія" in c.get("/to-pay?view=paid").get_data(as_text=True))
 
 # ---------- стара заявка з організацією, редагування в режимі «Платник»
-db._REQUESTS[rr]["organization_id"] = "1"
+_r = db.get_request(rr); _r["organization_id"] = "1"; db.save_request(_r)
 login("res@ftpua.com", RES)
 c.post(f"/requests/{rr}/action", data={"action": "rework", "comment": "уточніть"})
 login(AUTHOR, INIT)
 page = c.get(f"/requests/{rr}").get_data(as_text=True)
 check("rework: payer preselected from org", 'value="resident" checked' in page and "Організація: ТОВ" in page)
 c.post(f"/requests/{rr}", data={**BASE, "payer": "resident", "action": "save"})
-check("same payer -> org kept", db._REQUESTS[rr]["organization_id"] == "1")
+check("same payer -> org kept", db.get_request(rr)["organization_id"] == "1")
 c.post(f"/requests/{rr}", data={**BASE, "payer": "nonresident", "action": "save"})
-r = db._REQUESTS[rr]
+r = db.get_request(rr)
 check("other payer -> org reset with history", r.get("organization_id") is None and r["payer"] == "nonresident"
       and any("скинуто: змінено платника" in h["comment"] for h in r["history"]))
 check("routing follows new payer", wf.accountant_role(r) == "acc_nonresident")
@@ -106,6 +106,6 @@ c.post("/admin/settings", data={**SETTINGS, "org_field_mode": "organization"})
 login(AUTHOR, INIT)
 check("org mode again: select back", 'id="organization_id"' in c.get("/requests/new").get_data(as_text=True))
 c.post("/requests/new", data={**BASE, "organization_id": "4", "action": "submit"})
-check("org mode: routing by org", wf.accountant_role(db._REQUESTS[max(db._REQUESTS)]) == "acc_nonresident")
+check("org mode: routing by org", wf.accountant_role(db.get_request(db.last_id())) == "acc_nonresident")
 
 print("ALL OK" if ok else "SOME FAILED")

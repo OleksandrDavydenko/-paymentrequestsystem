@@ -852,3 +852,6 @@ a.badge { text-decoration: none; }
   .fbar.is-open .fpop > summary { width: 100%; justify-content: space-between; }
   .fpop-panel { position: static; width: auto; max-width: none; box-shadow: none; margin-top: 6px; }
 }
+
+/* ---------- «Показати ще» під довгими списками */
+.list-more { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 14px 0 4px; flex-wrap: wrap; }

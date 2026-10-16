@@ -4,7 +4,7 @@ tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"), USER_PREFS_FILE=os.path.join(tmp, "p.json"),
                   USER_DIRECTORY_FILE=os.path.join(tmp, "d.json"), ORG_STRUCTURE_FILE=os.path.join(tmp, "o.json"),
                   COUNTERPARTIES_PENDING_FILE=os.path.join(tmp, "cp.json"), GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", GROUP_ACC_CASH="g-c", GROUP_ACC_RESIDENT="g-r", ADMIN_EMAILS="")
-import app as m, mock_data as db, organizations as orgs, app_settings
+import app as m, storage as db, organizations as orgs, app_settings
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import graph; graph.group_members = lambda t, g: []
 ok = True
@@ -50,7 +50,7 @@ login("i@ftpua.com", ["g-i"])
 page = c.get("/requests/new").get_data(as_text=True)
 check("form hint knows assignment", '"3": {"bank": "Бухгалтер (готівка)"' in page or "ORG_ACCOUNTANTS" in page)
 c.post("/requests/new", data={**BASE, "organization_id": "1", "action": "submit"})
-rid = max(db._REQUESTS)
+rid = db.last_id()
 login("od@ftpua.com", ["g-a"])
 c.post("/admin/organizations", data={"allowed": ["1", "2", "4"], "acc_bank_1": "acc_cash"})
 login("cash@ftpua.com", ["g-c"])

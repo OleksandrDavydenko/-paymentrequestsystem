@@ -9,7 +9,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications, user_directory
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -44,8 +44,8 @@ check("new request: participants block with search", 'id="participant-search"' i
 # нова заявка з учасником — лист і історія лише після збереження
 flush()
 c.post("/requests/new", data={**BASE, "participants": ["w@ftpua.com"], "action": "save"})
-rid = max(db._REQUESTS)
-r = db._REQUESTS[rid]
+rid = db.last_id()
+r = db.get_request(rid)
 mails = flush()
 check("saved with participant", [p["email"] for p in r["participants"]] == ["w@ftpua.com"])
 check("history: create then participant_add", [h["action"] for h in r["history"]] == ["create", "participant_add"])
@@ -55,12 +55,12 @@ check("'вас додано' mail after save", any(x["to"] == "w@ftpua.com" and 
 flush()
 resp = c.post(f"/requests/{rid}", data={**BASE, "amount": "0", "participants": ["w@ftpua.com", "s@ftpua.com"], "action": "save"})
 html = resp.get_data(as_text=True)
-check("validation error: not saved, no mail", [p["email"] for p in db._REQUESTS[rid]["participants"]] == ["w@ftpua.com"] and not flush())
+check("validation error: not saved, no mail", [p["email"] for p in db.get_request(rid)["participants"]] == ["w@ftpua.com"] and not flush())
 check("validation error: typed participants kept in form", "s@ftpua.com" in html.split('data-state=')[1].split("data-saved")[0])
 
 # зберегти: додати Сергія, прибрати Вікторію
 c.post(f"/requests/{rid}", data={**BASE, "participants": ["s@ftpua.com"], "action": "save"})
-r = db._REQUESTS[rid]
+r = db.get_request(rid)
 mails = flush()
 check("save: add + remove", [p["email"] for p in r["participants"]] == ["s@ftpua.com"]
       and [h["action"] for h in r["history"]][-2:] == ["participant_remove", "participant_add"])
@@ -68,29 +68,29 @@ check("mail only to added", [x["to"] for x in mails if "учасником" in x
 
 # без поля participants_sent (старий клієнт) — учасників не чіпаємо
 c.post(f"/requests/{rid}", data={k: v for k, v in BASE.items() if k != "participants_sent"} | {"action": "save"})
-check("no participants_sent -> unchanged", [p["email"] for p in db._REQUESTS[rid]["participants"]] == ["s@ftpua.com"])
+check("no participants_sent -> unchanged", [p["email"] for p in db.get_request(rid)["participants"]] == ["s@ftpua.com"])
 
 # невідомий користувач
 c.post(f"/requests/{rid}", data={**BASE, "participants": ["s@ftpua.com", "ghost@ftpua.com"], "action": "save"})
-check("unknown user skipped", [p["email"] for p in db._REQUESTS[rid]["participants"]] == ["s@ftpua.com"])
+check("unknown user skipped", [p["email"] for p in db.get_request(rid)["participants"]] == ["s@ftpua.com"])
 
 # у чернетці окреме «Зберегти учасників» не працює
 r = c.post(f"/requests/{rid}/participants", data={"action": "set", "participants": []}, follow_redirects=True)
-check("draft: set route refuses", [p["email"] for p in db._REQUESTS[rid]["participants"]] == ["s@ftpua.com"]
+check("draft: set route refuses", [p["email"] for p in db.get_request(rid)["participants"]] == ["s@ftpua.com"]
       and "разом із нею" in r.get_data(as_text=True))
 
 # відправлено — форма не редагується, учасники — окремою кнопкою
 c.post(f"/requests/{rid}", data={**BASE, "participants": ["s@ftpua.com"], "action": "submit"})
-check("submitted", db._REQUESTS[rid]["status"] == "accountant")
+check("submitted", db.get_request(rid)["status"] == "accountant")
 page = c.get(f"/requests/{rid}").get_data(as_text=True)
 check("submitted: save-participants form", 'id="participants-form"' in page and 'form="participants-form"' in page)
 flush()
 c.post(f"/requests/{rid}/participants", data={"action": "set", "participants": ["s@ftpua.com", "w@ftpua.com"]})
 mails = flush()
-check("set route: added + mail", [p["email"] for p in db._REQUESTS[rid]["participants"]] == ["s@ftpua.com", "w@ftpua.com"]
+check("set route: added + mail", [p["email"] for p in db.get_request(rid)["participants"]] == ["s@ftpua.com", "w@ftpua.com"]
       and [x["to"] for x in mails if "учасником" in x["subject"]] == ["w@ftpua.com"])
 c.post(f"/requests/{rid}/participants", data={"action": "set"})
-check("set route: remove all", db._REQUESTS[rid]["participants"] == [])
+check("set route: remove all", db.get_request(rid)["participants"] == [])
 
 # сторонній
 login("other@ftpua.com", ["g-i"])

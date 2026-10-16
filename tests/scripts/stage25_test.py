@@ -9,7 +9,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications, organizations, payment_types, payment_accounts
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -53,7 +53,7 @@ BASE = {"pay_date": "2026-10-20", "counterparty_id": "1", "expense_code": "01.00
 def to_pay_request(account):
     login("author@ftpua.com", ["g-i"])
     c.post("/requests/new", data=BASE)
-    rid = max(db._REQUESTS)
+    rid = db.last_id()
     login("res@ftpua.com", ["g-r"])
     c.post(f"/requests/{rid}/action", data={"action": "approve", "payment_account_id": account})
     login("cfo@ftpua.com", ["g-f"])
@@ -65,18 +65,18 @@ r1 = to_pay_request("")
 login("cfo@ftpua.com", ["g-f"])
 c.post(f"/requests/{r1}/payment-account", data={"payment_account_id": "PT-NLB"})
 r2 = to_pay_request("")
-check("setup: two requests to pay", db._REQUESTS[r1]["status"] == "to_pay" and db._REQUESTS[r1]["payment_account_id"] == "PT-NLB"
-      and db._REQUESTS[r2]["status"] == "to_pay")
+check("setup: two requests to pay", db.get_request(r1)["status"] == "to_pay" and db.get_request(r1)["payment_account_id"] == "PT-NLB"
+      and db.get_request(r2)["status"] == "to_pay")
 html = c.get("/to-pay").get_data(as_text=True)
 check("to-pay: 'Платимо з' column, no Організація column", "<th>Платимо з</th>" in html and "<th>Організація</th>" not in html)
-row1 = html.split(f">{db._REQUESTS[r1]['number']}<")[1].split("</tr>")[0]
-row2 = html.split(f">{db._REQUESTS[r2]['number']}<")[1].split("</tr>")[0]
+row1 = html.split(f">{db.get_request(r1)['number']}<")[1].split("</tr>")[0]
+row2 = html.split(f">{db.get_request(r2)['number']}<")[1].split("</tr>")[0]
 check("row shows org of payment type / dash", 'data-label="Платимо з">Litbia<' in row1 and 'data-label="Платимо з">—<' in row2)
 check("by-org totals", 'id="by-org"' in html and "За організаціями" in html and "Не визначено" in html)
 f = c.get("/to-pay?payorg=4").get_data(as_text=True)
-check("payorg filter", f">{db._REQUESTS[r1]['number']}<" in f and f">{db._REQUESTS[r2]['number']}<" not in f)
+check("payorg filter", f">{db.get_request(r1)['number']}<" in f and f">{db.get_request(r2)['number']}<" not in f)
 f = c.get("/to-pay?payorg=none").get_data(as_text=True)
-check("payorg none filter", f">{db._REQUESTS[r2]['number']}<" in f and f">{db._REQUESTS[r1]['number']}<" not in f)
+check("payorg none filter", f">{db.get_request(r2)['number']}<" in f and f">{db.get_request(r1)['number']}<" not in f)
 page = c.get(f"/requests/{r1}").get_data(as_text=True)
 check("card: cfo sees 'Платимо з'", "Платимо з:</strong> Litbia" in page)
 login("author@ftpua.com", ["g-i"])

@@ -11,7 +11,7 @@ import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import mailer, notifications, app_settings, org_structure, user_directory, user_prefs
 import workflow as wf
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -31,7 +31,7 @@ import graph; graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
 # Бухгалтер при погодженні вибирає «Вид оплати» — у старих тестах підставляємо перший доступний
-import payment_accounts as _pa, mock_data as _md
+import payment_accounts as _pa, storage as _md
 _orig_post = c.post
 def _post(url, data=None, **kw):
     if isinstance(data, dict) and data.get("action") == "approve" and "payment_account_id" not in data and url.endswith("/action"):
@@ -66,7 +66,7 @@ check("viewer departments", org_structure.viewer_departments("dep@ftpua.com") ==
 
 # ---------- керівник погоджує; зміна керівника передає заявку
 app_settings.set("dept_head_mode", "approve", "t"); app_settings.set("approval_mode", "sequential", "t")
-login("i@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "submit"}); rid = max(db._REQUESTS)
+login("i@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "submit"}); rid = db.last_id()
 check("request waits for head b", st(rid) == "dept_head")
 check("head b (no Azure groups) gets the mail", "b@ftpua.com" in [x["to"] for x in flush()])
 org_structure.set_department_staff("LOG", P("a@ftpua.com"), [P("dep@ftpua.com")], "t")
@@ -92,11 +92,11 @@ h = db.get_request(rid)["history"][-1]
 check("viewer can comment (role dept_viewer)", h["action"] == "comment" and h["role"] == "dept_viewer")
 r = c.post(f"/requests/{rid}/files", data={"files": (io.BytesIO(b"%PDF-1"), "a.pdf")}, content_type="multipart/form-data")
 check("viewer cannot upload files", r.status_code == 403)
-login("i@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "save"}); draft = max(db._REQUESTS)
+login("i@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "save"}); draft = db.last_id()
 login("dep@ftpua.com", [])
 check("viewer does not see drafts", c.get(f"/requests/{draft}").status_code == 404)
 org_structure.set_department("s@ftpua.com", "s@ftpua.com", "S", "SAL", "t")
-login("s@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "submit"}); sal = max(db._REQUESTS)
+login("s@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "submit"}); sal = db.last_id()
 login("dep@ftpua.com", [])
 check("viewer does not see other departments", c.get(f"/requests/{sal}").status_code == 404)
 flush()

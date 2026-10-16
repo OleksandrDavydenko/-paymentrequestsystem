@@ -9,7 +9,7 @@ import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import mailer, notifications, app_settings, org_structure
 import workflow as wf
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -34,7 +34,7 @@ graph.remove_member = lambda t, g, u: calls.append(("remove", g, u))
 c = m.app.test_client()
 
 # Бухгалтер при погодженні вибирає «Вид оплати» — у старих тестах підставляємо перший доступний
-import payment_accounts as _pa, mock_data as _md
+import payment_accounts as _pa, storage as _md
 _orig_post = c.post
 def _post(url, data=None, **kw):
     if isinstance(data, dict) and data.get("action") == "approve" and "payment_account_id" not in data and url.endswith("/action"):
@@ -65,7 +65,7 @@ org_structure.set_department_staff("LOG", H, [], "t")
 org_structure.set_department_staff("SAL", X, [], "t")
 
 def submit(author="i@ftpua.com", groups=INIT):
-    login(author, groups); c.post("/requests/new", data=BASE); return max(db._REQUESTS)
+    login(author, groups); c.post("/requests/new", data=BASE); return db.last_id()
 
 # ---------- 1. view + sequential
 settings("sequential", "view")

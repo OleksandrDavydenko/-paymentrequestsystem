@@ -10,7 +10,7 @@ os.environ.pop("TELEGRAM_BOT_KEY", None)
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications, telegram_notify, user_prefs, clock
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -56,7 +56,7 @@ def submit():
     c.post("/requests/new", data={"pay_date": "2026-10-20", "organization_id": "1", "counterparty_id": "1",
                                   "expense_code": "01.001", "currency": "UAH", "amount": "1234.5", "payment_form": "bank",
                                   "action": "submit"})
-    return max(db._REQUESTS)
+    return db.last_id()
 
 flush()
 rid = submit()

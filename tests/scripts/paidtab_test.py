@@ -4,7 +4,7 @@ tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"), USER_PREFS_FILE=os.path.join(tmp, "p.json"),
                   USER_DIRECTORY_FILE=os.path.join(tmp, "d.json"), ORG_STRUCTURE_FILE=os.path.join(tmp, "o.json"),
                   COUNTERPARTIES_PENDING_FILE=os.path.join(tmp, "cp.json"), GROUP_INITIATOR="g-i", ADMIN_EMAILS="")
-import app as m, mock_data as db
+import app as m, storage as db
 claims = {"name": "OD", "preferred_username": "od@ftpua.com", "oid": "od", "groups": ["g-i"]}
 m.auth._auth.get_user = lambda: dict(claims)
 c = m.app.test_client()

@@ -10,7 +10,7 @@ import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications
 import workflow as wf
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -54,8 +54,8 @@ check("choice required", "Оберіть, який бухгалтер перев
 
 flush()
 c.post("/requests/new", data={**BASE, "accountant_type": "acc_cash", "action": "submit"})
-rid = max(db._REQUESTS)
-r = db._REQUESTS[rid]
+rid = db.last_id()
+r = db.get_request(rid)
 mails = flush()
 check("bank form + cash accountant chosen -> cash accountant", r["status"] == "accountant" and wf.accountant_role(r) == "acc_cash")
 check("all people of the role notified", {"cash1@ftpua.com", "cash2@ftpua.com"} <= set(mails) and "res@ftpua.com" not in mails)
@@ -65,17 +65,17 @@ login("res@ftpua.com", RES)
 check("resident accountant does not", ">" + r["number"] + "<" not in c.get("/approvals").get_data(as_text=True))
 login("cash1@ftpua.com", CASH)
 c.post(f"/requests/{rid}/action", data={"action": "approve", "payment_account_id": ""})
-check("cash accountant approves -> cfo", db._REQUESTS[rid]["status"] == "cfo")
+check("cash accountant approves -> cfo", db.get_request(rid)["status"] == "cfo")
 
 login(AUTHOR, INIT)
 c.post("/requests/new", data={**BASE, "accountant_type": "acc_nonresident", "action": "submit"})
-r2 = db._REQUESTS[max(db._REQUESTS)]
+r2 = db.get_request(db.last_id())
 check("nonresident accountant + payer label", wf.accountant_role(r2) == "acc_nonresident" and m.payer_label(r2) == "Іноземна компанія")
 
 # призначення бухгалтерів організаціям не перебиває явний вибір
 app_settings.set("org_accountants", {"1": {"bank": "acc_nonresident"}}, "t")
-db._REQUESTS[rid]["organization_id"] = "1"
-check("explicit type wins over org assignment", wf.accountant_role(db._REQUESTS[rid]) == "acc_cash")
+_r = db.get_request(rid); _r["organization_id"] = "1"; db.save_request(_r)
+check("explicit type wins over org assignment", wf.accountant_role(db.get_request(rid)) == "acc_cash")
 app_settings.set("org_accountants", {}, "t")
 
 # повернення в режим «Організація»: при редагуванні вибір типу зникає, діє правило
@@ -83,7 +83,7 @@ login("admin@ftpua.com", ADMIN)
 c.post("/admin/settings", data={**SETTINGS, "org_field_mode": "organization"})
 login(AUTHOR, INIT)
 c.post("/requests/new", data={**BASE, "organization_id": "4", "accountant_type": "acc_cash", "action": "submit"})
-r3 = db._REQUESTS[max(db._REQUESTS)]
+r3 = db.get_request(db.last_id())
 check("org mode ignores accountant_type", r3.get("accountant_type") is None and wf.accountant_role(r3) == "acc_nonresident")
 
 # ---------- бухгалтер за замовчуванням
@@ -105,8 +105,8 @@ login(AUTHOR, INIT)
 page = c.get("/requests/new").get_data(as_text=True)
 check("new request preselects card default", 'value="acc_resident" checked' in page and "За замовчуванням з вашої картки" in page)
 c.post("/requests/new", data={**BASE, "accountant_type": "acc_nonresident", "action": "submit"})
-check("initiator can change", wf.accountant_role(db._REQUESTS[max(db._REQUESTS)]) == "acc_nonresident"
-      and "accountant_hint" not in db._REQUESTS[max(db._REQUESTS)])
+check("initiator can change", wf.accountant_role(db.get_request(db.last_id())) == "acc_nonresident"
+      and "accountant_hint" not in db.get_request(db.last_id()))
 # без налаштування в картці — як у попередній заявці
 org_structure.set_accountant_default("author@ftpua.com", AUTHOR, "Author", None, "t")
 check("clearing default keeps department", org_structure.department_of("author@ftpua.com") == "LOG")

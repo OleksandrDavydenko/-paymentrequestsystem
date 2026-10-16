@@ -5,7 +5,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
                   USER_DIRECTORY_FILE=os.path.join(tmp, "d.json"), ORG_STRUCTURE_FILE=os.path.join(tmp, "o.json"),
                   COUNTERPARTIES_PENDING_FILE=os.path.join(tmp, "cp.json"), USER_ONEC_FILE=os.path.join(tmp, "u.json"),
                   GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", GROUP_ACC_RESIDENT="g-r", GROUP_CFO="g-f", ADMIN_EMAILS="")
-import app as m, mock_data as db, payment_accounts as pa, payment_types as pt, user_onec
+import app as m, storage as db, payment_accounts as pa, payment_types as pt, user_onec
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import graph
 ok = True
@@ -26,7 +26,7 @@ check("suggest by name", pt.suggest_user("Iryna Chagan")["name"] == "Irina.Chaga
 login("od@ftpua.com", ["g-a"])
 page = c.get("/admin/users/irina").get_data(as_text=True)
 check("card: 1C section with suggestion", "Користувач 1С" in page and "Підібрано за схожістю" in page and 'value="U-IRINA" selected' in page)
-login("i@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "submit"}); rid = max(db._REQUESTS)
+login("i@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "submit"}); rid = db.last_id()
 
 login("i.chagan@ftpua.com", ["g-r"], "irina")
 page = c.get(f"/requests/{rid}").get_data(as_text=True)
@@ -35,7 +35,7 @@ c.post(f"/requests/{rid}/action", data={"action": "approve"})
 check("not linked: approval allowed without account", db.get_request(rid)["status"] == "cfo")
 # повернемо і зв'яжемо
 login("od@ftpua.com", ["g-a"])
-db._REQUESTS[rid]["status"] = "accountant"
+_r = db.get_request(rid); _r["status"] = "accountant"; db.save_request(_r)
 c.post("/admin/users/irina", data={"roles": ["acc_resident"], "onec_user": "U-IRINA", "mode": "none"})
 check("link saved", user_onec.guid_for("irina") == "U-IRINA")
 check("list shows 1C link", "1С: Irina.Chagan" in c.get("/admin/users").get_data(as_text=True))

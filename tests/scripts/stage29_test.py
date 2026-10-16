@@ -9,7 +9,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications, notify_log, user_prefs, graph
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -34,14 +34,14 @@ H = {"X-Api-Key": "k"}
 login("author@ftpua.com", ["g-i"])
 c.post("/requests/new", data={"pay_date": "2026-10-20", "organization_id": "1", "counterparty_id": "1", "expense_code": "01.001",
                               "currency": "UAH", "amount": "100", "payment_form": "bank", "action": "submit"})
-rid = max(db._REQUESTS)
+rid = db.last_id()
 mailer.wait()
 rows = notify_log.query(request_id=rid)
 by = {(r["channel"], r["recipient"]): r for r in rows}
 check("cfo got email (parallel)", by.get(("email", "cfo@ftpua.com"), {}).get("status") == "sent")
 check("cfo telegram queued", by.get(("telegram", "cfo@ftpua.com"), {}).get("status") == "queued")
 check("empty accountant group logged", any(r["status"] == "skipped" and "Бухгалтер (безготівка, резидент)" in r["recipient"] for r in rows))
-check("rows carry request number + event", all(r["request_number"] == db._REQUESTS[rid]["number"] and r["event"] == "submit" for r in rows))
+check("rows carry request number + event", all(r["request_number"] == db.get_request(rid)["number"] and r["event"] == "submit" for r in rows))
 
 # telegram ack оновлює запис
 msg = c.get("/api/telegram/outbox", headers=H).get_json()["messages"][0]
@@ -85,10 +85,10 @@ ROLE["acc_resident"] = ["res@ftpua.com"]; notifications._members_cache.clear()
 login("author@ftpua.com", ["g-i"])
 c.post("/requests/new", data={"pay_date": "2026-10-20", "organization_id": "1", "counterparty_id": "1", "expense_code": "01.001",
                               "currency": "USD", "amount": "500", "payment_form": "bank", "action": "submit"})
-rid2 = max(db._REQUESTS)
+rid2 = db.last_id()
 mailer.wait()
 rows = notify_log.query(request_id=rid2)
 sent_to = {r["recipient"] for r in rows if r["channel"] == "email" and r["status"] == "sent"}
-check("threshold note in history", db._REQUESTS[rid2]["history"][-1]["action"] == "cfo_threshold")
+check("threshold note in history", db.get_request(rid2)["history"][-1]["action"] == "cfo_threshold")
 check("threshold+parallel: accountant AND cfo notified", {"res@ftpua.com", "cfo@ftpua.com"} <= sent_to)
 print("ALL OK" if ok else "SOME FAILED")

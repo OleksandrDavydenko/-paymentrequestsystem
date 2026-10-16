@@ -8,10 +8,18 @@
 Без цих змінних база не використовується: заявки — в пам'яті (демо), налаштування — JSON-файли.
 
 Що зберігається:
-  requests          — заявки: ключові поля окремими колонками (для звітів / Power BI) + уся заявка в JSON (data);
-  request_history   — історія заявок рядками (копія з data — для звітів);
-  request_lines     — рядки рахунків (копія з data — для звітів);
-  documents         — налаштування й довідники системи (те, що раніше лежало в JSON-файлах у /home/data).
+  requests             — заявки: уся заявка в JSON (data) + похідні колонки для списків, фільтрів і звітів
+                         (storage/derive.py); version — лічильник змін заявки (захист від одночасних змін),
+                         rev — номер останньої зміни в усій системі (оновлення кешу заявок «в роботі»);
+  request_history      — історія заявок рядками, лише дописується (журнал аудиту, «Опрацьовані»);
+  request_lines        — рядки рахунків (для звітів);
+  request_participants — учасники заявок (список «Учасник»);
+  request_files        — документи заявок (пошук заявки за файлом);
+  request_rev          — один рядок: номер останньої зміни заявок;
+  request_seq          — видача номерів нових заявок (унікальні навіть для кількох процесів);
+  schema_meta          — службові значення (версія похідних колонок, зсув нумерації);
+  documents            — налаштування й довідники системи (те, що раніше лежало в JSON-файлах у /home/data).
+Нові колонки й індекси додаються до наявних таблиць автоматично (storage/schema.py).
 """
 import json
 import logging
@@ -22,6 +30,7 @@ from datetime import date, datetime
 from decimal import Decimal
 
 import sqlalchemy as sa
+from sqlalchemy.dialects import mssql
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +43,8 @@ _credential = None
 _last_error = None
 
 metadata = sa.MetaData()
+# Дата-час з мікросекундами (у SQL Server тип DATETIME округлює до ~3 мс)
+DateTime2 = sa.DateTime().with_variant(mssql.DATETIME2(), "mssql")
 
 requests_t = sa.Table(
     "requests", metadata,
@@ -54,9 +65,33 @@ requests_t = sa.Table(
     sa.Column("payment_account_id", sa.Unicode(64)),
     sa.Column("updated_at", sa.DateTime),
     sa.Column("data", sa.UnicodeText, nullable=False),
+    # --- похідні колонки (storage/derive.py), заповнюються при збереженні й перераховуються reindex
+    sa.Column("version", sa.Integer, nullable=False, server_default=sa.text("0")),
+    sa.Column("rev", sa.BigInteger, nullable=False, server_default=sa.text("0")),
+    sa.Column("active", sa.Boolean, nullable=False, server_default=sa.text("0")),
+    sa.Column("author_lc", sa.Unicode(320)),
+    sa.Column("paid_at", DateTime2),
+    sa.Column("last_at", DateTime2),
+    sa.Column("channel", sa.Unicode(30)),
+    sa.Column("accountant_type", sa.Unicode(30)),
+    sa.Column("accountant_role", sa.Unicode(30)),
+    sa.Column("actor_role", sa.Unicode(30)),
+    sa.Column("pending_roles", sa.Unicode(200)),
+    sa.Column("pay_org", sa.Unicode(64)),
+    sa.Column("note", sa.UnicodeText),
+    sa.Column("handover_status", sa.Unicode(20)),
+    sa.Column("handover_since", sa.Date),
 )
 sa.Index("ix_requests_status", requests_t.c.status)
 sa.Index("ix_requests_author", requests_t.c.author_email)
+sa.Index("ix_requests_active", requests_t.c.active)
+sa.Index("ix_requests_rev", requests_t.c.rev)
+sa.Index("ix_requests_author_lc", requests_t.c.author_lc, requests_t.c.created_at)
+sa.Index("ix_requests_department", requests_t.c.department, requests_t.c.created_at)
+sa.Index("ix_requests_status_pay", requests_t.c.status, requests_t.c.pay_date)
+sa.Index("ix_requests_status_paid", requests_t.c.status, requests_t.c.paid_at)
+sa.Index("ix_requests_created", requests_t.c.created_at)
+sa.Index("ix_requests_counterparty", requests_t.c.counterparty_id)
 
 history_t = sa.Table(
     "request_history", metadata,
@@ -71,6 +106,7 @@ history_t = sa.Table(
     sa.Column("to_status", sa.Unicode(20)),
     sa.Column("comment", sa.UnicodeText),
 )
+sa.Index("ix_history_role_action", history_t.c.role, history_t.c.action, history_t.c.request_id)
 
 lines_t = sa.Table(
     "request_lines", metadata,
@@ -80,6 +116,37 @@ lines_t = sa.Table(
     sa.Column("amount", sa.Numeric(18, 2)),
     sa.Column("currency", sa.Unicode(3)),
     sa.Column("deal", sa.Unicode(500)),
+)
+
+participants_t = sa.Table(
+    "request_participants", metadata,
+    sa.Column("request_id", sa.Integer, primary_key=True, autoincrement=False),
+    sa.Column("email", sa.Unicode(320), primary_key=True),   # у нижньому регістрі
+)
+sa.Index("ix_participants_email", participants_t.c.email)
+
+files_t = sa.Table(
+    "request_files", metadata,
+    sa.Column("file_id", sa.Unicode(64), primary_key=True),
+    sa.Column("request_id", sa.Integer, nullable=False),
+)
+
+rev_t = sa.Table(
+    "request_rev", metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=False),
+    sa.Column("rev", sa.BigInteger, nullable=False),
+)
+
+seq_t = sa.Table(
+    "request_seq", metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("created_at", sa.DateTime),
+)
+
+meta_t = sa.Table(
+    "schema_meta", metadata,
+    sa.Column("key", sa.Unicode(100), primary_key=True),
+    sa.Column("value", sa.Unicode(1000)),
 )
 
 telegram_t = sa.Table(
@@ -247,42 +314,6 @@ def loads(text):
 
 def _num(v):
     return v if isinstance(v, Decimal) or v is None else Decimal(str(v))
-
-
-def load_requests():
-    """Усі заявки {id: заявка}."""
-    with engine().connect() as c:
-        rows = c.execute(sa.select(requests_t.c.id, requests_t.c.data)).all()
-    return {r.id: loads(r.data) for r in rows}
-
-
-def save_requests(reqs):
-    """Записати заявки (нові й змінені) однією транзакцією."""
-    import clock
-    now = clock.now()
-    with engine().begin() as c:
-        for r in reqs:
-            rid = r["id"]
-            c.execute(requests_t.delete().where(requests_t.c.id == rid))
-            c.execute(history_t.delete().where(history_t.c.request_id == rid))
-            c.execute(lines_t.delete().where(lines_t.c.request_id == rid))
-            c.execute(requests_t.insert().values(
-                id=rid, number=r["number"], status=r["status"], author_email=r["author_email"],
-                author_name=r.get("author_name"), department=r.get("department"), created_at=r.get("created_at"),
-                pay_date=r.get("pay_date"), organization_id=r.get("organization_id"),
-                counterparty_id=r.get("counterparty_id"), expense_code=r.get("expense_code"),
-                payment_form=r.get("payment_form"), currency=r.get("currency"), amount=_num(r.get("amount")),
-                payment_account_id=r.get("payment_account_id"), updated_at=now, data=dumps(r)))
-            history = [{"request_id": rid, "seq": i, "at": h.get("at"), "user_name": h.get("user_name"),
-                        "user_email": h.get("user_email"), "role": h.get("role"), "action": h.get("action"),
-                        "from_status": h.get("from_status"), "to_status": h.get("to_status"),
-                        "comment": h.get("comment") or ""} for i, h in enumerate(r.get("history") or [])]
-            if history:
-                c.execute(history_t.insert(), history)
-            lines = [{"request_id": rid, "seq": i, "invoice": ln.get("invoice"), "amount": _num(ln.get("amount")),
-                      "currency": ln.get("currency"), "deal": ln.get("deal")} for i, ln in enumerate(r.get("lines") or [])]
-            if lines:
-                c.execute(lines_t.insert(), lines)
 
 
 # ---------------------------------------------------------------- документи (налаштування, довідники)

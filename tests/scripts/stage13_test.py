@@ -7,7 +7,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import mailer, notifications, user_prefs, app_settings
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -87,7 +87,7 @@ check("page shows delivery to alt", "Me@Gmail.com" in c.get("/settings/notificat
       and "підтверджена інша адреса" in c.get("/settings/notifications").get_data(as_text=True))
 
 # сповіщення автору йдуть на іншу адресу
-c.post("/requests/new", data=BASE); rid = max(db._REQUESTS); flush()
+c.post("/requests/new", data=BASE); rid = db.last_id(); flush()
 login("res@ftpua.com", ["g-r"])
 c.post(f"/requests/{rid}/action", data={"action": "rework", "comment": "уточніть"})
 msgs = flush()

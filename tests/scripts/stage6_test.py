@@ -5,7 +5,7 @@ os.environ.update(UPLOAD_DIR=tempfile.mkdtemp(), GROUP_ADMIN="g-a", GROUP_INITIA
                   GROUP_ACC_RESIDENT="g-r", GROUP_ACC_NONRESIDENT="g-n", GROUP_CFO="g-f", ADMIN_EMAILS="")
 import app as m
 import user_budget; user_budget.get = lambda oid: {'direct': True, 'all_departments': True, 'departments': []}
-import mock_data as db
+import storage as db
 import workflow as wf
 
 ok = True

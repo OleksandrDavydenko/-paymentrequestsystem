@@ -6,7 +6,7 @@ os.environ.update(UPLOAD_DIR=tmp, EXPENSE_ITEMS_CACHE=os.path.join(tmp, "exp.jso
 import app as m
 import user_budget; user_budget.get = lambda oid: {'direct': True, 'all_departments': True, 'departments': []}
 import expense_items as ei
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -69,7 +69,7 @@ login("i@ftpua.com", ["g-i"])
 t = c.get("/requests/new").get_data(as_text=True)
 check("card has picker + data", 'id="exp-picker"' in t and '"01.010"' in t and "expense-picker.js" in t)
 r = c.post("/requests/new", data={**BASE, "expense_code": "01.010"})
-rid = max(db._REQUESTS)
+rid = db.last_id()
 check("saved with code", r.status_code == 302 and db.get_request(rid)["expense_code"] == "01.010")
 r = c.post("/requests/new", data={**BASE, "expense_code": "99.999"})
 check("unknown code rejected", r.status_code == 200 and "Такої статті немає" in r.get_data(as_text=True))

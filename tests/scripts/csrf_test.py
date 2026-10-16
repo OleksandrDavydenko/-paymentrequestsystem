@@ -5,7 +5,7 @@ tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", GROUP_ACC_RESIDENT="g-r", ADMIN_EMAILS="",
                   TELEGRAM_BOT_KEY="k")
 import app as m
-import mock_data as db
+import storage as db
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 
 ok = True
@@ -29,16 +29,16 @@ field = re.search(r'name="csrf_token" value="([^"]+)"', page)
 check("token in meta tag and in form", meta and field)
 token = field.group(1) if field else ""
 
-before = len(db._REQUESTS)
+before = len(db.list_all())
 r = c.post("/requests/new", data=FORM)
 check("POST without token -> back to the form, nothing saved",
-      r.status_code == 302 and r.headers["Location"].endswith("/requests/new") and len(db._REQUESTS) == before)
+      r.status_code == 302 and r.headers["Location"].endswith("/requests/new") and len(db.list_all()) == before)
 check("explained to the user", "Сторінка застаріла" in c.get("/requests/new").get_data(as_text=True))
 r = c.post("/requests/new", data={**FORM, "csrf_token": "forged"})
-check("forged token rejected", r.status_code == 302 and len(db._REQUESTS) == before)
+check("forged token rejected", r.status_code == 302 and len(db.list_all()) == before)
 r = c.post("/requests/new", data={**FORM, "csrf_token": token})
-check("POST with token -> saved", len(db._REQUESTS) == before + 1)
-rid = max(db._REQUESTS)
+check("POST with token -> saved", len(db.list_all()) == before + 1)
+rid = db.last_id()
 
 r = c.post(f"/requests/{rid}/comment", data={"text": "x"})
 check("action on a request without token -> back to its card",

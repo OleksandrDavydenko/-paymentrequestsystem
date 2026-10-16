@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Заявка № {{ req.number }}{% endblock %}
+{% block title %}{{ 'Заявка № ' ~ req.number if req.number else 'Нова заявка' }}{% endblock %}
 
 {% macro select_ref(name, items, selected, placeholder) -%}
   <select id="{{ name }}" name="{{ name }}" class="{{ 'invalid' if errors[name] }}">
@@ -33,7 +33,7 @@
 
 <div class="card">
   <div class="title-row">
-    <h1>Заявка на оплату витрат № {{ req.number }} від {{ req.created_at | dt }}</h1>
+    <h1>{% if req.number %}Заявка на оплату витрат № {{ req.number }} від {{ req.created_at | dt }}{% else %}Нова заявка на оплату витрат{% endif %}</h1>
     <span class="badge {{ st[1] }}">{{ st[0] }}</span>
     {% if handover_pending %}<a href="#handover" class="badge amber" title="Автор ще не підтвердив, що передав готівку підряднику">⏳ передачу готівки не підтверджено</a>
     {% elif handover_done %}<span class="badge green" title="Передано {{ handover.date | d }}">✓ готівку передано підряднику</span>{% endif %}
@@ -85,7 +85,7 @@
     {% if editable %}
     <span class="muted participants-pending" id="participants-pending" hidden>Зміни учасників збережуться разом із заявкою</span>
     {% else %}
-    <form method="post" action="{{ url_for('request_participants', request_id=req.id) }}" id="participants-form" class="participants-save" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <form method="post" action="{{ url_for('request_participants', request_id=req.id) }}" id="participants-form" class="participants-save" hidden><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
       <input type="hidden" name="action" value="set">
       <button type="submit" class="btn btn-sm btn-primary">Зберегти учасників</button>
       <button type="button" class="btn btn-sm" id="participants-reset">Скасувати</button>
@@ -103,14 +103,14 @@
   {% endif %}
 </div>
 
-<form method="post" class="card" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<form method="post" class="card" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
   {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
   <fieldset {{ 'disabled' if not editable }}>
 
   <div class="form-grid">
     <div class="field">
       <label>Номер</label>
-      <input type="text" value="{{ req.number }}" readonly>
+      <input type="text" value="{{ req.number or '' }}" placeholder="присвоїться при збереженні" readonly>
     </div>
     <div class="field">
       <label>Дата заявки</label>
@@ -258,7 +258,7 @@
 {% if actions %}
 
 
-<form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<form method="post" action="{{ url_for('request_action', request_id=req.id) }}" class="card decision"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
   {% if cfo_intervene %}
   <h2>Втручання фіндиректора</h2>
   <p class="muted" style="margin-top:0">Заявка чекає рішення {{ ROLES[accountant_role_of_req] | lower if accountant_role_of_req else 'бухгалтера' }}.
@@ -311,7 +311,7 @@
     {% if handover.reminders %}<span class="muted">Нагадувань надіслано: {{ handover.reminders }}.</span>{% endif %}
   </p>
   {% if can_confirm_handover %}
-  <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
     <label>Дата передачі
       <input type="date" name="date" value="{{ today.isoformat() }}" min="{{ handover.since.isoformat() }}" max="{{ today.isoformat() }}" required></label>
     <input type="text" name="comment" maxlength="2000" aria-label="Коментар"
@@ -326,7 +326,7 @@
   {% if 'admin' in roles %}
   <details class="handover-undo">
     <summary class="muted">Адміністратор: скасувати підтвердження</summary>
-    <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <form method="post" action="{{ url_for('request_handover', request_id=req.id) }}" class="handover-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
       <input type="hidden" name="action" value="undo">
       <input type="text" name="comment" required maxlength="2000" placeholder="Причина (обов'язково)" aria-label="Причина">
       <button type="submit" class="btn btn-purple btn-sm">Скасувати підтвердження</button>
@@ -338,7 +338,7 @@
 {% endif %}
 
 {% if can_see_account and req.id and not account_required %}
-<form method="post" action="{{ url_for('request_payment_account', request_id=req.id) }}" class="card pay-account" id="payment-account"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<form method="post" action="{{ url_for('request_payment_account', request_id=req.id) }}" class="card pay-account" id="payment-account"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
   <div class="section-head">
     <h2>Вид оплати</h2>
     <span class="muted">бачать і змінюють лише бухгалтери, фіндиректор і адміністратор</span>
@@ -400,7 +400,7 @@
 <details class="card admin-status" id="admin-status" {{ 'open' if admin_comment }}>
   <summary><h2>Адміністратор: змінити статус</h2><span class="muted">поточний — {{ STATUSES[req.status][0] }}</span></summary>
   <form method="post" action="{{ url_for('admin_change_status', request_id=req.id) }}"
-        data-msg="Змінити статус заявки № {{ req.number }}?" onsubmit="return confirm(this.dataset.msg)"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        data-msg="Змінити статус заявки № {{ req.number }}?" onsubmit="return confirm(this.dataset.msg)"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
     <p class="muted">Для виправлення помилок, наприклад якщо заявка помилково потрапила до оплати.
       Зміна записується в історію погодження разом із причиною.</p>
     <div class="admin-status-row">

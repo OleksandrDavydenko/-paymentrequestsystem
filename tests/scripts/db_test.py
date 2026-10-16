@@ -17,7 +17,12 @@ import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications, user_directory, org_structure, db_sql, notify_log
 import sqlalchemy as sa
-import mock_data as db
+import storage as db
+import storage.sql as dbs
+
+def restart():
+    """«Перезапуск» процесу: кеш заявок в роботі й підготовка схеми — заново."""
+    dbs._cache.reset(); dbs._ready_engine = None
 
 ok = True
 def check(label, cond):
@@ -34,7 +39,7 @@ m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 c = m.app.test_client()
 
-check("db mode: work store empty (no demo)", db.list_all() == [] and db._DB and db.work_mode())
+check("db mode: work store empty (no demo)", db.list_all() == [] and db_sql.configured() and db.work_mode())
 h = c.get("/health")
 check("health: sqlite, 0 requests", h.status_code == 200 and h.get_json()["db"] == "sqlite" and h.get_json()["requests"] == 0)
 
@@ -60,8 +65,8 @@ BASE = {"pay_date": "2026-10-20", "organization_id": "1", "counterparty_id": "1"
         "lines-0-deal": "Договір 1"}
 login("author@ftpua.com", ["g-i"])
 r = c.post("/requests/new", data={**BASE, "action": "submit"})
-rid = max(db._WORK)
-check("first request number 000000001", rid == 1 and db._REQUESTS[1]["number"] == "000000001")
+rid = db.last_id()
+check("first request number 000000001", rid == 1 and db.get_request(1)["number"] == "000000001")
 login("res@ftpua.com", ["g-r"])
 c.post(f"/requests/{rid}/action", data={"action": "approve", "payment_account_id": "1"})
 before = db.get_request(rid)
@@ -75,7 +80,7 @@ check("key columns", row.status == "cfo" and row.amount == Decimal("1234.56") an
 check("history + lines rows", hist == len(before["history"]) and len(lines) == 1 and lines[0].invoice == "НП-1")
 
 # ---------- «перезапуск»: пам'ять очищено, читаємо з бази
-db._WORK.clear(); db._loaded = False
+restart()
 after = db.get_request(rid)
 check("request survives restart (identical)", after == before)
 check("types restored", isinstance(after["created_at"], datetime) and isinstance(after["pay_date"], date)
@@ -83,25 +88,55 @@ check("types restored", isinstance(after["created_at"], datetime) and isinstance
       and isinstance(after["participants"][0]["added_at"], datetime))
 login("author@ftpua.com", ["g-i"])
 c.post("/requests/new", data={**BASE, "action": "save"})
-check("numbering continues after restart", max(db._WORK) == 2)
+check("numbering continues after restart", db.last_id() == 2)
 page = c.get(f"/requests/{rid}").get_data(as_text=True)
 check("card renders from db", "000000001" in page and "Вікторія" in page)
 
 # ---------- масові зміни зберігаються
 db.replace_counterparty("1", "2", {"name": "T", "email": "t@x"}, "admin", "тест")
-db._WORK.clear(); db._loaded = False
+restart()
 check("replace_counterparty persisted", db.get_request(1)["counterparty_id"] == "2" and db.get_request(2)["counterparty_id"] == "2")
 
 # ---------- помилка запису в базу не змінює пам'ять
-real = db_sql.save_requests
-db_sql.save_requests = lambda reqs: (_ for _ in ()).throw(RuntimeError("db down"))
+def rev():
+    with db_sql.engine().connect() as conn:
+        return conn.execute(sa.select(db_sql.rev_t.c.rev)).scalar()
+real = dbs._write_children
+dbs._write_children = lambda c, r: (_ for _ in ()).throw(RuntimeError("db down"))
 req = db.get_request(1); req["note"] = "не має зберегтися"
+rev0 = rev()
 try:
     db.save_request(req); failed = False
 except RuntimeError:
     failed = True
-db_sql.save_requests = real
-check("db write failure -> exception, memory unchanged", failed and db.get_request(1)["note"] != "не має зберегтися")
+dbs._write_children = real
+restart()
+check("db write failure -> exception, nothing saved (one transaction)",
+      failed and db.get_request(1)["note"] != "не має зберегтися" and rev() == rev0)
+
+# ---------- одночасні зміни: виграє перший, другий отримує StaleRequestError
+a, b = db.get_request(1), db.get_request(1)
+a["note"] = "перша зміна"; db.save_request(a)
+b["note"] = "друга зміна"
+try:
+    db.save_request(b); stale = None
+except db.StaleRequestError as e:
+    stale = e
+check("concurrent save -> StaleRequestError with current request",
+      stale is not None and stale.current["note"] == "перша зміна" and db.get_request(1)["note"] == "перша зміна")
+check("version grows by one per save", db.get_request(1)["version"] == a["version"] and a["version"] >= 2)
+
+# ---------- історія лише дописується; учасники й файли — окремими таблицями
+login("author@ftpua.com", ["g-i"])
+n_hist = len(db.get_request(1)["history"])
+c.post("/requests/1/comment", data={"comment": "Перевірка історії", "csrf_token": ""})
+with db_sql.engine().connect() as conn:
+    seqs = list(conn.execute(sa.select(db_sql.history_t.c.seq).where(db_sql.history_t.c.request_id == 1)
+                             .order_by(db_sql.history_t.c.seq)).scalars())
+    parts = list(conn.execute(sa.select(db_sql.participants_t.c.email).where(db_sql.participants_t.c.request_id == 1)).scalars())
+check("history appended (seq 0..n)", seqs == list(range(len(db.get_request(1)["history"]))) and len(seqs) == n_hist + 1)
+check("participants table", parts == ["w@ftpua.com"])
+check("participant list from db (new first)", [r["id"] for r in db.list_participating("W@ftpua.com")] == [2, 1])
 
 # ---------- перемикач «Тестові дані»
 sent = []

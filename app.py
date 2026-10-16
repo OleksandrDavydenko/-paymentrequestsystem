@@ -39,7 +39,7 @@ import telegram_notify
 import user_prefs
 import user_budget
 import user_directory
-import mock_data as db
+import storage as db
 import workflow as wf
 
 load_dotenv()
@@ -345,13 +345,13 @@ def inject_roles():
         "ROLE_SHORT": wf.ROLE_SHORT,
         "is_approver": bool(_deciding_roles(roles)) or "cfo" in roles,
         "sees_departments": bool(roles & {"dept_head", "dept_viewer"}),
-        "participating_count": len(db.list_participating(g.user["email"])) if getattr(g, "user", None) else 0,
-        "queue_count": len(db.list_queue(roles, g.user["email"])) if roles & wf.APPROVER_ROLES else 0,
+        "participating_count": db.count("participant", roles, g.user["email"]) if getattr(g, "user", None) else 0,
+        "queue_count": db.count("queue", roles, g.user["email"]) if roles & wf.APPROVER_ROLES else 0,
         "can_see_payments": wf.can_see_payments(roles),
         "sees_all_requests": _sees_all_requests(roles),
         "test_mode": notifications.test_mode(),
         "test_mail_muted": notifications.muted_by_test_mode(),
-        "payments_count": len(db.list_to_pay(roles)) if wf.can_see_payments(roles) else 0,
+        "payments_count": db.count("to_pay", roles) if wf.can_see_payments(roles) else 0,
     }
 
 
@@ -361,7 +361,7 @@ def _deciding_roles(roles):
     if app_settings.get("dept_head_mode") != "approve":
         deciding.discard("dept_head")
     # Фіндиректор-спостерігач — без черги (крім заявок, відправлених ще з його кроком)
-    if "cfo" in deciding and app_settings.get("cfo_mode") == "observe" and not db.list_queue(frozenset({"cfo"})):
+    if "cfo" in deciding and app_settings.get("cfo_mode") == "observe" and not db.count("queue", frozenset({"cfo"})):
         deciding.discard("cfo")
     return deciding
 
@@ -382,9 +382,14 @@ def _home():
 
 
 def _load_visible(request_id):
+    """Заявка, яку користувач може бачити, або 404. Для дій з форми картки (POST з полем version):
+    якщо заявку змінили після того, як користувач відкрив сторінку, — StaleRequestError (див. stale_request)."""
     req = db.get_request(request_id)
     if not req or not wf.can_view(req, g.roles, g.user["email"]):
         abort(404)
+    seen = request.form.get("version") if request.method == "POST" else None
+    if seen and seen.isdigit() and int(seen) != (req.get("version") or 0):
+        raise db.StaleRequestError(req)
     return req
 
 
@@ -393,10 +398,11 @@ def _load_visible(request_id):
 # ---------------------------------------------------------------- панель фільтрів (пошук + кнопки з вибором кількох)
 
 def _facet_getters():
-    """ключ параметра -> (назва, функція заявка -> (значення, підпис))."""
+    """ключ параметра -> (назва, функція легкий рядок заявки -> (значення, підпис)). Списки працюють з легкими
+    рядками (storage/derive.py): фільтри, пошук, кількості й суми — без завантаження повних заявок."""
     return {
         "status": ("Статус", lambda r: (r["status"], wf.STATUSES.get(r["status"], (r["status"],))[0])),
-        "form": ("Форма оплати", lambda r: (wf.channel_of(r), wf.CHANNELS.get(wf.channel_of(r), "—"))),
+        "form": ("Форма оплати", lambda r: (r["channel"], wf.CHANNELS.get(r["channel"], "—"))),
         "org": ("Організація", lambda r: (r.get("organization_id"), organizations.name(r.get("organization_id")))),
         "cp": ("Контрагент", lambda r: (r.get("counterparty_id"), counterparties.name(r.get("counterparty_id")))),
         "exp": ("Стаття витрат", lambda r: (r.get("expense_code"), expense_label(r.get("expense_code")))),
@@ -404,8 +410,7 @@ def _facet_getters():
         "acc": ("Вид оплати", lambda r: (r.get("payment_account_id") or "none",
                                          payment_accounts.label(r["payment_account_id"]) if r.get("payment_account_id")
                                          else "Не вибрано")),
-        "payorg": ("Платимо з", lambda r: ((pay_org(r) or {}).get("code") or "none",
-                                           (pay_org(r) or {}).get("name") or "Не визначено")),
+        "payorg": ("Платимо з", lambda r: (r["pay_org"] or "none", db.derive.pay_org_name(r["pay_org"]) or "Не визначено")),
     }
 
 
@@ -503,6 +508,25 @@ def _filtered(source, keys):
     return rows, filter_bar(base, rows, selected, keys, q)
 
 
+PAGE_SIZE = 100  # рядків таблиці за раз; далі — «Показати ще»
+
+
+def _page(rows):
+    """Рядки сторінки: перші limit легких рядків -> повні заявки + дані для «Показати ще» (_more.html)."""
+    try:
+        limit = max(PAGE_SIZE, int(request.args.get("limit") or PAGE_SIZE))
+    except ValueError:
+        limit = PAGE_SIZE
+    shown = rows[:limit]
+    full = db.get_many([r["id"] for r in shown])
+    page_rows = [full[r["id"]] for r in shown if r["id"] in full]
+    more = len(rows) - len(shown)
+    args = request.args.to_dict(flat=False)
+    args["limit"] = [str(limit + PAGE_SIZE)]
+    return page_rows, {"shown": len(page_rows), "total": len(rows), "more": more, "step": PAGE_SIZE,
+                       "more_url": url_for(request.endpoint, **args) if more else None}
+
+
 def _ref_keys(show_dep=True, extra_before=(), extra_after=()):
     keys = list(extra_before)
     if app_settings.get("org_field_mode") != "accountant":
@@ -533,28 +557,27 @@ def _home_redirect(*, context):
 @auth.login_required
 @requires()
 def requests_list(*, context):
-    participating = db.list_participating(g.user["email"])
+    email = g.user["email"]
+    participating_total = db.count("participant", g.roles, email)
     view = request.args.get("view") if request.args.get("view") in ("participant", "paid") else "mine"
     if "initiator" not in g.roles:
         view = "participant"
-    if view == "participant" and not participating and "initiator" not in g.roles:
+    if view == "participant" and not participating_total and "initiator" not in g.roles:
         return redirect(_home())
-    if view == "participant":
-        source = participating
-    elif view == "paid":  # оплачені — окремою вкладкою, найсвіжіша оплата першою
-        source = sorted(db.list_requests(g.user["email"], "paid"),
-                        key=lambda r: (wf.paid_entry(r) or {}).get("at") or r["created_at"], reverse=True)
-    else:  # «Створені мною» — заявки в роботі, без оплачених
-        source = [r for r in db.list_requests(g.user["email"]) if r["status"] != "paid"]
-    rows, fbar = _filtered(source, _ref_keys(show_dep=False, extra_before=() if view == "paid" else ("status",)))
+    # «Створені мною» — заявки в роботі, без оплачених; оплачені — окремою вкладкою, найсвіжіша оплата першою
+    scope = {"participant": "participant", "paid": "mine_paid"}.get(view, "mine")
+    found, fbar = _filtered(db.scope_rows(scope, g.roles, email),
+                            _ref_keys(show_dep=False, extra_before=() if view == "paid" else ("status",)))
+    rows, page = _page(found)
     return render_template(
         "requests_list.html",
         user_name=g.user["name"],
         requests=rows,
+        page=page,
         fbar=fbar,
         view=view,
-        participating_total=len(participating),
-        handover_count=sum(1 for r in db.list_requests(g.user["email"], "paid") if wf.needs_handover(r)),
+        participating_total=participating_total,
+        handover_count=db.count("handover_mine", g.roles, email),
         paid_entry=wf.paid_entry,
     )
 
@@ -566,17 +589,18 @@ def approvals(*, context):
     view = request.args.get("view") if request.args.get("view") in ("processed", "accountants") else "queue"
     if view == "accountants" and "cfo" not in g.roles:
         abort(403)
-    source = {"processed": lambda: db.list_processed(g.roles), "accountants": db.list_at_accountants,
-              "queue": lambda: db.list_queue(g.roles, g.user["email"])}[view]()
-    rows, fbar = _filtered(source, _ref_keys(extra_before=("form",)))
+    scope = {"processed": "processed", "accountants": "at_accountants", "queue": "queue"}[view]
+    found, fbar = _filtered(db.scope_rows(scope, g.roles, g.user["email"]), _ref_keys(extra_before=("form",)))
+    rows, page = _page(found)
     return render_template(
         "approvals.html",
         user_name=g.user["name"],
         requests=rows,
+        page=page,
         fbar=fbar,
         view=view,
         processed_entry=lambda r: wf.processed_entry(r, g.roles),
-        accountants_count=len(db.list_at_accountants()) if "cfo" in g.roles else 0,
+        accountants_count=db.count("at_accountants") if "cfo" in g.roles else 0,
         accountant_role=wf.accountant_role,
         ACTIONS=wf.ACTIONS,
     )
@@ -594,7 +618,7 @@ def request_card(request_id=None, *, context):
             return redirect(_home())
         existing = {
             "id": None,
-            "number": db.next_number(),
+            "number": None,  # номер присвоює сховище при першому збереженні
             "created_at": clock.now(),
             "author_email": user["email"],
             "author_name": user["name"],
@@ -773,8 +797,7 @@ def _default_accountant(user):
     acc = org_structure.accountant_default_of(user["oid"])
     if acc in wf.ACCOUNTANT_CHOICES:
         return {"accountant_type": acc, "accountant_hint": "за замовчуванням з вашої картки"}
-    last = next((r["accountant_type"] for r in db.list_requests(user["email"])
-                 if r.get("accountant_type") in wf.ACCOUNTANT_CHOICES), None)
+    last = db.last_accountant_type(user["email"])
     return {"accountant_type": last, "accountant_hint": "як у вашій попередній заявці"} if last else {}
 
 
@@ -1124,7 +1147,7 @@ def currency_totals(rows, today):
                                               "overdue_count": 0, "by_form": {}})
         t["amount"] += r["amount"]
         t["count"] += 1
-        ch = wf.channel_of(r)
+        ch = r["channel"]
         t["by_form"][ch] = t["by_form"].get(ch, Decimal(0)) + r["amount"]
         if r["status"] == "to_pay" and r["pay_date"] < today:
             t["overdue"] += r["amount"]
@@ -1187,7 +1210,11 @@ def request_comment(request_id, *, context):
         flash(str(e), "error")
         session["comment_draft"] = text
         return redirect(url_for("request_card", request_id=request_id) + "#comment")
-    db.save_request(req)
+    try:
+        db.save_request(req)
+    except db.StaleRequestError:
+        session["comment_draft"] = text  # текст не губиться: він повернеться в поле коментаря
+        raise
     names = ", ".join(a["name"] for a in stored)
     notifications.notify("comment", req, g.user, comment=text + (("\n" if text else "") + "📎 " + names if names else ""))
     flash("Коментар додано" + (f" (файли: {names})" if names else ""), "success")
@@ -1413,6 +1440,7 @@ def admin_organizations(*, context):
         if forms:
             overrides[code] = forms
     app_settings.set("org_accountants", overrides, g.user["email"])
+    db.reindex()  # бухгалтер заявки — похідна колонка в базі (списки «Оплачені» тощо)
     flash(f"Організації збережено: дозволено для вибору {len(known & allowed)} з {len(known)}; "
           f"призначено бухгалтерів для {len([c for c in overrides if c in known])}. "
           "Заявки, що вже в роботі, переходять до призначеного бухгалтера одразу.", "success")
@@ -1545,23 +1573,26 @@ def to_pay(*, context):
     handover_rows = _handover_rows(roles)
     if view == "handover":
         return _handover_view(handover_rows, today)
-    all_rows = db.list_paid(roles) if view == "paid" else db.list_to_pay(roles)
     period, d_from, d_to = _date_filter(request.args, today)
+    if view == "paid":
+        all_rows = db.scope_rows("paid", roles, g.user["email"], period=("paid", d_from, d_to))
+    else:
+        all_rows = db.scope_rows("to_pay", roles, g.user["email"])
 
     def period_date(r):
         # Для оплачених — фактична дата оплати, для решти — планова
-        entry = wf.paid_entry(r) if view == "paid" else None
-        return entry["at"].date() if entry else r["pay_date"]
+        return r["paid_at"].date() if view == "paid" and r["paid_at"] else r["pay_date"]
 
-    rows, fbar = _filtered([r for r in all_rows if _in_period(period_date(r), d_from, d_to)],
-                           _ref_keys(extra_before=("form", "acc", "payorg")))
+    found, fbar = _filtered([r for r in all_rows if _in_period(period_date(r), d_from, d_to)],
+                            _ref_keys(extra_before=("form", "acc", "payorg")))
     account_totals, org_totals = {}, {}
-    for r in rows:
+    for r in found:
         key = payment_accounts.label(r.get("payment_account_id")) if r.get("payment_account_id") else "Не вибрано"
         t = account_totals.setdefault(key, {})
         t[r["currency"]] = t.get(r["currency"], Decimal(0)) + r["amount"]
-        t = org_totals.setdefault((pay_org(r) or {}).get("name") or "Не визначено", {})
+        t = org_totals.setdefault(db.derive.pay_org_name(r["pay_org"]) or "Не визначено", {})
         t[r["currency"]] = t.get(r["currency"], Decimal(0)) + r["amount"]
+    rows, page = _page(found)
     blocked = {r["id"] for r in rows if _pay_guard(r)["cp_pending"] and _pay_guard(r)["block_pending"]}
     no_account = {r["id"] for r in rows if not r.get("payment_account_id")}
 
@@ -1579,8 +1610,9 @@ def to_pay(*, context):
         view=view,
         paid_entry=wf.paid_entry,
         requests=rows,
-        totals=currency_totals(rows, today),
-        plan=payment_plan(rows),
+        page=page,
+        totals=currency_totals(found, today),
+        plan=payment_plan(found),
         today=today,
         period=period,
         d_from=d_from,
@@ -1597,11 +1629,10 @@ def to_pay(*, context):
 
 
 def _handover_rows(roles):
-    """Оплачені готівкові заявки, де автор ще не підтвердив передачу, — для бухгалтера цих заявок."""
+    """Оплачені готівкові заявки, де автор ще не підтвердив передачу, — для бухгалтера цих заявок (легкі рядки)."""
     if not app_settings.get("cash_handover_confirm"):
         return []
-    rows = [r for r in db.list_all() if wf.needs_handover(r) and wf.is_handover_accountant(r, roles)]
-    return sorted(rows, key=lambda r: (r["handover"]["since"], r["id"]))
+    return db.scope_rows("handover", roles, g.user["email"])
 
 
 def _handover_tab(rows):
@@ -1612,9 +1643,9 @@ def _handover_tab(rows):
 
 def _handover_view(all_rows, today):
     period, d_from, d_to = _date_filter(request.args, today)
-    rows, fbar = _filtered([r for r in all_rows if _in_period(r["handover"]["since"], d_from, d_to)], _ref_keys())
+    found, fbar = _filtered([r for r in all_rows if _in_period(r["handover_since"], d_from, d_to)], _ref_keys())
     by_author = {}
-    for r in rows:
+    for r in found:
         a = by_author.setdefault(r["author_email"].lower(), {"name": r["author_name"], "count": 0, "sums": {}})
         a["count"] += 1
         a["sums"][r["currency"]] = a["sums"].get(r["currency"], Decimal(0)) + r["amount"]
@@ -1627,7 +1658,7 @@ def _handover_view(all_rows, today):
         **tab,
         view="handover",
         user_name=g.user["name"],
-        requests=rows,
+        **dict(zip(("requests", "page"), _page(found))),
         fbar=fbar,
         by_author=sorted(by_author.values(), key=lambda a: a["name"].lower()),
         days_waiting=lambda r: wf.handover_days(r, today),
@@ -1646,7 +1677,7 @@ def _handover_view(all_rows, today):
 @auth.login_required
 @requires("admin", "cfo")
 def admin_requests(*, context):
-    return _requests_overview(db.list_all(), title="Усі заявки", table_id="all-requests")
+    return _requests_overview("all", title="Усі заявки", table_id="all-requests")
 
 
 @app.route("/department")
@@ -1655,20 +1686,21 @@ def admin_requests(*, context):
 def department_requests(*, context):
     deps = sorted(wf.head_deps(g.roles) | wf.view_deps(g.roles), key=lambda c: departments.get_name(c).lower())
     title = "Заявки відділу" + (": " + ", ".join(departments.get_name(c) for c in deps) if deps else "")
-    rows = [r for r in db.list_all() if wf.in_department(r, g.roles)]
-    return _requests_overview(rows, title=title, table_id="department-requests", no_departments=not deps,
+    return _requests_overview("department", title=title, table_id="department-requests", no_departments=not deps,
                               show_dep_filter=len(deps) > 1)
 
 
-def _requests_overview(source, title, table_id, **extra):
+def _requests_overview(scope, title, table_id, **extra):
     today = clock.today()
     args = request.args
     date_field = "pay" if args.get("date_field") == "pay" else "created"
     period, d_from, d_to = _date_filter(args, today)
+    source = db.scope_rows(scope, g.roles, g.user["email"], period=(date_field, d_from, d_to))
     in_period = [r for r in source
                  if _in_period(r["pay_date"] if date_field == "pay" else r["created_at"].date(), d_from, d_to)]
-    rows, fbar = _filtered(in_period, _ref_keys(show_dep=extra.get("show_dep_filter", True),
-                                                extra_before=("status", "form")))
+    found, fbar = _filtered(in_period, _ref_keys(show_dep=extra.get("show_dep_filter", True),
+                                                 extra_before=("status", "form")))
+    rows, page = _page(found)
     return render_template(
         "admin_requests.html",
         title=title,
@@ -1676,7 +1708,8 @@ def _requests_overview(source, title, table_id, **extra):
         **extra,
         user_name=g.user["name"],
         requests=rows,
-        totals=currency_totals(rows, today),
+        page=page,
+        totals=currency_totals(found, today),
         today=today,
         fbar=fbar,
         date_field=date_field,
@@ -1704,7 +1737,11 @@ def to_pay_bulk(*, context):
         except wf.WorkflowError:
             skipped.append(req["number"])
             continue
-        db.save_request(req)
+        try:
+            db.save_request(req)
+        except db.StaleRequestError:  # заявку щойно змінив хтось інший
+            skipped.append(req["number"])
+            continue
         notifications.notify("pay", req, g.user)
         paid.append(req["number"])
     if paid:
@@ -1786,8 +1823,8 @@ def admin_users(*, context):
         CFO_MODES=wf.CFO_MODES,
         cp_owner=app_settings.get("cp_onec_owner"),
         CP_OWNER_MODES=wf.CP_OWNER_MODES,
-        pending_cp_requests={cid: next((r["id"] for r in db.list_all() if r.get("counterparty_id") == cid), None)
-                             for cid in [c["id"] for c in counterparties.pending_items()]},
+        pending_cp_requests={c["id"]: db.first_request_with_counterparty(c["id"])
+                             for c in counterparties.pending_items()},
         pending_cp=app_settings.info("pending_cp_payment"),
         require_payment_account=app_settings.get("require_payment_account"),
         no_self_approval=app_settings.get("no_self_approval"),
@@ -2069,6 +2106,20 @@ def method_not_allowed(e):
     return redirect(_back_target(request.path))
 
 
+@app.errorhandler(db.StaleRequestError)
+def stale_request(e):
+    """Заявку змінив хтось інший, поки користувач дивився на неї: дію не виконано, показуємо актуальну."""
+    cur = e.current or {}
+    last = (cur.get("history") or [None])[-1]
+    who = f" — {last['user_name']} о {last['at']:%H:%M}" if last and last.get("user_name") else ""
+    message = (f"Заявку № {cur.get('number', '')} щойно змінили{who}. Дію не виконано — "
+               "перегляньте актуальний стан і повторіть, якщо потрібно.")
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"error": message}, 409
+    flash(message, "error")
+    return redirect(_back_target(request.path))
+
+
 @app.errorhandler(CSRFError)
 def csrf_error(e):
     """Форма без дійсного токена: сторінку відкрито до повторного входу або запит прийшов з чужого сайту."""
@@ -2226,16 +2277,18 @@ def run_handover_reminders(today=None):
     if not app_settings.get("cash_handover_confirm") or every <= 0 or notifications.test_mode():
         return []
     sent = []
-    for r in db.list_all():
+    for r in db.list_requests_full("handover_all"):
         if not wf.handover_reminder_due(r, every, today):
             continue
-        req = db.get_request(r["id"])
         with app.test_request_context(base_url=_public_base_url()):
-            if not notifications.send_handover_reminder(req, wf.handover_days(req, today)):
+            if not notifications.send_handover_reminder(r, wf.handover_days(r, today)):
                 continue  # розсилку вимкнено — нагадаємо, коли ввімкнуть
-        wf.mark_reminded(req, today)
-        db.save_request(req)
-        sent.append(req["number"])
+        wf.mark_reminded(r, today)
+        try:
+            db.save_request(r)
+        except db.StaleRequestError:  # автор якраз підтвердив передачу — наступна перевірка це врахує
+            continue
+        sent.append(r["number"])
     return sent
 
 
@@ -2344,6 +2397,8 @@ def health():
     """Стан сайту й бази даних (без персональних даних)."""
     tg = telegram_notify.status()
     info = {**db_sql.status(), **filestore.status(), "telegram": "on" if tg["enabled"] else "off"}
+    if db_sql.configured() and not info.get("error"):
+        info.update(db.sql.status())
     if tg["enabled"]:
         info["telegram_last_poll"] = tg["last_poll"].isoformat(timespec="seconds") if tg["last_poll"] else None
     return ({"status": "error", **info}, 503) if info.get("error") else {"status": "ok", **info}

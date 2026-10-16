@@ -9,7 +9,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import currencies, mailer, notifications
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -42,15 +42,15 @@ BASE = {"pay_date": "2026-10-20", "organization_id": "1", "counterparty_id": "1"
         "amount": "100", "payment_form": "bank", "action": "save",
         "lines-0-invoice": "R-1", "lines-0-amount": "100", "lines-0-currency": "PLN"}
 c.post("/requests/new", data={**BASE, "currency": "PLN"})
-rid = max(db._REQUESTS)
-check("PLN accepted (request + line)", db._REQUESTS[rid]["currency"] == "PLN" and db._REQUESTS[rid]["lines"][0]["currency"] == "PLN")
+rid = db.last_id()
+check("PLN accepted (request + line)", db.get_request(rid)["currency"] == "PLN" and db.get_request(rid)["lines"][0]["currency"] == "PLN")
 r = c.post("/requests/new", data={**BASE, "currency": "XXXRUB"})
 check("deleted currency rejected", r.status_code == 200 and "Оберіть валюту" in r.get_data(as_text=True))
 # валюту прибрали з довідника — стара заявка зберігається з нею й показує її
 currencies._table.items = lambda: [x for x in parsed if x["name"] != "PLN"]
 c.post(f"/requests/{rid}", data={**BASE, "currency": "PLN"})
 page = c.get(f"/requests/{rid}").get_data(as_text=True)
-check("old currency kept on existing request", db._REQUESTS[rid]["currency"] == "PLN" and "PLN (немає в довіднику)" in page)
+check("old currency kept on existing request", db.get_request(rid)["currency"] == "PLN" and "PLN (немає в довіднику)" in page)
 check("totals order uses 1C order", m._currency_order("UAH") < m._currency_order("CZK") < m._currency_order("PLN"))
 
 print("ALL OK" if ok else "SOME FAILED")

@@ -10,7 +10,7 @@ import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import counterparties as cps, payment_accounts as pa, app_settings, mailer, notifications
 import workflow as wf
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -88,7 +88,7 @@ check("only initiator creates counterparties", c.post("/counterparties/new", jso
 # ---------- заявка з тимчасовим контрагентом
 login("i@ftpua.com", INIT)
 c.post("/requests/new", data={**BASE, "counterparty_id": str(new["id"]), "action": "submit"})
-rid = max(db._REQUESTS)
+rid = db.last_id()
 check("request with pending counterparty submitted", db.get_request(rid)["counterparty_id"] == new["id"] and db.get_request(rid)["status"] == "accountant")
 msgs = flush()
 check("accountant mail warns about new counterparty", any(x["to"] == "res@ftpua.com" and "ще немає в 1С" in x["html"] for x in msgs))
@@ -164,7 +164,7 @@ check("filter list excludes linked pending", "ТОВ «Новий партнер
 login("i@ftpua.com", INIT)
 r = c.post("/counterparties/new", json={"resident": "1", "edrpou": "55667785", "name": "Ще новий"})
 p2 = r.get_json()["item"]
-c.post("/requests/new", data={**BASE, "counterparty_id": str(p2["id"]), "action": "save"}); rid2 = max(db._REQUESTS)
+c.post("/requests/new", data={**BASE, "counterparty_id": str(p2["id"]), "action": "save"}); rid2 = db.last_id()
 cps.MOCK_ONEC.append({"GUID": "7", "Code": "CR7", "Name": "ТОВ «Ще новий» (1С)", "Edrpou": "55667785",
                       "IsNonResident": False, "IsDeleted": False})
 login("od@ftpua.com", ["g-a"])
@@ -174,7 +174,7 @@ check("auto-link by ЄДРПОУ on refresh", db.get_request(rid2)["counterparty
 # ---------- «Перевірити в 1С зараз» і жива перевірка перед оплатою
 login("i@ftpua.com", INIT)
 p3 = c.post("/counterparties/new", json={"resident": "1", "edrpou": "66778899", "name": "ТОВ «Третій»"}).get_json()["item"]
-c.post("/requests/new", data={**BASE, "counterparty_id": p3["id"], "action": "save"}); rid4 = max(db._REQUESTS)
+c.post("/requests/new", data={**BASE, "counterparty_id": p3["id"], "action": "save"}); rid4 = db.last_id()
 login("res@ftpua.com", ACC)
 r = c.post(f"/counterparties/{p3['id']}/check", data={"next": f"/requests/{rid4}"}, follow_redirects=True)
 check("check: not in 1C yet", "ще немає контрагента" in r.get_data(as_text=True) and cps.is_pending(p3["id"]))
@@ -188,7 +188,7 @@ login("od@ftpua.com", ["g-a"])
 c.post("/admin/settings", data={"approval_mode": "sequential", "dept_head_mode": "view", "pending_cp_payment": "block",
                                 "require_payment_account_sent": "1"})
 check("setting off", app_settings.get("require_payment_account") is False)
-login("i@ftpua.com", INIT); c.post("/requests/new", data={**BASE, "counterparty_id": "1", "action": "submit"}); rid5 = max(db._REQUESTS)
+login("i@ftpua.com", INIT); c.post("/requests/new", data={**BASE, "counterparty_id": "1", "action": "submit"}); rid5 = db.last_id()
 login("res@ftpua.com", ACC); c.post(f"/requests/{rid5}/action", data={"action": "approve"})
 check("setting off: approve without payment account", db.get_request(rid5)["status"] == "cfo")
 login("od@ftpua.com", ["g-a"])
@@ -199,7 +199,7 @@ check("setting back on", app_settings.get("require_payment_account") is True)
 # ---------- вид оплати скидається при зміні організації
 login("res@ftpua.com", ACC)
 login("i@ftpua.com", INIT)
-c.post("/requests/new", data={**BASE, "counterparty_id": "1", "action": "submit"}); rid3 = max(db._REQUESTS)
+c.post("/requests/new", data={**BASE, "counterparty_id": "1", "action": "submit"}); rid3 = db.last_id()
 login("res@ftpua.com", ACC)
 c.post(f"/requests/{rid3}/action", data={"action": "rework", "comment": "Змініть організацію", "payment_account_id": "1"})
 check("account saved with rework", db.get_request(rid3)["payment_account_id"] == "1")

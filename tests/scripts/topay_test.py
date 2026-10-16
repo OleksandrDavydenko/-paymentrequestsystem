@@ -4,7 +4,7 @@ os.environ.update(UPLOAD_DIR=tempfile.mkdtemp(), GROUP_INITIATOR="g-init", GROUP
                   GROUP_ACC_RESIDENT="g-res", GROUP_ACC_NONRESIDENT="g-nonres", GROUP_CFO="g-cfo", ADMIN_EMAILS="")
 import app as m
 import user_budget; user_budget.get = lambda oid: {'direct': True, 'all_departments': True, 'departments': []}
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):

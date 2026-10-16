@@ -4,7 +4,7 @@ os.environ.update(UPLOAD_DIR=tempfile.mkdtemp(), GROUP_ADMIN="g-a", GROUP_INITIA
                   GROUP_ACC_RESIDENT="g-r", GROUP_ACC_NONRESIDENT="g-n", GROUP_CFO="g-f", ADMIN_EMAILS="")
 import app as m
 import user_budget; user_budget.get = lambda oid: {'direct': True, 'all_departments': True, 'departments': []}
-import mock_data as db
+import storage as db
 import workflow as wf
 
 ok = True
@@ -23,7 +23,7 @@ rows = lambda url: c.get(url).get_data(as_text=True).count('<tr class="clickable
 # --- Оплачені
 login("res@ftpua.com", ["g-r"])
 before_paid = rows("/to-pay?view=paid")
-exp = sum(1 for r in db._REQUESTS.values() if r["status"] == "paid" and wf.channel_of(r) == "bank_resident")
+exp = sum(1 for r in db.list_all() if r["status"] == "paid" and wf.channel_of(r) == "bank_resident")
 check(f"resident sees {exp} paid", before_paid == exp)
 c.post("/to-pay/pay", data={"ids": ["3", "12"], "comment": "ПД №501"})
 t = c.get("/to-pay?view=paid").get_data(as_text=True)
@@ -37,7 +37,7 @@ check("paid filtered by actual pay date (today)", rows(f"/to-pay?view=paid&from=
 login("cash@ftpua.com", ["g-c"])
 check("cashier does not see resident paid", "/requests/3\"" not in c.get("/to-pay?view=paid").get_data(as_text=True))
 login("cfo@ftpua.com", ["g-f"])
-check("cfo sees all paid", rows("/to-pay?view=paid") == sum(1 for r in db._REQUESTS.values() if r["status"] == "paid"))
+check("cfo sees all paid", rows("/to-pay?view=paid") == sum(1 for r in db.list_all() if r["status"] == "paid"))
 
 # --- Зміна статусу адміністратором
 login("res@ftpua.com", ["g-r"])
@@ -77,7 +77,7 @@ print("ALL OK" if ok else "SOME FAILED")
 ok = True
 login("cfo@ftpua.com", ["g-f"])
 t = c.get("/approvals?view=processed").get_data(as_text=True)
-mine = [r for r in db._REQUESTS.values() if wf.processed_entry(r, {"cfo"})]
+mine = [r for r in db.list_all() if wf.processed_entry(r, {"cfo"})]
 check(f"cfo processed = {len(mine)}", t.count('<tr class="clickable') == len(mine) and "Моє рішення" in t)
 c.post("/requests/5/action", data={"action": "approve"})
 t = c.get("/approvals?view=processed").get_data(as_text=True)

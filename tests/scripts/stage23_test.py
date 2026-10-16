@@ -11,7 +11,7 @@ import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications, rates, currencies
 import workflow as wf
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -73,12 +73,12 @@ check("threshold saved, route label", app_settings.get("cfo_mode") == "threshold
 def submit(**kw):
     login(AUTHOR, INIT)
     c.post("/requests/new", data={**BASE, **kw, "action": "submit"})
-    return max(db._REQUESTS)
+    return db.last_id()
 
 def approve_acc(rid):
     login("res@ftpua.com", RES)
     c.post(f"/requests/{rid}/action", data={"action": "approve", "payment_account_id": "1"})
-    return db._REQUESTS[rid]
+    return db.get_request(rid)
 
 r_small = approve_acc(submit(currency="USD", amount="900"))
 note = next(h for h in r_small["history"] if h["action"] == "cfo_threshold")
@@ -108,9 +108,9 @@ check("resubmit with smaller sum -> no cfo", r2["status"] == "to_pay" and r2["cf
 # паралельний режим: нижче порогу — лише бухгалтер
 app_settings.set("approval_mode", "parallel", "t")
 rp = submit(currency="USD", amount="100")
-check("parallel below threshold -> sequential accountant", db._REQUESTS[rp]["status"] == "accountant")
+check("parallel below threshold -> sequential accountant", db.get_request(rp)["status"] == "accountant")
 rp2 = submit(currency="USD", amount="5000")
-check("parallel above threshold -> both", db._REQUESTS[rp2]["status"] == "approval" and "cfo" in wf.pending_roles(db._REQUESTS[rp2]))
+check("parallel above threshold -> both", db.get_request(rp2)["status"] == "approval" and "cfo" in wf.pending_roles(db.get_request(rp2)))
 app_settings.set("approval_mode", "sequential", "t")
 
 # ---------- «У бухгалтерів» і втручання
@@ -119,9 +119,9 @@ rn = submit(currency="UAH", amount="300", organization_id="4")         # нер�
 rc = submit(currency="UAH", amount="300", payment_form="cash")         # по готівці
 login("cfo@ftpua.com", CFO)
 html = c.get("/approvals?view=accountants").get_data(as_text=True)
-check("cfo tab lists all accountant types", all(f">{db._REQUESTS[x]['number']}<" in html for x in (ra, rn, rc))
+check("cfo tab lists all accountant types", all(f">{db.get_request(x)['number']}<" in html for x in (ra, rn, rc))
       and "Бух. нерезидент" in html and "Бух. готівка" in html)
-check("cfo tab includes parallel waiting accountant", f">{db._REQUESTS[rp2]['number']}<" in html)
+check("cfo tab includes parallel waiting accountant", f">{db.get_request(rp2)['number']}<" in html)
 login("res@ftpua.com", RES)
 check("accountant: tab forbidden", c.get("/approvals?view=accountants").status_code == 403)
 
@@ -133,19 +133,19 @@ page = c.get(f"/requests/{rn}").get_data(as_text=True)
 check("card: intervention panel, no approve", "Втручання фіндиректора" in page and 'value="rework"' in page
       and 'value="reject"' in page and 'value="approve"' not in page)
 c.post(f"/requests/{rn}/action", data={"action": "approve"})
-check("cfo cannot approve for accountant", db._REQUESTS[rn]["status"] == "accountant")
+check("cfo cannot approve for accountant", db.get_request(rn)["status"] == "accountant")
 c.post(f"/requests/{rn}/action", data={"action": "reject", "comment": ""})
-check("reject needs comment", db._REQUESTS[rn]["status"] == "accountant")
+check("reject needs comment", db.get_request(rn)["status"] == "accountant")
 flush()
 c.post(f"/requests/{rn}/action", data={"action": "rework", "comment": "Додайте договір"})
-r = db._REQUESTS[rn]
+r = db.get_request(rn)
 mails = flush()
 check("cfo returns for rework (history role cfo)", r["status"] == "rework" and r["history"][-1]["role"] == "cfo")
 check("author notified", any(to == AUTHOR for to, _ in mails))
 c.post(f"/requests/{rc}/action", data={"action": "reject", "comment": "Не узгоджено"})
-check("cfo rejects cash request at accountant", db._REQUESTS[rc]["status"] == "rejected")
+check("cfo rejects cash request at accountant", db.get_request(rc)["status"] == "rejected")
 login("i2@ftpua.com", INIT)
 check("initiator cannot intervene", c.post(f"/requests/{ra}/action", data={"action": "reject", "comment": "x"}).status_code in (403, 404)
-      or db._REQUESTS[ra]["status"] == "accountant")
+      or db.get_request(ra)["status"] == "accountant")
 
 print("ALL OK" if ok else "SOME FAILED")

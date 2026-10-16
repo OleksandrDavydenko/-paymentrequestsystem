@@ -1,0 +1,7 @@
+{# Довгі списки показуються частинами: page = _page(...) з app.py #}
+{% if page and page.more %}
+<div class="list-more">
+  <span class="muted">Показано {{ page.shown }} з {{ page.total }}</span>
+  <a class="btn btn-sm" href="{{ page.more_url }}">Показати ще {{ [page.more, page.step] | min }}</a>
+</div>
+{% endif %}

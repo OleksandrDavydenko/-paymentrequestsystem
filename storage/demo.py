@@ -1,17 +1,12 @@
-"""Сховище заявок: list_requests / get_request / save_request / next_number… для маршрутів app.py.
+"""Демо-заявки: тестовий режим (адмін перемикає «Тестові дані») і локальний запуск / тести без бази.
 
-З базою даних (db_sql, Azure SQL) заявки зберігаються в ній: при першому зверненні завантажуються
-в пам'ять, кожне збереження одразу записується в базу. Без бази (локально, у тестах) — демо-заявки
-в пам'яті процесу, які зникають після перезапуску.
+Заявки зберігаються лише в пам'яті процесу й зникають після перезапуску. Коли підключено довідники
+з 1С (Power BI), демо-заявки отримують справжні організації, контрагентів, статті й відділи.
 """
 import logging
-import threading
-from copy import deepcopy
 from datetime import date, datetime
 from decimal import Decimal
 
-import app_settings
-import db_sql
 import payment_accounts
 import workflow
 
@@ -299,145 +294,7 @@ def _realize_demo():
         inv["counterparty_id"] = cp_map.get(inv["counterparty_id"], inv["counterparty_id"])
 
 
-# ---------------------------------------------------------------- сховище: база даних або пам'ять (демо)
-
-# З базою (Azure SQL) — лише справжні заявки з бази, демо-заявки туди не потрапляють.
-# Без бази (локально, у тестах) — демо-заявки в пам'яті, зникають після перезапуску.
-# _REQUESTS — демо-заявки в пам'яті (тестові дані); _WORK — робочі заявки з бази.
-# Адмін перемикає, що показує система (app_settings «data_mode»): робоча база або тестові дані.
-# Що створено в тестовому режимі, лишається в пам'яті й у базу не потрапляє.
-_DB = db_sql.configured()
-_WORK = {}
-_loaded = False
-_load_lock = threading.Lock()
 try:
     _realize_demo()
 except Exception:  # довідники недоступні — лишаємо мокові демо-дані
     logging.getLogger(__name__).exception("Не вдалося підставити справжні довідники в демо-заявки")
-
-
-def work_mode():
-    """Чи працює система з робочою базою (а не з тестовими даними)."""
-    return _DB and app_settings.get("data_mode") != "test"
-
-
-def _reqs():
-    """Заявки поточного режиму {id: заявка}; робочі — при першому зверненні завантажуються з бази."""
-    global _loaded
-    if not work_mode():
-        return _REQUESTS
-    if not _loaded:
-        with _load_lock:
-            if not _loaded:
-                _WORK.update(db_sql.load_requests())
-                _loaded = True
-    return _WORK
-
-
-def _persist(*reqs):
-    if work_mode() and reqs:
-        db_sql.save_requests(reqs)
-
-
-def list_requests(author_email, status=None):
-    rows = [
-        r for r in _reqs().values()
-        if r["author_email"].lower() == author_email.lower()
-        and (not status or r["status"] == status)
-    ]
-    return sorted(rows, key=lambda r: r["created_at"], reverse=True)
-
-
-def list_participating(email):
-    """Заявки, до яких користувача додано учасником; нові — першими."""
-    email = (email or "").lower()
-    rows = [r for r in _reqs().values()
-            if any(p["email"].lower() == email for p in r.get("participants") or [])]
-    return sorted(rows, key=lambda r: r["created_at"], reverse=True)
-
-
-def list_queue(roles, user_email=""):
-    """Заявки, що чекають на рішення однієї з ролей (черга «На погодження»)."""
-    rows = [r for r in _reqs().values() if workflow.in_queue(r, roles, user_email)]
-    return sorted(rows, key=lambda r: r["history"][-1]["at"])
-
-
-def list_at_accountants():
-    """Заявки, що чекають рішення бухгалтерів (усіх типів) — для фіндиректора; найдовше чекають — першими."""
-    return sorted((r for r in _reqs().values() if workflow.at_accountants(r)), key=lambda r: r["history"][-1]["at"])
-
-
-def list_all():
-    """Усі заявки системи (для адміністратора), нові — першими."""
-    return sorted(_reqs().values(), key=lambda r: r["created_at"], reverse=True)
-
-
-def list_processed(roles):
-    """Заявки, по яких ці ролі вже ухвалили рішення; найсвіжіше рішення — першим."""
-    rows = [(workflow.processed_entry(r, roles), r) for r in _reqs().values()]
-    return [r for e, r in sorted(((e, r) for e, r in rows if e), key=lambda x: x[0]["at"], reverse=True)]
-
-
-def list_paid(roles):
-    """Оплачені заявки, видимі цим ролям; найсвіжіша оплата — першою."""
-    rows = [r for r in _reqs().values() if workflow.in_paid(r, roles)]
-    return sorted(rows, key=lambda r: workflow.paid_entry(r)["at"] if workflow.paid_entry(r) else r["created_at"],
-                  reverse=True)
-
-
-def list_to_pay(roles):
-    """Заявки «До оплати», видимі цим ролям; найближча дата оплати — першою."""
-    rows = [r for r in _reqs().values() if workflow.in_payments(r, roles)]
-    return sorted(rows, key=lambda r: (r["pay_date"], r["id"]))
-
-
-def remap_departments(mapping):
-    """Замінити старі коди відділів у заявках ({старий: новий}). Повертає кількість заявок."""
-    count = 0
-    for r in _reqs().values():
-        if r.get("department") in mapping:
-            r["department"] = mapping[r["department"]]
-            _persist(r)
-            count += 1
-    return count
-
-
-def replace_counterparty(old_id, new_id, user, role, comment):
-    """Прив'язка тимчасового контрагента до 1С: усі заявки з old_id отримують new_id. Повертає кількість."""
-    count = 0
-    for r in _reqs().values():
-        if r.get("counterparty_id") == old_id:
-            r["counterparty_id"] = new_id
-            workflow.add_history(r, "cp_link", user, role, comment, r["status"], r["status"])
-            _persist(r)
-            count += 1
-    return count
-
-
-def get_request(request_id):
-    r = _reqs().get(request_id)
-    return deepcopy(r) if r else None
-
-
-def next_number():
-    return f"{max(_reqs(), default=0) + 1:09d}"
-
-
-def save_request(data):
-    """Зберегти заявку. Без 'id' — створити нову. Повертає id."""
-    data = deepcopy(data)
-    if not data.get("id"):
-        data["number"] = next_number()
-        data["id"] = int(data["number"])
-    _persist(data)  # спершу в базу: якщо запис не вдався, у пам'яті теж нічого не змінюється
-    _reqs()[data["id"]] = data
-    return data["id"]
-
-
-def find_attachment(file_id):
-    """Повертає (заявка, метадані файлу) або (None, None)."""
-    for r in _reqs().values():
-        for a in r.get("attachments", []):
-            if a["id"] == file_id:
-                return deepcopy(r), dict(a)
-    return None, None

@@ -7,7 +7,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
                   GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", GROUP_ACC_RESIDENT="g-r", GROUP_ACC_CASH="g-c", GROUP_CFO="g-f",
                   ADMIN_EMAILS="")
 import app as m
-import mock_data as db
+import storage as db
 import counterparties
 
 ok = True

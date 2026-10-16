@@ -10,7 +10,7 @@ import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 import app_settings, mailer, notifications
 import workflow as wf
-import mock_data as db
+import storage as db
 
 ok = True
 def check(label, cond):
@@ -48,12 +48,13 @@ def settings(**kw):
 def submit(**kw):
     login(AUTHOR, INIT)
     c.post("/requests/new", data={**BASE, **kw, "action": "submit"})
-    return max(db._REQUESTS)
+    return db.last_id()
 
 # демо-заявки на етапі фіндиректора — до оплати, щоб черга фіндиректора була порожня
-for r in db._REQUESTS.values():
+for r in db.list_all():
     if r["status"] in ("cfo", "approval"):
         r["status"] = "to_pay"
+        db.save_request(r)
 
 # ---------- адмінка
 login("admin@ftpua.com", ADMIN)
@@ -62,7 +63,7 @@ check("admin: cfo block + cp owner block", "Лише спостерігає" in 
 
 # заявка, відправлена ДО перемикання (фіндиректор погоджує)
 old = submit()
-check("approve mode: cfo_step stored", db._REQUESTS[old]["cfo_step"] is True)
+check("approve mode: cfo_step stored", db.get_request(old)["cfo_step"] is True)
 
 html = settings(cfo_mode="observe")
 check("observe saved + flash", app_settings.get("cfo_mode") == "observe" and "фіндиректор спостерігає" in html)
@@ -75,7 +76,7 @@ check("admin page: approval order disabled", 'id="cfo-off-note" ' in c.get("/adm
 # ---------- маршрут без фіндиректора
 flush()
 rid = submit()
-req = db._REQUESTS[rid]
+req = db.get_request(rid)
 mails = flush()
 check("observe: cfo_step False, at accountant", req["cfo_step"] is False and req["status"] == "accountant")
 check("observe: no task mail to cfo on submit", not any(x["to"] == "cfo@ftpua.com" for x in mails))
@@ -85,7 +86,7 @@ route = page.split('<ol class="route')[1].split("</ol>")[0]
 check("route bar without Фіндиректор", "Фіндиректор" not in route and "Оплата" in route)
 login("res@ftpua.com", RES)
 c.post(f"/requests/{rid}/action", data={"action": "approve", "payment_account_id": "1"})
-req = db._REQUESTS[rid]
+req = db.get_request(rid)
 mails = flush()
 check("accountant approve -> to_pay", req["status"] == "to_pay" and req["history"][-1]["to_status"] == "to_pay")
 check("no mail to cfo after accountant approve", not any(x["to"] == "cfo@ftpua.com" for x in mails))
@@ -93,8 +94,8 @@ check("no mail to cfo after accountant approve", not any(x["to"] == "cfo@ftpua.c
 # паралельний режим + спостерігач = лише бухгалтер
 app_settings.set("approval_mode", "parallel", "t")
 rid2 = submit()
-check("parallel + observe -> sequential, accountant only", db._REQUESTS[rid2]["route_mode"] == "sequential"
-      and db._REQUESTS[rid2]["status"] == "accountant")
+check("parallel + observe -> sequential, accountant only", db.get_request(rid2)["route_mode"] == "sequential"
+      and db.get_request(rid2)["status"] == "accountant")
 app_settings.set("approval_mode", "sequential", "t")
 
 # ---------- фіндиректор: що бачить
@@ -102,7 +103,7 @@ login("cfo@ftpua.com", CFO)
 nav = c.get("/to-pay").get_data(as_text=True)
 check("cfo: 'На погодження' (oversight) + 'Усі заявки'", "На погодження" in nav.split("</nav>")[0] and "/admin/requests" in nav)
 r = c.get("/admin/requests")
-check("cfo: all requests 200 + lists request", r.status_code == 200 and db._REQUESTS[rid2]["number"] in r.get_data(as_text=True))
+check("cfo: all requests 200 + lists request", r.status_code == 200 and db.get_request(rid2)["number"] in r.get_data(as_text=True))
 check("cfo: admin pages still forbidden", c.get("/admin/users").status_code == 403)
 page = c.get(f"/requests/{rid2}").get_data(as_text=True)
 check("cfo: no approve, only intervention", "Втручання фіндиректора" in page and 'value="approve"' not in page)
@@ -111,24 +112,24 @@ check("cfo home -> all requests", c.get("/").headers.get("Location", "").endswit
 # ---------- старa заявка з кроком фіндиректора
 login("res@ftpua.com", RES)
 c.post(f"/requests/{old}/action", data={"action": "approve", "payment_account_id": "1"})
-check("old request still goes to cfo", db._REQUESTS[old]["status"] == "cfo")
+check("old request still goes to cfo", db.get_request(old)["status"] == "cfo")
 login("cfo@ftpua.com", CFO)
 nav = c.get("/to-pay").get_data(as_text=True)
 check("cfo has queue while old request waits", "На погодження" in nav.split("</nav>")[0])
 c.post(f"/requests/{old}/action", data={"action": "approve"})
-check("cfo approves old -> to_pay", db._REQUESTS[old]["status"] == "to_pay")
+check("cfo approves old -> to_pay", db.get_request(old)["status"] == "to_pay")
 
 # ---------- назад: погоджує
 settings(cfo_mode="approve")
 rid3 = submit()
 login("res@ftpua.com", RES)
 c.post(f"/requests/{rid3}/action", data={"action": "approve", "payment_account_id": "1"})
-check("approve mode again -> cfo", db._REQUESTS[rid3]["status"] == "cfo")
+check("approve mode again -> cfo", db.get_request(rid3)["status"] == "cfo")
 
 # ---------- адмін ставить статус «Фіндиректор» для заявки без кроку
 login("admin@ftpua.com", ADMIN)
 c.post(f"/requests/{rid2}/admin-status", data={"status": "cfo", "comment": "потрібен фіндиректор"})
-check("admin -> cfo sets cfo_step", db._REQUESTS[rid2]["cfo_step"] is True)
+check("admin -> cfo sets cfo_step", db.get_request(rid2)["cfo_step"] is True)
 
 # ---------- хто заводить контрагентів: адміністратор
 html = settings(cp_onec_owner="admin")
@@ -150,7 +151,7 @@ check("admin: link block", 'class="card cp-link"' in page)
 adm = c.get("/admin/users").get_data(as_text=True)
 check("admin settings: pending list links to request", f"/requests/{rid4}#cp-link" in adm)
 c.post(f"/counterparties/{new['id']}/link", data={"onec_id": "6", "next": f"/requests/{rid4}"})
-check("admin linked", db._REQUESTS[rid4]["counterparty_id"] == "6")
+check("admin linked", db.get_request(rid4)["counterparty_id"] == "6")
 check("prefs page: admin group", "Адміністрування" in c.get("/settings/notifications").get_data(as_text=True))
 
 # ---------- бухгалтер (як раніше)
