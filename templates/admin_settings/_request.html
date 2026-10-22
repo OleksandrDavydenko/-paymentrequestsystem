@@ -12,5 +12,61 @@
     </span>
   </label>
   {% endfor %}
+
+  <div class="budget-section-title">Вимоги перед відправкою на погодження</div>
+  <p class="muted" style="margin-top:0">Перевіряються лише при «Відправити на погодження»: зберегти чернетку можна й без них.</p>
+  {% for code, label in REQ_DOCUMENT_MODES.items() %}
+  <label class="mode-option">
+    <input type="radio" name="req_document" value="{{ code }}" {{ 'checked' if req_document == code }}>
+    <span><strong>Документ (рахунок, договір чи акт): {{ label | lower }}</strong>{% if req_document == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      {% if code == 'amount' %}<span class="mode-hint">Від
+        <input type="number" name="req_document_limit" value="{{ req_document_limit }}" min="1" step="1" style="width:110px"
+               aria-label="Документ обов'язковий від суми"> {{ threshold_currency }} — у валюті порогу фіндиректора («Погодження»),
+        за курсом 1С на момент відправки.</span>{% elif code == 'always' %}<span class="mode-hint">Кожна заявка — хоча б з одним
+        прикріпленим файлом (у «Документах» або в коментарі).</span>{% endif %}</span>
+  </label>
+  {% endfor %}
+  <label class="mode-option">
+    <span><strong>Дата оплати — не раніше ніж через
+      <input type="number" name="req_min_pay_days" value="{{ req_min_pay_days }}" min="0" max="30" style="width:64px"
+             aria-label="Робочих днів"> робоч. дн.</strong>
+      <span class="mode-hint">Скільки потрібно на погодження й оплату; субота й неділя не рахуються. 0 — без обмеження.</span></span>
+  </label>
+  <label class="mode-option">
+    <input type="checkbox" name="req_lines_required" value="1" {{ 'checked' if req_lines_required }}>
+    <span><strong>Рядки рахунків обов'язкові</strong><span class="muted"> — хоча б один: номер рахунку й сума</span></span>
+  </label>
+
+  <div class="budget-section-title">Дії автора</div>
+  <label class="mode-option">
+    <span><strong>«Відкликати на редагування»</strong>
+      <select name="withdraw_mode" aria-label="Відкликати на редагування" style="width:auto;margin-left:8px">
+        {% for code, label in WITHDRAW_MODES.items() %}<option value="{{ code }}" {{ 'selected' if withdraw_mode == code }}>{{ label }}</option>{% endfor %}
+      </select>
+      <span class="mode-hint">Заявка повертається автору в чернетку, погодження скидаються, повторна відправка — маршрут з початку.
+        «До першого рішення» — лише поки ніхто з погоджувачів ще не погодив.</span></span>
+  </label>
+  <label class="mode-option">
+    <span><strong>«Скасувати заявку»</strong>
+      <select name="cancel_mode" aria-label="Скасувати заявку" style="width:auto;margin-left:8px">
+        {% for code, label in CANCEL_MODES.items() %}<option value="{{ code }}" {{ 'selected' if cancel_mode == code }}>{{ label }}</option>{% endfor %}
+      </select>
+      <span class="mode-hint">Статус «Скасовано» з причиною в історії. Після «До оплати» автор не скасовує в жодному режимі.</span></span>
+  </label>
+
+  <div class="budget-section-title">Документи</div>
+  <div class="mode-option doc-formats">
+    <span><strong>Дозволені формати</strong>
+      <span class="doc-format-list">
+        {% for code, label in DOC_FORMATS.items() %}
+        <label class="inline-check"><input type="checkbox" name="doc_extensions" value="{{ code }}" {{ 'checked' if code in doc_extensions }}> {{ label }}</label>
+        {% endfor %}
+      </span></span>
+  </div>
+  <label class="mode-option">
+    <span><strong>Максимальний розмір файлу
+      <input type="number" name="doc_max_mb" value="{{ doc_max_mb }}" min="1" max="25" style="width:64px" aria-label="МБ"> МБ</strong>
+      <span class="mode-hint">Від 1 до 25 МБ; за один раз можна завантажити до 25 МБ разом.</span></span>
+  </label>
   <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
 </form>

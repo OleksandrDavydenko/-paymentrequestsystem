@@ -7,6 +7,7 @@
 
 kind:
   bool    — галочка (у формі вкладки: немає галочки = вимкнено);
+  multi   — кілька варіантів з choices (галочки; у формі вкладки: жодної = порожній список);
   int     — ціле число в межах [min, max];
   choice  — одне з варіантів choices;
   text    — рядок;
@@ -90,6 +91,29 @@ def _fmt_codes(value):
     return ", ".join(value) if value else "—"
 
 
+def _doc_modes():
+    return {"no": "Не обов'язковий", "always": "Обов'язковий завжди", "amount": "Обов'язковий від суми"}
+
+
+def _withdraw_modes():
+    return {"off": "Вимкнено", "before_decision": "До першого рішення погоджувача",
+            "before_full": "До повного погодження (поки заявка на погодженні)"}
+
+
+def _cancel_modes():
+    return {"off": "Вимкнено", "editable": "Лише чернетка й доопрацювання",
+            "before_pay": "До «До оплати» (і поки заявку погоджують)"}
+
+
+# Формати документів, які можна дозволити (розширення -> підпис)
+DOC_FORMATS = {"pdf": "PDF", "jpg": "JPG", "jpeg": "JPEG", "png": "PNG", "doc": "Word (doc)", "docx": "Word (docx)",
+               "xls": "Excel (xls)", "xlsx": "Excel (xlsx)", "xml": "XML", "zip": "ZIP", "txt": "TXT", "csv": "CSV"}
+
+
+def _doc_formats():
+    return DOC_FORMATS
+
+
 _LIST = [
     # ---- Погодження
     Setting("approval_mode", "Порядок погодження", "approval", "choice", "sequential", _wf("APPROVAL_MODES")),
@@ -107,6 +131,15 @@ _LIST = [
             marker="no_self_approval_sent"),
     # ---- Заявка
     Setting("org_field_mode", "Що вибирає ініціатор у заявці", "request", "choice", "organization", _wf("ORG_FIELD_MODES")),
+    Setting("req_document", "Документ (рахунок) перед відправкою", "request", "choice", "no", _doc_modes),
+    Setting("req_document_limit", "Документ обов'язковий від суми", "request", "int", 1000, min=1, max=10**9),
+    Setting("req_min_pay_days", "Дата оплати — не раніше ніж через N робочих днів", "request", "int", 0, min=0, max=30),
+    Setting("req_lines_required", "Рядки рахунків обов'язкові", "request", "bool", False),
+    Setting("withdraw_mode", "Автор може відкликати заявку", "request", "choice", "before_full", _withdraw_modes),
+    Setting("cancel_mode", "Автор може скасувати заявку", "request", "choice", "before_pay", _cancel_modes),
+    Setting("doc_extensions", "Дозволені формати документів", "request", "multi",
+            ["pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx"], _doc_formats),
+    Setting("doc_max_mb", "Максимальний розмір файлу, МБ", "request", "int", 10, min=1, max=25),
     # ---- Оплата й готівка
     Setting("require_payment_account", "Бухгалтер обов'язково вибирає «Вид оплати»", "payment", "bool", True,
             marker="require_payment_account_sent"),
@@ -155,6 +188,8 @@ def value_label(key, value):
         return "••••" if value else "—"
     if s.kind == "bool":
         return "так" if value else "ні"
+    if s.kind == "multi":
+        return ", ".join(value) if value else "—"
     if s.kind == "choice" and s.choices:
         text = s.choices().get(value, value)
         return str(text).split(":")[0] if isinstance(text, str) else str(text)
@@ -184,6 +219,13 @@ def _parse_value(s, raw):
     if s.kind == "choice":
         options = s.choices() if s.choices else {}
         return (raw, None) if raw in options else (None, f"«{s.label}»: невідомий варіант")
+    if s.kind == "multi":
+        options = s.choices() if s.choices else {}
+        values = raw if isinstance(raw, list) else []
+        bad = [v for v in values if v not in options]
+        if bad:
+            return None, f"«{s.label}»: невідомі значення {', '.join(map(str, bad))}"
+        return [v for v in options if v in values], None   # порядок — як у переліку
     if s.kind == "text":
         return (raw or "").strip(), None
     return raw, None
@@ -198,10 +240,10 @@ def parse_tab(tab, form, current, legacy=False):
             continue
         if s.available and not s.available():
             continue
-        if s.kind == "bool":
+        if s.kind in ("bool", "multi"):
             if (legacy and s.marker not in form) or (not legacy and form.get("tab") != s.tab):
                 continue
-            raw = form.get(s.key)
+            raw = form.getlist(s.key) if s.kind == "multi" else form.get(s.key)
         elif s.key in form:
             raw = form.get(s.key)
         else:
@@ -233,6 +275,8 @@ def parse_import(data, current):
             value, error = (raw, None) if ok else (None, f"«{s.label}»: неправильний формат")
         elif s.kind == "bool":
             value, error = (raw, None) if isinstance(raw, bool) else (None, f"«{s.label}»: має бути так/ні")
+        elif s.kind == "multi":
+            value, error = _parse_value(s, raw) if isinstance(raw, list) else (None, f"«{s.label}»: має бути список")
         else:
             value, error = _parse_value(s, raw)
         if error:

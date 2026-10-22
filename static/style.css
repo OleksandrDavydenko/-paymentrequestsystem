@@ -865,3 +865,4 @@ a.badge { text-decoration: none; }
 .cfo-codes-list { max-height: 260px; overflow-y: auto; border: 1px solid #e1e5ea; border-radius: 8px; padding: 6px 10px; }
 .cfo-code { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; }
 @media (max-width: 760px) { .cfo-rules { margin-left: 0; } }
+.doc-format-list { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }

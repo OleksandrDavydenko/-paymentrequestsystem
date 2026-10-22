@@ -44,7 +44,8 @@ def csrf_error(e):
 
 
 def too_large(_e):
-    flash("Файли завеликі: максимум 10 МБ на файл і 25 МБ за раз", "error")
+    import app_settings
+    flash(f"Файли завеликі: максимум {app_settings.get('doc_max_mb') or 10} МБ на файл і 25 МБ за раз", "error")
     return redirect(request.referrer or "/")
 
 

@@ -3,7 +3,7 @@ import logging
 import os
 import re
 import uuid
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
 from flask import flash, g, request, url_for
@@ -18,6 +18,7 @@ import filestore
 import org_structure
 import organizations
 import payment_accounts
+import rates
 import storage as db
 import user_directory
 import workflow as wf
@@ -283,8 +284,55 @@ def _participants_state(req, existing, errors):
 
 
 # Файли — у filestore: Azure Blob Storage (BLOB_ACCOUNT_URL + BLOB_CONTAINER) або папка на диску
-ALLOWED_EXT = {"pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx"}
-MAX_FILE_SIZE = 10 * 1024 * 1024
+def allowed_ext():
+    """Дозволені формати документів («Налаштування → Заявка → Документи»)."""
+    return set(app_settings.get("doc_extensions") or [])
+
+
+def max_file_mb():
+    return int(app_settings.get("doc_max_mb") or 10)
+
+
+def doc_limits():
+    """Для шаблону й documents.js: формати, розмір, підказка."""
+    exts = list(app_settings.get("doc_extensions") or [])
+    return {"ext": exts, "max_mb": max_file_mb(), "accept": ",".join("." + e for e in exts),
+            "hint": ", ".join(e.upper() for e in exts) + f" — до {max_file_mb()} МБ кожен"}
+
+
+def add_workdays(day, n):
+    """Дата через n робочих днів (субота й неділя — вихідні)."""
+    while n > 0:
+        day += timedelta(days=1)
+        if day.weekday() < 5:
+            n -= 1
+    return day
+
+
+def submit_requirements(req):
+    """Вимоги «Налаштування → Заявка», що перевіряються при «Відправити на погодження» ({поле: помилка})."""
+    errors = {}
+    days = int(app_settings.get("req_min_pay_days") or 0)
+    if days and req.get("pay_date"):
+        earliest = add_workdays(clock.today(), days)
+        if req["pay_date"] < earliest:
+            errors["pay_date"] = (f"Дата оплати — не раніше {earliest:%d.%m.%Y} "
+                                  f"(через {days} робоч. дн.: стільки потрібно на погодження й оплату)")
+    if app_settings.get("req_lines_required") and not req.get("lines"):
+        errors["lines"] = "Додайте рахунок: номер і суму хоча б в одному рядку"
+    mode = app_settings.get("req_document")
+    if mode in ("always", "amount") and not req.get("attachments"):
+        need, tail = True, ""
+        if mode == "amount":
+            cur = cfo_rules.get()["currency"]
+            limit = int(app_settings.get("req_document_limit") or 0)
+            value, _ = rates.convert(req.get("amount"), req.get("currency"), cur)
+            need = value is None or value >= limit
+            tail = f" (обов'язково для заявок від {wf.fmt_usd(limit)} {cur})"
+        if need:
+            errors["documents"] = ("Перед відправкою додайте документ — рахунок, договір чи акт" + tail +
+                                   ". Збережіть заявку й прикріпіть файл у блоці «Документи» нижче.")
+    return errors
 
 
 INLINE_EXT = {"pdf", "jpg", "jpeg", "png"}  # відкриваються в браузері, решта — скачуються
@@ -320,11 +368,11 @@ def _store_uploads(req, files, user, from_comment=False):
         f.stream.seek(0, os.SEEK_END)
         size = f.stream.tell()
         f.stream.seek(0)
-        if ext not in ALLOWED_EXT:
-            flash(f"«{f.filename}»: недопустимий тип файлу (дозволено: {', '.join(sorted(ALLOWED_EXT))})", "error")
+        if ext not in allowed_ext():
+            flash(f"«{f.filename}»: недопустимий тип файлу (дозволено: {', '.join(sorted(allowed_ext()))})", "error")
             continue
-        if size > MAX_FILE_SIZE:
-            flash(f"«{f.filename}»: файл більший за 10 МБ", "error")
+        if size > max_file_mb() * 1024 * 1024:
+            flash(f"«{f.filename}»: файл більший за {max_file_mb()} МБ", "error")
             continue
         file_id = uuid.uuid4().hex
         try:

@@ -105,6 +105,7 @@
 
 <form method="post" class="card" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
   {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
+  {% if errors.documents %}<div class="flash error">{{ errors.documents }}</div>{% endif %}
   <fieldset {{ 'disabled' if not editable }}>
 
   <div class="form-grid">
@@ -472,12 +473,12 @@
     <p class="muted doc-empty">Щоб додати документи, спочатку запишіть заявку.</p>
   {% elif can_attach %}
   <form method="post" action="{{ url_for('requests.upload_files', request_id=req.id) }}" enctype="multipart/form-data" class="dropzone" id="dropzone"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="file" name="files" id="doc-input" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" hidden>
+    <input type="file" name="files" id="doc-input" multiple accept="{{ doc.accept }}" hidden>
     <svg class="dz-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 16V4M7 9l5-5 5 5M5 16v3a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-3"/></svg>
     <div class="dz-text">
       <span class="dz-idle">Перетягніть файли сюди або <button type="button" class="btn-link dz-pick">виберіть на комп'ютері</button></span>
       <span class="dz-busy" hidden>Завантаження…</span>
-      <span class="muted dz-hint">PDF, фото, Word, Excel — до 10 МБ кожен</span>
+      <span class="muted dz-hint">{{ doc.hint }}</span>
       <span class="err dz-error" hidden></span>
     </div>
     <noscript><button type="submit" class="btn btn-sm">Завантажити</button></noscript>
@@ -493,11 +494,11 @@
   <h2 class="card-title">Коментар</h2>
   <textarea name="comment" maxlength="2000"
             placeholder="Питання чи уточнення щодо заявки — статус не зміниться, коментар побачать усі учасники">{{ comment_draft }}</textarea>
-  <input type="file" name="files" id="comment-files" multiple accept=".pdf,.jpg,.jpeg,.png,.doc,.docx,.xls,.xlsx" hidden>
+  <input type="file" name="files" id="comment-files" multiple accept="{{ doc.accept }}" hidden>
   <div class="comment-files" id="comment-file-list" hidden></div>
   <span class="err" id="comment-file-error" hidden></span>
   <div class="comment-actions">
-    <button type="button" class="btn btn-sm comment-attach" id="comment-attach" title="PDF, фото, Word, Excel — до 10 МБ">
+    <button type="button" class="btn btn-sm comment-attach" id="comment-attach" title="{{ doc.hint }}">
       <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11.5 12.6 19a5 5 0 0 1-7.1-7.1L13 4.4a3.3 3.3 0 0 1 4.7 4.7l-7.4 7.5a1.7 1.7 0 0 1-2.4-2.4L14.6 7"/></svg>
       Прикріпити файл</button>
     <span class="muted">Видно автору, погоджувачам і адміністратору</span>
@@ -708,5 +709,6 @@ document.querySelectorAll('.cp-copy').forEach(b => b.addEventListener('click', a
 }));
 </script>
 {% if can_manage_participants %}<script src="{{ url_for('static', filename='participants.js') }}"></script>{% endif %}
+<script>window.DOC_LIMITS = {{ {"ext": doc.ext, "max_mb": doc.max_mb} | tojson }};</script>
 <script src="{{ url_for('static', filename='documents.js') }}"></script>
 {% endblock %}

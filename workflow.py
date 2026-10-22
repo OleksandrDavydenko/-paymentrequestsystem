@@ -516,13 +516,21 @@ def _authors_own(req, roles, user_email):
 
 
 def can_withdraw(req, roles, user_email):
-    """Автор забирає заявку з погодження, щоб виправити й відправити знову (маршрут — з початку)."""
-    return _authors_own(req, roles, user_email) and req["status"] in WITHDRAW_STATUSES
+    """Автор забирає заявку з погодження, щоб виправити й відправити знову (маршрут — з початку).
+    Налаштування «Автор може відкликати заявку»: вимкнено / до першого рішення / до повного погодження."""
+    mode = app_settings.get("withdraw_mode")
+    if mode == "off" or not _authors_own(req, roles, user_email) or req["status"] not in WITHDRAW_STATUSES:
+        return False
+    return mode != "before_decision" or not (round_approvers(req) or req.get("approvals"))
 
 
 def can_cancel(req, roles, user_email):
-    """Автор сам закриває заявку — у чернетці, на доопрацюванні або поки її погоджують."""
-    return _authors_own(req, roles, user_email) and req["status"] in CANCEL_STATUSES
+    """Автор сам закриває заявку. Налаштування «Автор може скасувати заявку»: вимкнено / лише чернетка
+    й доопрацювання / до «До оплати» (зокрема поки її погоджують)."""
+    mode = app_settings.get("cancel_mode")
+    if mode == "off" or not _authors_own(req, roles, user_email):
+        return False
+    return req["status"] in (EDITABLE_STATUSES if mode == "editable" else CANCEL_STATUSES)
 
 
 def author_actions(req, roles, user_email):

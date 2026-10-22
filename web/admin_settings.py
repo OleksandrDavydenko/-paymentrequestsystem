@@ -104,7 +104,14 @@ def _context(tab):
                    APPROVAL_MODES=wf.APPROVAL_MODES, HEAD_MODES=wf.HEAD_MODES, CFO_MODES=wf.CFO_MODES,
                    no_self_approval=app_settings.get("no_self_approval"))
     elif tab == "request":
-        ctx.update(org_mode=app_settings.get("org_field_mode"), ORG_FIELD_MODES=wf.ORG_FIELD_MODES)
+        ctx.update(org_mode=app_settings.get("org_field_mode"), ORG_FIELD_MODES=wf.ORG_FIELD_MODES,
+                   **{k: app_settings.get(k) for k in ("req_document", "req_document_limit", "req_min_pay_days",
+                                                       "req_lines_required", "withdraw_mode", "cancel_mode",
+                                                       "doc_extensions", "doc_max_mb")},
+                   REQ_DOCUMENT_MODES=schema.SETTINGS["req_document"].choices(),
+                   WITHDRAW_MODES=schema.SETTINGS["withdraw_mode"].choices(),
+                   CANCEL_MODES=schema.SETTINGS["cancel_mode"].choices(), DOC_FORMATS=schema.DOC_FORMATS,
+                   threshold_currency=cfo_rules.get()["currency"])
     elif tab == "payment":
         pending = counterparties.pending_items()
         ctx.update(require_payment_account=app_settings.get("require_payment_account"),
@@ -186,6 +193,8 @@ def admin_settings(*, context):
         errors["cfo_threshold_usd"] = "Вкажіть поріг фіндиректора — суму в USD, більшу за 0"
     if tab == "approval" and "cfo_rules_sent" in request.form:
         _parse_cfo_rules(request.form, changes, errors)
+    if changes.get("doc_extensions") == []:
+        errors["doc_extensions"] = "Залиште дозволеним хоча б один формат документів"
     back = url_for("admin.admin_settings", tab="approval" if legacy else tab)
     if errors:
         for message in errors.values():

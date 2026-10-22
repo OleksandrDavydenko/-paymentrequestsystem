@@ -4,8 +4,10 @@
   if (!zone) return;
   const input = document.getElementById('doc-input');
   const error = zone.querySelector('.dz-error');
-  const ALLOWED = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
-  const MAX = 10 * 1024 * 1024;
+  // Формати й розмір — з «Налаштування → Заявка → Документи» (window.DOC_LIMITS у шаблоні картки)
+  const LIMITS = window.DOC_LIMITS || {ext: ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'], max_mb: 10};
+  const ALLOWED = LIMITS.ext;
+  const MAX = LIMITS.max_mb * 1024 * 1024;
   const TOTAL = 25 * 1024 * 1024;
 
   function send(files) {
@@ -15,7 +17,7 @@
     [...files].forEach(f => {
       const ext = (f.name.split('.').pop() || '').toLowerCase();
       if (!ALLOWED.includes(ext)) problems.push(`«${f.name}» — недопустимий тип`);
-      else if (f.size > MAX) problems.push(`«${f.name}» — більший за 10 МБ`);
+      else if (f.size > MAX) problems.push(`«${f.name}» — більший за ${LIMITS.max_mb} МБ`);
       else { ok.items.add(f); total += f.size; }
     });
     if (total > TOTAL) problems.push('Разом більше 25 МБ — додайте файли частинами');
@@ -48,7 +50,9 @@
   if (!input || !btn) return;
   const list = document.getElementById('comment-file-list');
   const error = document.getElementById('comment-file-error');
-  const ALLOWED = ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'];
+  const LIMITS = window.DOC_LIMITS || {ext: ['pdf', 'jpg', 'jpeg', 'png', 'doc', 'docx', 'xls', 'xlsx'], max_mb: 10};
+  const ALLOWED = LIMITS.ext;
+  const MAX = LIMITS.max_mb * 1024 * 1024;
   let picked = [];
 
   function sync() {
@@ -75,7 +79,7 @@
     [...input.files].forEach(f => {
       const ext = (f.name.split('.').pop() || '').toLowerCase();
       if (!ALLOWED.includes(ext)) problems.push(`«${f.name}» — недопустимий тип`);
-      else if (f.size > 10 * 1024 * 1024) problems.push(`«${f.name}» — більший за 10 МБ`);
+      else if (f.size > MAX) problems.push(`«${f.name}» — більший за ${LIMITS.max_mb} МБ`);
       else if (!picked.some(p => p.name === f.name && p.size === f.size)) picked.push(f);
     });
     error.hidden = !problems.length;

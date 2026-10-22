@@ -23,7 +23,7 @@ import workflow as wf
 
 from web.auth import auth, _home, _load_visible, requires
 from web.listing import _filtered, _page, _parse_date, _ref_keys
-from web.request_helpers import INLINE_EXT, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
+from web.request_helpers import INLINE_EXT, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
 
 
 bp = Blueprint("requests", __name__)
@@ -111,6 +111,8 @@ def request_card(request_id=None, *, context):
             return redirect(url_for("requests.request_card", request_id=request_id))
         data, errors = parse_request_form(request.form, existing, {i["code"] for i in budget_items})
         req = {**existing, **data}
+        if not errors and request.form.get("action") == "submit":
+            errors = submit_requirements(req)  # вимоги з налаштувань — лише при відправці; зберегти можна й без них
         if (existing.get("organization_id") and not data["organization_id"] and not errors
                 and app_settings.get("org_field_mode") == "payer"):
             wf.add_history(req, "organization", user, "initiator",
@@ -169,6 +171,7 @@ def request_card(request_id=None, *, context):
         can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
         actions=[a for a in available if a != "submit"],
         author_actions=wf.author_actions(req, roles, user["email"]) if req["id"] else [],
+        doc=doc_limits(),
         acting_role=wf.acting_role(req, roles, user["email"]) or (
             "cfo" if wf.cfo_can_intervene(req, roles, user["email"]) else None),
         cfo_intervene=wf.cfo_can_intervene(req, roles, user["email"]),
