@@ -48,6 +48,8 @@ SETTINGS = {"approval_mode": "sequential", "dept_head_mode": "view", "pending_cp
 login("admin@ftpua.com", ADMIN)
 html = c.post("/admin/settings", data={**SETTINGS, "org_field_mode": "accountant"}, follow_redirects=True).get_data(as_text=True)
 check("accountant mode saved", app_settings.get("org_field_mode") == "accountant" and "тип бухгалтера" in html)
+pay = c.get("/admin/settings?tab=payment").get_data(as_text=True)
+check("accountant mode: organizations inactive", "organizations is-disabled" in pay and "Не діє в режимі «Бухгалтер»" in pay)
 check("admin hint", "Ініціатор, який знає, до кого звертатися" in admin_page())
 
 login(AUTHOR, INIT)

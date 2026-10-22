@@ -114,7 +114,8 @@ def _context(tab):
                    threshold_currency=cfo_rules.get()["currency"])
     elif tab == "payment":
         pending = counterparties.pending_items()
-        ctx.update(require_payment_account=app_settings.get("require_payment_account"),
+        ctx.update(org_mode=app_settings.get("org_field_mode"),
+                   require_payment_account=app_settings.get("require_payment_account"),
                    cash_handover_confirm=app_settings.get("cash_handover_confirm"),
                    cash_handover_remind_days=app_settings.get("cash_handover_remind_days"),
                    handover_max_reminders=wf.handover_max(),

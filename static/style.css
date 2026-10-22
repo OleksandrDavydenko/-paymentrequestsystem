@@ -866,3 +866,8 @@ a.badge { text-decoration: none; }
 .cfo-code { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; }
 @media (max-width: 760px) { .cfo-rules { margin-left: 0; } }
 .doc-format-list { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 6px; }
+
+/* Неактивний розділ налаштувань (не діє в поточному режимі) */
+.org-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.card.is-disabled .org-fieldset { opacity: .55; }
+.org-off-note { margin: 0 0 12px; }

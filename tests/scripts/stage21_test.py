@@ -49,6 +49,10 @@ login("admin@ftpua.com", ADMIN)
 html = c.post("/admin/settings", data={**SETTINGS, "org_field_mode": "payer"}, follow_redirects=True).get_data(as_text=True)
 check("payer mode saved", app_settings.get("org_field_mode") == "payer" and "лише платника" in html)
 check("admin block", "Організація в заявці" in admin_page())
+pay = c.get("/admin/settings?tab=payment").get_data(as_text=True)
+check("payer mode: organizations shown but inactive, with explanation", 'id="org-list"' in pay
+      and "organizations is-disabled" in pay and '<fieldset class="org-fieldset" disabled>' in pay
+      and "Не діє в режимі «Платник»" in pay)
 
 login(AUTHOR, INIT)
 page = c.get("/requests/new").get_data(as_text=True)

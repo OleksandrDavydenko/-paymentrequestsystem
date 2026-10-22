@@ -67,12 +67,21 @@
   <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
 </form>
 
+{% set org_off = org_mode != 'organization' %}
 {% set org_on = org_list | rejectattr('code', 'in', org_disabled) | list %}
-<form method="post" action="{{ url_for('admin.admin_organizations') }}" class="card organizations" id="organizations"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<form method="post" action="{{ url_for('admin.admin_organizations') }}" class="card organizations {{ 'is-disabled' if org_off }}" id="organizations"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="toolbar">
     <h2 style="margin:0">Організації</h2>
     <span class="sec-summary muted">дозволено {{ org_on | length }} з {{ org_list | length }}{% if org_accountants %} · призначено бухгалтерів: {{ org_accountants | length }}{% endif %}</span>
   </div>
+  {% if org_off %}
+  <div class="callout orange org-off-note">Не діє в режимі «{{ 'Платник' if org_mode == 'payer' else 'Бухгалтер' }}»
+    («Налаштування → Заявка»): ініціатор не вибирає організацію,
+    {% if org_mode == 'payer' %}а бухгалтера визначає платник — українська чи іноземна компанія; призначення бухгалтерів
+    діє лише для заявок, де організацію вибрали раніше.{% else %}а одразу вибирає тип бухгалтера.{% endif %}
+    Налаштування збережено — вони знову діятимуть, якщо повернути режим «Організація».</div>
+  {% endif %}
+  <fieldset class="org-fieldset" {{ 'disabled' if org_off }}>
   <p class="muted" style="margin-top:0"><strong>Вибір</strong> — які організації ініціатор може вибрати в заявці (нові з 1С
     дозволені автоматично; вимкнена лишається в уже створених заявках і у фільтрах).
     <strong>Хто перевіряє</strong> — бухгалтер, якому йдуть заявки організації. «Автоматично»: готівка — бухгалтеру готівки,
@@ -115,6 +124,7 @@
   <div class="form-actions" style="justify-content:flex-start">
     <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
   </div>
+  </fieldset>
 </form>
 <script>
 (function () {
