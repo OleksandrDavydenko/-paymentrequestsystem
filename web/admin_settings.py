@@ -9,6 +9,7 @@ from datetime import date
 from flask import Response, flash, g, redirect, render_template, request, session, url_for
 
 import app_settings
+import cfo_rules
 import counterparties
 import currencies
 import db_sql
@@ -28,7 +29,8 @@ import workflow as wf
 from web.admin_routes import bp
 from web.auth import auth, requires
 
-ROUTE_KEYS = ("approval_mode", "dept_head_mode", "cfo_mode", "cfo_threshold_usd")
+ROUTE_KEYS = ("approval_mode", "dept_head_mode", "cfo_mode", "cfo_threshold_usd", "cfo_rules", "cfo_currency",
+              "cfo_new_counterparty", "cfo_expense_codes")
 IMPORT_KEY = "settings_import"  # зміни з файлу, що чекають підтвердження (у сеансі)
 
 
@@ -73,8 +75,12 @@ def _apply(changes, who):
     for key, value in changes.items():
         app_settings.set(key, value, who)
     if any(k in changes for k in ROUTE_KEYS):
-        flash(f"Маршрут: {wf.route_label(app_settings.get('approval_mode'), app_settings.get('dept_head_mode'), app_settings.get('cfo_mode'), app_settings.get('cfo_threshold_usd'))}. "
-              "Діє для нових і повторно відправлених заявок.", "success")
+        route = wf.route_label(app_settings.get("approval_mode"), app_settings.get("dept_head_mode"),
+                               app_settings.get("cfo_mode"), cfo_rules.short())
+        flash(f"Маршрут: {route}. Діє для нових і повторно відправлених заявок.", "success")
+        if "cfo_rules" in changes:
+            flash("Правила фіндиректора: " + cfo_rules.describe_rows(changes["cfo_rules"], app_settings.get("cfo_currency")),
+                  "success")
     for key, value in changes.items():
         if key not in ROUTE_KEYS:
             flash(_message(key, value), "success")
@@ -89,8 +95,12 @@ def _context(tab):
     """Дані для вкладки (лише те, що вона показує)."""
     ctx = {"TABS": schema.TABS, "tab": tab, "route_label": wf.route_label}
     if tab == "approval":
+        items = sorted(expense_items.get_items(), key=lambda i: i["code"])
         ctx.update(approval_mode=app_settings.info("approval_mode"), head_mode=app_settings.info("dept_head_mode"),
-                   cfo_mode=app_settings.info("cfo_mode"), cfo_threshold=app_settings.get("cfo_threshold_usd"),
+                   cfo_mode=app_settings.info("cfo_mode"), cfo=cfo_rules.get(), cfo_short=cfo_rules.short(),
+                   CFO_ROWS=cfo_rules.ROWS, CFO_ROW_LABELS=cfo_rules.ROW_LABELS, CFO_RULE_MODES=cfo_rules.MODES,
+                   CFO_CURRENCIES=cfo_rules.CURRENCIES, cfo_expense_items=items,
+                   cfo_expense_known={i["code"] for i in items},
                    APPROVAL_MODES=wf.APPROVAL_MODES, HEAD_MODES=wf.HEAD_MODES, CFO_MODES=wf.CFO_MODES,
                    no_self_approval=app_settings.get("no_self_approval"))
     elif tab == "request":
@@ -128,6 +138,33 @@ def _context(tab):
     return ctx
 
 
+def _parse_cfo_rules(form, changes, errors):
+    """Таблиця правил фіндиректора й список статей із форми вкладки «Погодження»."""
+    table = {}
+    for role in cfo_rules.ROWS:
+        mode = form.get(f"cfo_rule_{role}")
+        if mode not in cfo_rules.MODES:
+            errors[f"cfo_rule_{role}"] = f"«{cfo_rules.ROW_LABELS[role]}»: невідомий варіант"
+            continue
+        limit = cfo_rules.rows()[role]["limit"]
+        raw = (form.get(f"cfo_limit_{role}") or "").replace(" ", "").replace(" ", "")
+        if mode == "threshold":
+            try:
+                limit = int(raw.split(",")[0].split(".")[0])
+            except ValueError:
+                limit = 0
+            if limit <= 0:
+                errors[f"cfo_limit_{role}"] = (f"«{cfo_rules.ROW_LABELS[role]}»: вкажіть поріг фіндиректора — суму, "
+                                               "більшу за 0")
+                continue
+        table[role] = {"mode": mode, "limit": limit}
+    if len(table) == len(cfo_rules.ROWS) and table != cfo_rules.rows():
+        changes["cfo_rules"] = table
+    codes = sorted({c.strip() for c in form.getlist("cfo_expense_codes") if c and c.strip()})
+    if codes != sorted(app_settings.get("cfo_expense_codes") or []):
+        changes["cfo_expense_codes"] = codes
+
+
 @bp.route("/admin/settings", methods=["GET", "POST"])
 @auth.login_required
 @requires("admin")
@@ -147,6 +184,8 @@ def admin_settings(*, context):
     if (changes.get("cfo_mode") == "threshold" and "cfo_threshold_usd" not in changes
             and not app_settings.get("cfo_threshold_usd")):
         errors["cfo_threshold_usd"] = "Вкажіть поріг фіндиректора — суму в USD, більшу за 0"
+    if tab == "approval" and "cfo_rules_sent" in request.form:
+        _parse_cfo_rules(request.form, changes, errors)
     back = url_for("admin.admin_settings", tab="approval" if legacy else tab)
     if errors:
         for message in errors.values():

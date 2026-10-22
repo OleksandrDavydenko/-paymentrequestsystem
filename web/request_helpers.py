@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from flask import flash, g, request, url_for
 
 import app_settings
+import cfo_rules
 import clock
 import counterparties
 import currencies
@@ -17,12 +18,11 @@ import filestore
 import org_structure
 import organizations
 import payment_accounts
-import rates
 import storage as db
 import user_directory
 import workflow as wf
 
-from web.formatting import fmt_datetime, money
+from web.formatting import fmt_datetime
 
 
 def _parse_amount(raw):
@@ -204,23 +204,15 @@ def _route_settings(req):
 
 
 def _cfo_route(req):
-    """Чи погоджує фіндиректор цю заявку (режим з адмінки; для «від суми» — еквівалент у USD за останнім курсом 1С)."""
+    """Чи погоджує фіндиректор цю заявку: режим з адмінки, для «за правилами» — cfo_rules.decide
+    (тип бухгалтера, поріг у вибраній валюті за курсом 1С, новий контрагент, статті)."""
     mode = app_settings.get("cfo_mode")
     if mode == "observe":
         return {"cfo_step": False, "cfo_note": ""}
     if mode != "threshold":
         return {"cfo_step": True, "cfo_note": ""}
-    limit = Decimal(str(app_settings.get("cfo_threshold_usd") or 0))
-    usd, day = rates.to_usd(req.get("amount"), req.get("currency"))
-    limit_s = wf.fmt_usd(limit)
-    if usd is None:
-        return {"cfo_step": True, "cfo_note": f"Потрібне погодження фіндиректора: не вдалося перерахувати суму в USD ({day})"}
-    when = f" (курс 1С на {date.fromisoformat(day):%d.%m.%Y})" if day else ""
-    if usd >= limit:
-        return {"cfo_step": True,
-                "cfo_note": f"Потрібне погодження фіндиректора: ≈ {money(usd)} USD — не менше за поріг {limit_s} USD{when}"}
-    return {"cfo_step": False,
-            "cfo_note": f"Фіндиректор не погоджує: ≈ {money(usd)} USD — менше за поріг {limit_s} USD{when}"}
+    step, note = cfo_rules.decide(req)
+    return {"cfo_step": step, "cfo_note": note}
 
 
 def _try_live_link(req, user, role):

@@ -855,3 +855,13 @@ a.badge { text-decoration: none; }
 
 /* ---------- «Показати ще» під довгими списками */
 .list-more { display: flex; align-items: center; justify-content: center; gap: 12px; padding: 14px 0 4px; flex-wrap: wrap; }
+
+/* ---------- Налаштування → Погодження: правила фіндиректора */
+.cfo-rules { margin: 4px 0 8px 28px; }
+.cfo-rules-table select { min-width: 140px; }
+.cfo-codes { margin: 6px 0; }
+.cfo-codes summary { cursor: pointer; padding: 6px 0; }
+.cfo-codes-search { width: 100%; max-width: 420px; margin: 6px 0; }
+.cfo-codes-list { max-height: 260px; overflow-y: auto; border: 1px solid #e1e5ea; border-radius: 8px; padding: 6px 10px; }
+.cfo-code { display: flex; gap: 8px; align-items: flex-start; padding: 3px 0; }
+@media (max-width: 760px) { .cfo-rules { margin-left: 0; } }

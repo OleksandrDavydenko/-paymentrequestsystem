@@ -41,6 +41,7 @@ class Setting:
     marker: str = None        # прихована позначка старої форми для галочки (сумісність)
     managed: bool = False     # зберігає власна форма, а не загальне збереження вкладки
     available: object = None  # функція -> чи доступне налаштування зараз
+    fmt: object = None        # функція значення -> текст для журналу (для складних значень)
 
 
 def _wf(name):
@@ -74,12 +75,34 @@ def _security():
     return mailer.SECURITY
 
 
+def _cfo_currencies():
+    import cfo_rules
+    return {c: c for c in cfo_rules.CURRENCIES}
+
+
+def _fmt_cfo_rules(value):
+    import app_settings
+    import cfo_rules
+    return cfo_rules.describe_rows(value, app_settings.get("cfo_currency") or "USD")
+
+
+def _fmt_codes(value):
+    return ", ".join(value) if value else "—"
+
+
 _LIST = [
     # ---- Погодження
     Setting("approval_mode", "Порядок погодження", "approval", "choice", "sequential", _wf("APPROVAL_MODES")),
     Setting("dept_head_mode", "Керівник відділу", "approval", "choice", "view", _wf("HEAD_MODES")),
     Setting("cfo_mode", "Фіндиректор", "approval", "choice", "approve", _wf("CFO_MODES")),
+    # Поріг до появи правил за типом бухгалтера: правила без збереженої таблиці беруть його для всіх рядків
     Setting("cfo_threshold_usd", "Поріг фіндиректора, USD", "approval", "int", 1000, min=1, max=10**9),
+    Setting("cfo_rules", "Правила фіндиректора за типом бухгалтера", "approval", "json", {}, managed=True,
+            fmt=_fmt_cfo_rules),
+    Setting("cfo_currency", "Валюта порогу фіндиректора", "approval", "choice", "USD", _cfo_currencies),
+    Setting("cfo_new_counterparty", "Фіндиректор погоджує заявки з новим контрагентом", "approval", "bool", False),
+    Setting("cfo_expense_codes", "Статті, які завжди погоджує фіндиректор", "approval", "json", [], managed=True,
+            fmt=_fmt_codes),
     Setting("no_self_approval", "Автор не може погоджувати свою заявку", "approval", "bool", False,
             marker="no_self_approval_sent"),
     # ---- Заявка
@@ -135,6 +158,8 @@ def value_label(key, value):
     if s.kind == "choice" and s.choices:
         text = s.choices().get(value, value)
         return str(text).split(":")[0] if isinstance(text, str) else str(text)
+    if s.fmt:
+        return s.fmt(value)
     if s.kind == "json":
         return f"{len(value or [])} записів" if isinstance(value, (list, dict)) else str(value)
     return "—" if value in (None, "") else str(value)

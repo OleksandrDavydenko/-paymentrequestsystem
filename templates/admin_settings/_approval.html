@@ -2,7 +2,7 @@
   <input type="hidden" name="tab" value="approval">
   <div class="toolbar">
     <h2 style="margin:0">Маршрут погодження</h2>
-    <span class="sec-summary muted">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value, cfo_threshold) }}</span>
+    <span class="sec-summary muted">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value, cfo_short) }}</span>
   </div>
   <div class="budget-section-title">Фіндиректор</div>
   {% for code, label in CFO_MODES.items() %}
@@ -11,13 +11,63 @@
     <span>
       <strong>{{ label.split(':')[0] }}</strong>{% if cfo_mode.value == code %}<span class="mode-saved">діє зараз</span>{% endif %}
       <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
-      <span class="mode-hint">{% if code == 'approve' %}Погоджує після бухгалтера або одночасно з ним — за порядком нижче.{% elif code == 'threshold' %}Від
-        <input type="number" name="cfo_threshold_usd" value="{{ cfo_threshold }}" min="1" step="1" style="width:100px" aria-label="Поріг у USD"> USD
-        — еквівалент суми заявки за останнім відомим курсом 1С на момент відправки. Менші заявки після бухгалтера одразу йдуть до оплати; в історії заявки видно, чому.{% else %}Після погодження бухгалтера заявка одразу йде до оплати. Фіндиректор не отримує заявок на рішення.{% endif %}
+      <span class="mode-hint">{% if code == 'approve' %}Погоджує після бухгалтера або одночасно з ним — за порядком нижче.{% elif code == 'threshold' %}Таблиця й умови — нижче. Рішення ухвалюється при відправці заявки, в історії заявки видно, яке правило спрацювало.{% else %}Після погодження бухгалтера заявка одразу йде до оплати. Фіндиректор не отримує заявок на рішення.{% endif %}
         Фіндиректор у будь-якому режимі бачить заявки, що чекають бухгалтерів («На погодження → У бухгалтерів»), і може повернути чи відхилити їх.</span>
     </span>
   </label>
   {% endfor %}
+
+
+  <div class="cfo-rules" id="cfo-rules" {{ 'hidden' if cfo_mode.value != 'threshold' }}>
+    <input type="hidden" name="cfo_rules_sent" value="1">
+    <div class="budget-section-title">Правила фіндиректора — за типом бухгалтера заявки</div>
+    <div class="table-wrap">
+    <table class="stack cfo-rules-table">
+      <thead><tr><th>Бухгалтер заявки</th><th>Фіндиректор погоджує</th><th>Поріг</th></tr></thead>
+      <tbody>
+      {% for role in CFO_ROWS %}{% set row = cfo.rows[role] %}
+        <tr>
+          <td data-label="Бухгалтер"><strong>{{ CFO_ROW_LABELS[role] }}</strong></td>
+          <td data-label="Погоджує">
+            <select name="cfo_rule_{{ role }}" class="cfo-rule" aria-label="{{ CFO_ROW_LABELS[role] }}: коли погоджує фіндиректор">
+              {% for code, label in CFO_RULE_MODES.items() %}<option value="{{ code }}" {{ 'selected' if row.mode == code }}>{{ label }}</option>{% endfor %}
+            </select></td>
+          <td data-label="Поріг"><span class="cfo-limit" {{ 'hidden' if row.mode != 'threshold' }}>від
+            <input type="number" name="cfo_limit_{{ role }}" value="{{ row.limit }}" min="1" step="1" style="width:110px"
+                   aria-label="{{ CFO_ROW_LABELS[role] }}: поріг"> <span class="cfo-cur">{{ cfo.currency }}</span></span></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <label class="mode-option">
+      <span><strong>Валюта порогу</strong>
+        <select name="cfo_currency" aria-label="Валюта порогу" style="width:auto;margin-left:8px">
+          {% for c in CFO_CURRENCIES %}<option value="{{ c }}" {{ 'selected' if cfo.currency == c }}>{{ c }}</option>{% endfor %}
+        </select>
+        <span class="mode-hint">Сума заявки перераховується за останнім відомим курсом 1С на момент відправки. Якщо курсу немає —
+          фіндиректор погоджує (так безпечніше).</span></span>
+    </label>
+    <div class="budget-section-title">Фіндиректор погоджує також, незалежно від таблиці</div>
+    <label class="mode-option">
+      <input type="checkbox" name="cfo_new_counterparty" value="1" {{ 'checked' if cfo.new_counterparty }}>
+      <span><strong>Заявки з новим контрагентом</strong><span class="muted"> — якого ще немає в 1С</span></span>
+    </label>
+    <details class="cfo-codes" {{ 'open' if cfo.expense_codes }}>
+      <summary><strong>Статті витрат</strong> <span class="muted">— вибрано {{ cfo.expense_codes | length }}</span></summary>
+      <input type="search" class="cfo-codes-search" placeholder="Пошук статті…" autocomplete="off" aria-label="Пошук статті">
+      <div class="cfo-codes-list">
+        {% for i in cfo_expense_items %}
+        <label class="cfo-code"><input type="checkbox" name="cfo_expense_codes" value="{{ i.code }}" {{ 'checked' if i.code in cfo.expense_codes }}>
+          <span>{{ i.code }} — {{ i.name }}</span></label>
+        {% endfor %}
+        {% for code in cfo.expense_codes if code not in cfo_expense_known %}
+        <label class="cfo-code"><input type="checkbox" name="cfo_expense_codes" value="{{ code }}" checked>
+          <span>{{ code }} <span class="muted">(немає в довіднику)</span></span></label>
+        {% endfor %}
+      </div>
+    </details>
+  </div>
 
   <div class="budget-section-title">Порядок погодження заявок</div>
   <p class="muted cfo-off-note" id="cfo-off-note" {{ 'hidden' if cfo_mode.value != 'observe' }}>Не діє, поки фіндиректор лише спостерігає: погоджує один бухгалтер.</p>
@@ -44,7 +94,7 @@
     </span>
   </label>
   {% endfor %}
-  <div class="route-summary">Маршрут: <strong id="route-summary">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value, cfo_threshold) }}</strong></div>
+  <div class="route-summary">Маршрут: <strong id="route-summary">{{ route_label(approval_mode.value, head_mode.value, cfo_mode.value, cfo_short) }}</strong></div>
 
   <div class="budget-section-title">Розподіл обов'язків</div>
   <input type="hidden" name="no_self_approval_sent" value="1">

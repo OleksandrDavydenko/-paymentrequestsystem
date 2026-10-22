@@ -1,7 +1,7 @@
 """Курси валют з 1С (таблиця ExchangeRates семантичної моделі Power BI): Date, GUID (валюти), RateBU.
 
 RateBU — гривень за 1 одиницю валюти. Потрібен останній відомий курс кожної валюти — для порогу
-погодження фіндиректора в еквіваленті USD. З Power BI читаються лише рядки за останні 31 день.
+погодження фіндиректора (USD, EUR чи UAH — див. cfo_rules.py). З Power BI читаються лише рядки за останні 31 день.
 """
 from datetime import timedelta
 from decimal import Decimal, InvalidOperation
@@ -60,23 +60,28 @@ def latest():
     return {x["name"]: (Decimal(x["rate"]), x["date"]) for x in _table.items()}
 
 
-def to_usd(amount, currency):
-    """Еквівалент у USD за останнім відомим курсом: (сума, дата курсу) або (None, причина)."""
+def convert(amount, currency, to="USD"):
+    """Еквівалент у валюті to за останнім відомим курсом 1С: (сума, дата курсу) або (None, причина)."""
     try:
         amount = Decimal(str(amount))
     except (InvalidOperation, TypeError):
         return None, "не вказано суму"
-    if currency == "USD":
+    if currency == to:
         return amount, None
     rates = latest()
-    usd = rates.get("USD")
-    cur = (Decimal(1), None) if currency == "UAH" else rates.get(currency)
-    if not usd:
-        return None, "немає курсу USD"
-    if not cur:
+    rate = lambda code: (Decimal(1), None) if code == "UAH" else rates.get(code)  # noqa: E731
+    src, dst = rate(currency), rate(to)
+    if not dst:
+        return None, f"немає курсу {to}"
+    if not src:
         return None, f"немає курсу {currency}"
-    day = max(d for d in (cur[1], usd[1]) if d)
-    return (amount * cur[0] / usd[0]).quantize(Decimal("0.01")), day
+    day = max((d for d in (src[1], dst[1]) if d), default=None)
+    return (amount * src[0] / dst[0]).quantize(Decimal("0.01")), day
+
+
+def to_usd(amount, currency):
+    """Еквівалент у USD за останнім відомим курсом: (сума, дата курсу) або (None, причина)."""
+    return convert(amount, currency, "USD")
 
 
 def refresh():

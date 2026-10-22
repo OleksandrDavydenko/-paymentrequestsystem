@@ -68,7 +68,8 @@ check("no rate -> None", rates.to_usd(5, "TUSD")[0] is None)
 # ---------- адмінка: режим «від суми»
 login("admin@ftpua.com", ADMIN)
 page = admin_page()
-check("admin: threshold mode + input + rates status", "Погоджує від суми" in page and 'name="cfo_threshold_usd"' in page and "Курси валют" in page)
+check("admin: rules mode + rules table + rates status", "Погоджує за правилами" in page and 'name="cfo_limit_acc_resident"' in page
+      and "Курси валют" in page)
 r = c.post("/admin/settings", data={**SETTINGS, "cfo_mode": "threshold", "cfo_threshold_usd": "0"}, follow_redirects=True)
 check("threshold 0 rejected", app_settings.get("cfo_mode") == "approve" and "більшу за 0" in r.get_data(as_text=True))
 html = c.post("/admin/settings", data={**SETTINGS, "cfo_mode": "threshold", "cfo_threshold_usd": "1000"}, follow_redirects=True).get_data(as_text=True)
