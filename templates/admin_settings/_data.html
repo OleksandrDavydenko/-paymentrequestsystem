@@ -20,6 +20,37 @@
   {% endif %}
 </form>
 
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="login-methods"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="data">
+  <div class="toolbar"><h2 style="margin:0">Вхід у систему</h2></div>
+  <p class="muted" style="margin-top:0">Яким акаунтом співробітники входять і де зберігаються їхні ролі.</p>
+  {% set HINTS = {'microsoft': "Кожному потрібен обліковий запис Microsoft (Entra ID). Ролі — групи безпеки в Azure.",
+                  'both': "Співробітники входять робочим акаунтом Google (тим самим, що й пошта); вхід через Microsoft теж лишається. Ролі зберігаються в системі й змінюються в картці користувача. При перемиканні ролі з груп Azure переносяться автоматично.",
+                  'google': "Лише робочий акаунт Google. Через Microsoft можуть увійти тільки адміністратори з ADMIN_EMAILS — на випадок, якщо з Google щось не так."} %}
+  {% for code, title in LOGIN_METHODS.items() %}
+  {% set blocked = code != 'microsoft' and not google_ready %}
+  <label class="mode-option {{ 'is-disabled' if blocked }}">
+    <input type="radio" name="login_methods" value="{{ code }}" {{ 'checked' if login == code }} {{ 'disabled' if blocked }}>
+    <span>
+      <strong>{{ title }}</strong>{% if login_effective == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      <span class="mode-hint">{{ HINTS[code] }}</span>
+    </span>
+  </label>
+  {% endfor %}
+  <dl class="status-grid">
+    <dt>Вхід через Google</dt>
+    <dd>{% if google_ready %}налаштовано · домени: {% for d in google_domains %}@{{ d }}{{ ', ' if not loop.last }}{% endfor %}
+      {% else %}<span class="uc-warn">не налаштовано</span> — задайте в App Service <code>GOOGLE_CLIENT_ID</code>,
+      <code>GOOGLE_CLIENT_SECRET</code> і <code>GOOGLE_ALLOWED_DOMAINS</code>{% endif %}</dd>
+    <dt>Ролі в системі</dt><dd>{{ app_role_users }} користувачів</dd>
+    <dt>Запасний вхід адміністраторів</dt><dd>{{ admin_emails | join(', ') if admin_emails else '—' }} <span class="muted">(ADMIN_EMAILS)</span></dd>
+  </dl>
+  {% if login != login_effective %}
+  <div class="flash error">Вибрано «{{ LOGIN_METHODS[login] }}», але вхід через Google не налаштований — зараз діє вхід через Microsoft.</div>
+  {% endif %}
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+</form>
+
 {% set es = expense_status %}
 <div class="card expense-status" id="expense-items">
   <div class="toolbar">

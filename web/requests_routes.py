@@ -21,7 +21,7 @@ import user_budget
 import user_directory
 import workflow as wf
 
-from web.auth import auth, _home, _load_visible, requires
+from web.auth import _home, _load_visible, login_required, requires
 from web.listing import _filtered, _page, _parse_date, _ref_keys
 from web.request_helpers import INLINE_EXT, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
 
@@ -30,21 +30,21 @@ bp = Blueprint("requests", __name__)
 
 
 @bp.route("/")
-@auth.login_required
+@login_required
 @requires()
 def index(*, context):
     return redirect(_home())
 
 
 @bp.route("/home")
-@auth.login_required
+@login_required
 @requires()
 def _home_redirect(*, context):
     return redirect(_home())
 
 
 @bp.route("/requests")
-@auth.login_required
+@login_required
 @requires()
 def requests_list(*, context):
     email = g.user["email"]
@@ -74,7 +74,7 @@ def requests_list(*, context):
 
 @bp.route("/requests/new", methods=["GET", "POST"])
 @bp.route("/requests/<int:request_id>", methods=["GET", "POST"])
-@auth.login_required
+@login_required
 @requires()
 def request_card(request_id=None, *, context):
     user, roles = g.user, g.roles
@@ -233,7 +233,7 @@ def request_card(request_id=None, *, context):
 
 
 @bp.route("/requests/<int:request_id>/payment-account", methods=["POST"])
-@auth.login_required
+@login_required
 @requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
 def request_payment_account(request_id, *, context):
     req = _load_visible(request_id)
@@ -252,7 +252,7 @@ def request_payment_account(request_id, *, context):
 
 
 @bp.route("/requests/<int:request_id>/handover", methods=["POST"])
-@auth.login_required
+@login_required
 @requires()
 def request_handover(request_id, *, context):
     """Підтвердження передачі готівки підряднику (автор, а за нього — бухгалтер по готівці чи адмін)."""
@@ -283,7 +283,7 @@ def request_handover(request_id, *, context):
 
 
 @bp.route("/counterparties/search")
-@auth.login_required
+@login_required
 @requires()
 def counterparties_search(*, context):
     """Пошук контрагентів для вікна вибору (q, kind = resident|nonresident|pending, scope = onec, limit)."""
@@ -298,7 +298,7 @@ def counterparties_search(*, context):
 
 
 @bp.route("/counterparties/new", methods=["POST"])
-@auth.login_required
+@login_required
 @requires("initiator")
 def counterparty_new(*, context):
     """Новий (тимчасовий) контрагент, якого ще немає в 1С. JSON: {item} | {errors} | {duplicate}."""
@@ -313,7 +313,7 @@ def counterparty_new(*, context):
 
 
 @bp.route("/counterparties/<cp_id>/check", methods=["POST"])
-@auth.login_required
+@login_required
 @requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
 def counterparty_check(cp_id, *, context):
     """«Перевірити в 1С зараз»: живий запит за ЄДРПОУ і автоприв'язка."""
@@ -336,7 +336,7 @@ def counterparty_check(cp_id, *, context):
 
 
 @bp.route("/counterparties/<cp_id>/link", methods=["POST"])
-@auth.login_required
+@login_required
 @requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
 def counterparty_link(cp_id, *, context):
     if not _can_link_cp(g.roles):
@@ -355,7 +355,7 @@ def counterparty_link(cp_id, *, context):
 
 
 @bp.route("/users/search")
-@auth.login_required
+@login_required
 @requires()
 def users_search(*, context):
     """Підказки для вибору учасника заявки: користувачі системи (з роллю)."""
@@ -365,7 +365,7 @@ def users_search(*, context):
 
 
 @bp.route("/requests/<int:request_id>/participants", methods=["POST"])
-@auth.login_required
+@login_required
 @requires()
 def request_participants(request_id, *, context):
     req = _load_visible(request_id)
@@ -405,7 +405,7 @@ def request_participants(request_id, *, context):
 
 
 @bp.route("/requests/<int:request_id>/action", methods=["POST"])
-@auth.login_required
+@login_required
 @requires("initiator", *wf.APPROVER_ROLES)
 def request_action(request_id, *, context):
     req = _load_visible(request_id)
@@ -428,7 +428,7 @@ def request_action(request_id, *, context):
 
 
 @bp.route("/requests/<int:request_id>/author-action", methods=["POST"])
-@auth.login_required
+@login_required
 @requires("initiator")
 def author_action(request_id, *, context):
     """Автор відкликає заявку на редагування або скасовує її."""
@@ -454,7 +454,7 @@ def author_action(request_id, *, context):
 
 
 @bp.route("/requests/<int:request_id>/comment", methods=["POST"])
-@auth.login_required
+@login_required
 @requires()
 def request_comment(request_id, *, context):
     req = _load_visible(request_id)
@@ -489,7 +489,7 @@ def request_comment(request_id, *, context):
 
 
 @bp.route("/requests/<int:request_id>/admin-status", methods=["POST"])
-@auth.login_required
+@login_required
 @requires("admin")
 def admin_change_status(request_id, *, context):
     req = db.get_request(request_id)
@@ -510,7 +510,7 @@ def admin_change_status(request_id, *, context):
 
 
 @bp.route("/requests/<int:request_id>/files", methods=["POST"])
-@auth.login_required
+@login_required
 @requires()
 def upload_files(request_id, *, context):
     user, roles = g.user, g.roles
@@ -534,7 +534,7 @@ def upload_files(request_id, *, context):
 
 
 @bp.route("/files/<file_id>")
-@auth.login_required
+@login_required
 @requires()
 def download_file(file_id, *, context):
     req, att = db.find_attachment(file_id)
@@ -549,7 +549,7 @@ def download_file(file_id, *, context):
 
 
 @bp.route("/files/<file_id>/delete", methods=["POST"])
-@auth.login_required
+@login_required
 @requires()
 def delete_file(file_id, *, context):
     user, roles = g.user, g.roles

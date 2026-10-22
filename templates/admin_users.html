@@ -85,8 +85,9 @@
 <dialog id="add-dialog">
   <div class="dlg-head">Додати користувача</div>
   <div class="dlg-body">
-    <label class="muted" for="user-search">Знайдіть співробітника в Azure (ім'я або пошта) — далі відкриється його картка,
-      де можна вибрати ролі, відділ і статті бюджету.</label>
+    <label class="muted" for="user-search">{% if roles_in_app %}Введіть ім'я або робочу пошту співробітника
+      (нового — повну адресу, напр. name@{{ google_domain or 'company.com' }}){% else %}Знайдіть співробітника в Azure (ім'я або пошта){% endif %}
+      — далі відкриється його картка, де можна вибрати ролі, відділ і статті бюджету.</label>
     <input type="text" id="user-search" autocomplete="off" placeholder="Почніть вводити…" style="width:100%;margin-top:8px">
     <ul id="search-results" class="search-results"></ul>
   </div>

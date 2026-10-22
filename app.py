@@ -7,6 +7,7 @@
   web/settings_routes.py  — особисті налаштування сповіщень
   web/admin_routes.py     — адміністрування
   web/api_routes.py       — API для Telegram-бота, /health
+  web/login_routes.py     — сторінка входу (Google / Microsoft), вхід через Google, вихід
   web/auth.py, listing.py, request_helpers.py, formatting.py — спільні функції сторінок
   web/context.py, errors.py, background.py — шаблони, обробка помилок, фонові задачі
 """
@@ -26,6 +27,7 @@ from web.admin_routes import bp as admin_bp
 from web.api_routes import bp as api_bp
 from web.auth import auth
 from web.lists_routes import bp as lists_bp
+from web.login_routes import bp as login_bp
 from web.payments_routes import bp as payments_bp
 from web.requests_routes import bp as requests_bp
 from web.settings_routes import bp as settings_bp
@@ -54,7 +56,7 @@ auth.init_app(app)
 context.init_app(app)
 errors.init_app(app)
 background.init_app(app)
-for bp in (requests_bp, lists_bp, payments_bp, settings_bp, admin_bp, api_bp):
+for bp in (login_bp, requests_bp, lists_bp, payments_bp, settings_bp, admin_bp, api_bp):
     app.register_blueprint(bp)
 csrf.exempt(api_bp)  # бот не має сеансу входу — API захищене ключем X-Api-Key
 

@@ -8,7 +8,7 @@ import departments
 import storage as db
 import workflow as wf
 
-from web.auth import auth, requires
+from web.auth import login_required, requires
 from web.listing import RECENT_DAYS, _date_filter, _filtered, _in_period, _page, _ref_keys, currency_totals, recent_presets
 
 
@@ -16,7 +16,7 @@ bp = Blueprint("lists", __name__)
 
 
 @bp.route("/approvals")
-@auth.login_required
+@login_required
 @requires(*wf.APPROVER_ROLES)
 def approvals(*, context):
     view = request.args.get("view") if request.args.get("view") in ("processed", "accountants") else "queue"
@@ -47,14 +47,14 @@ def approvals(*, context):
 
 
 @bp.route("/admin/requests")
-@auth.login_required
+@login_required
 @requires("admin", "cfo")
 def admin_requests(*, context):
     return _requests_overview("all", title="Усі заявки", table_id="all-requests")
 
 
 @bp.route("/department")
-@auth.login_required
+@login_required
 @requires("dept_head", "dept_viewer")
 def department_requests(*, context):
     deps = sorted(wf.head_deps(g.roles) | wf.view_deps(g.roles), key=lambda c: departments.get_name(c).lower())

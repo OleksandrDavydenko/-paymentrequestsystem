@@ -1,18 +1,28 @@
-"""Вхід, ролі й доступ: групи Entra ID → ролі, декоратор requires, головна сторінка користувача."""
+"""Вхід, ролі й доступ: Google або Microsoft → ролі, декоратори login_required / requires, головна сторінка.
+
+Як входять люди — налаштування «Вхід у систему» (Дані й система):
+  microsoft — лише Microsoft (Entra ID), ролі — групи Azure (як було);
+  both      — Google і Microsoft, ролі — у системі (user_roles); людину знаходимо за поштою;
+  google    — лише Google, ролі — у системі; адміністратори з ADMIN_EMAILS можуть увійти й через
+              Microsoft (запасний вхід, якщо з Google щось трапиться).
+Без OAuth-клієнта Google (google_login.configured) система працює як «microsoft».
+"""
 import os
-from functools import wraps
+from functools import partial, wraps
 
 import identity.flask
 from dotenv import load_dotenv
-from flask import abort, current_app, g, render_template, request, session, url_for
+from flask import abort, current_app, g, redirect, render_template, request, session, url_for
 
 import app_settings
+import google_login
 import graph
 import mailer
 import notifications
 import org_structure
 import storage as db
 import user_directory
+import user_roles
 import workflow as wf
 
 load_dotenv()  # локальний запуск: змінні з .env (на App Service — з налаштувань сайту)
@@ -47,6 +57,66 @@ ADMIN_EMAILS = {e.strip().lower() for e in os.environ.get("ADMIN_EMAILS", "od@ft
 OVERAGE_SCOPES = ["https://graph.microsoft.com/GroupMember.Read.All"]
 
 
+def login_mode():
+    """microsoft / both / google (див. опис модуля)."""
+    mode = app_settings.get("login_methods")
+    if mode not in ("both", "google") or not google_login.configured():
+        return "microsoft"
+    return mode
+
+
+def roles_in_app():
+    """Ролі — у системі (вхід через Google увімкнено), а не в групах Azure."""
+    return login_mode() != "microsoft"
+
+
+def current_claims():
+    """Хто увійшов: {"preferred_username", "name", "oid", "login": google|microsoft, …} або None."""
+    mode = login_mode()
+    gu = session.get("google_user") if mode != "microsoft" else None
+    if gu:
+        return {"preferred_username": gu["email"], "name": gu["name"], "oid": None, "login": "google"}
+    ms = auth._auth.get_user()
+    if not ms:
+        return None
+    if mode == "google" and (ms.get("preferred_username") or "").lower() not in ADMIN_EMAILS:
+        return None  # лише Google; через Microsoft — тільки адміністратори (запасний вхід)
+    return {**ms, "login": "microsoft"}
+
+
+def login_required(function=None, *, scopes=None):
+    """Сторінка лише для тих, хто увійшов (Google або Microsoft). Передає у view context={"user": claims}
+    і, для входу через Microsoft з потрібними scopes, ще "access_token" (Microsoft Graph)."""
+    if function is None:
+        return partial(login_required, scopes=scopes)
+
+    @wraps(function)
+    def wrapper(*args, **kwargs):
+        user = current_claims()
+        if not user:
+            return redirect(url_for("login.login_page", next=request.full_path.rstrip("?")))
+        context = {"user": user}
+        if scopes and user["login"] == "microsoft":
+            result = auth._auth.get_token_for_user(scopes)
+            if isinstance(result, dict) and "access_token" in result:
+                context["access_token"] = result["access_token"]
+            elif not roles_in_app():  # ролі в Azure — без токена Graph адмінка не працює: увійти знову
+                return redirect(url_for("login.login_page", next=request.full_path.rstrip("?"), method="microsoft",
+                                        scopes="admin"))
+        return function(*args, context=context, **kwargs)
+    return wrapper
+
+
+def _app_user_id(claims, email):
+    """Ідентифікатор людини в системі (ролі в системі): запис ролей за поштою, інакше Entra oid (з токена
+    або довідника), інакше пошта."""
+    rec = user_roles.find_by_email(email)
+    if rec:
+        return rec["id"], rec["roles"]
+    known = user_directory.find_active(email)
+    return (claims.get("oid") or (known or {}).get("id") or email.lower()), set()
+
+
 def _token_groups(claims):
     """ID груп користувача з токена; якщо груп забагато (overage) — перевірка через Graph."""
     if "groups" in claims:
@@ -76,15 +146,19 @@ def resolve_roles(claims):
 
 
 def requires(*needed):
-    """Після @auth.login_required: заповнює g.user / g.roles і перевіряє доступ.
+    """Після @login_required: заповнює g.user / g.roles і перевіряє доступ.
     Без жодної ролі (або без потрібної) — сторінка «Немає доступу»."""
     def deco(view):
         @wraps(view)
         def wrapper(*args, context, **kwargs):
             claims = context["user"]
             email = claims.get("preferred_username", "")
-            g.user = {"email": email, "name": claims.get("name") or email, "oid": claims.get("oid")}
-            roles = resolve_roles(claims)
+            if roles_in_app():
+                uid, roles = _app_user_id(claims, email)
+                roles = set(roles) | ({"admin"} if email.lower() in ADMIN_EMAILS else set())
+            else:
+                uid, roles = claims.get("oid"), resolve_roles(claims)
+            g.user = {"email": email, "name": claims.get("name") or email, "oid": uid, "login": claims.get("login")}
             # Керівник відділу / «бачить заявки відділу» — з картки користувача, не з груп Azure
             heads = org_structure.head_departments(g.user["oid"])
             views = org_structure.viewer_departments(g.user["oid"])
@@ -103,7 +177,10 @@ def requires(*needed):
 
 
 def _role_members(role):
-    """Учасники групи ролі з поштою. Дозвіл додатку дає лише ID — пошту беремо з довідника."""
+    """Учасники ролі з поштою: ролі в системі — з user_roles; інакше — група Azure (дозвіл додатку дає лише
+    ID, пошту беремо з довідника)."""
+    if roles_in_app():
+        return user_roles.members(role)
     gid = GROUPS.get(role)
     if not gid:
         return []

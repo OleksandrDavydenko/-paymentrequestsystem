@@ -10,7 +10,7 @@ import payment_accounts
 import storage as db
 import workflow as wf
 
-from web.auth import auth, requires
+from web.auth import login_required, requires
 from web.listing import _date_filter, _filtered, _in_period, _page, _ref_keys, currency_totals, date_presets, payment_plan, recent_presets
 from web.request_helpers import _pay_guard, _try_live_link
 
@@ -19,7 +19,7 @@ bp = Blueprint("payments", __name__)
 
 
 @bp.route("/to-pay")
-@auth.login_required
+@login_required
 @requires(*wf.ACCOUNTANT_ROLES, "cfo")
 def to_pay(*, context):
     roles = g.roles
@@ -130,7 +130,7 @@ def _handover_view(all_rows, today):
 
 
 @bp.route("/to-pay/pay", methods=["POST"])
-@auth.login_required
+@login_required
 @requires(*wf.ACCOUNTANT_ROLES)
 def to_pay_bulk(*, context):
     paid, skipped = [], []

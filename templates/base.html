@@ -55,7 +55,7 @@
         </ul>
         {% endif %}
         {% if roles %}<a class="ud-link" href="{{ url_for('settings.notification_settings') }}">✉ Сповіщення на пошту</a>{% endif %}
-        <a class="btn btn-sm" href="{{ url_for('identity.logout') }}">Вийти</a>
+        <a class="btn btn-sm" href="{{ url_for('login.logout') }}">Вийти</a>
       </div>
     </details>
     {% endif %}

@@ -21,14 +21,22 @@
   <div class="callout uc-new">
     <strong>Новий користувач — поки без доступу до системи.</strong>
     Оберіть ролі (пункт 1), за потреби відділ і статті бюджету, і натисніть «Зберегти» внизу.
+    {% if roles_in_app and person.name == person.email %}
+    <label class="uc-name">Прізвище та ім'я
+      <input type="text" name="person_name" maxlength="120" placeholder="Як показувати в заявках" style="width:100%"></label>
+    <span class="muted">Коли людина вперше увійде через Google, ім'я оновиться з її акаунта.</span>
+    {% endif %}
   </div>
   {% endif %}
   {% if error %}<div class="flash error">Не вдалося прочитати ролі з Azure: {{ error }}</div>{% endif %}
 
   <section class="card uc-section" id="uc-roles">
     <div class="uc-title"><span class="uc-num">1</span><h2>Ролі в системі</h2></div>
-    <p class="uc-explain">Що людина робить у системі; можна вибрати кілька ролей. Ролі — це групи безпеки в Microsoft Entra ID:
-      зміни одразу записуються в Azure й починають діяти, коли людина вийде з системи й увійде знову.</p>
+    <p class="uc-explain">Що людина робить у системі; можна вибрати кілька ролей.
+      {% if roles_in_app %}Ролі зберігаються в самій системі й діють одразу після «Зберегти» — людина входить
+      своїм робочим акаунтом Google (або Microsoft) з тією самою поштою.
+      {% else %}Ролі — це групи безпеки в Microsoft Entra ID:
+      зміни одразу записуються в Azure й починають діяти, коли людина вийде з системи й увійде знову.{% endif %}</p>
     {% for title, codes in ROLE_GROUPS %}
     <div class="uc-group-title">{{ title }}</div>
     <div class="uc-options">
@@ -38,7 +46,7 @@
         <input type="checkbox" name="roles" value="{{ r }}" {{ 'checked' if r in person.roles }} {{ 'disabled' if not groups[r] or locked }}>
         <span>
           <strong>{{ ROLES[r] }}</strong>
-          {% if groups[r] %}<a href="{{ group_url(groups[r]) }}" target="_blank" class="uc-azure" title="Група в Azure">↗</a>{% endif %}
+          {% if groups[r] and not roles_in_app %}<a href="{{ group_url(groups[r]) }}" target="_blank" class="uc-azure" title="Група в Azure">↗</a>{% endif %}
           {% if locked %}<span class="muted"> — свою роль адміністратора зняти не можна</span>{% endif %}
           <span class="uc-hint">{{ ROLE_HINTS[r] }}</span>
           {% if not groups[r] %}<span class="uc-hint uc-warn">Група для цієї ролі не налаштована в App Service</span>{% endif %}

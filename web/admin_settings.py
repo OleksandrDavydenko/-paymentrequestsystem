@@ -15,6 +15,7 @@ import currencies
 import db_sql
 import departments
 import expense_items
+import google_login
 import mailer
 import notify_log
 import organizations
@@ -24,10 +25,11 @@ import settings_log
 import settings_schema as schema
 import storage as db
 import telegram_notify
+import user_roles
 import workflow as wf
 
-from web.admin_routes import bp
-from web.auth import auth, requires
+from web.admin_routes import bp, import_azure_roles
+from web.auth import ADMIN_EMAILS, login_mode, login_required, requires
 
 ROUTE_KEYS = ("approval_mode", "dept_head_mode", "cfo_mode", "cfo_threshold_usd", "cfo_rules", "cfo_currency",
               "cfo_new_counterparty", "cfo_expense_codes")
@@ -53,6 +55,25 @@ def _switch_mail_for_mode(data_mode, who):
                   "success")
 
 
+def _check_login_switch(changes, who):
+    """«Вхід у систему»: Google — лише з налаштованим OAuth-клієнтом; перехід з Microsoft переносить ролі
+    з груп Azure в систему (інакше після перемикання ніхто, крім ADMIN_EMAILS, не мав би ролей).
+    Повертає текст помилки (тоді не перемикати) або None."""
+    new = changes.get("login_methods")
+    if new is None or new == "microsoft":
+        return None
+    if not google_login.configured():
+        return ("Спершу налаштуйте вхід через Google: змінні GOOGLE_CLIENT_ID, GOOGLE_CLIENT_SECRET і "
+                "GOOGLE_ALLOWED_DOMAINS в App Service (див. README)")
+    if login_mode() == "microsoft":
+        added, error = import_azure_roles(who)
+        if error:
+            return f"Не вдалося перенести ролі з груп Azure — вхід не перемкнено: {error}"
+        flash(f"Ролі перенесено з груп Azure в систему: {added} користувачів. Далі ролі змінюються лише в "
+              "адмінці (картка користувача) і діють одразу.", "success")
+    return None
+
+
 def _message(key, value):
     """Повідомлення про збережену зміну (для маршруту — один підсумок, див. _apply)."""
     if key == "org_field_mode":
@@ -65,6 +86,12 @@ def _message(key, value):
         return "Нових контрагентів у 1С заводить: " + ("адміністратор" if value == "admin" else "бухгалтер")
     if key == "pending_cp_payment":
         return f"Контрагент, якого ще немає в 1С: {schema.PENDING_CP_MODES[value]}"
+    if key == "login_methods":
+        if value == "microsoft":
+            return ("Вхід лише через Microsoft: ролі знову беруться з груп Azure (зміни, зроблені в системі, "
+                    "туди не переносяться)")
+        return "Вхід у систему: " + ("Google і Microsoft" if value == "both" else
+                                     "лише Google (адміністратори з ADMIN_EMAILS — ще й через Microsoft)")
     if key == "cash_handover_remind_days":
         return f"Нагадування про передачу готівки: кожні {value} дн." if value else "Нагадування про передачу готівки вимкнено"
     return f"{schema.label(key)}: {schema.value_label(key, value)}"
@@ -136,6 +163,10 @@ def _context(tab):
                    SMTP_SECURITY=mailer.SECURITY, telegram=telegram_notify.status(),
                    mail_problems=len(notify_log.query(200, status="problems")))
     elif tab == "data":
+        ctx.update(login=app_settings.get("login_methods"), login_effective=login_mode(),
+                   LOGIN_METHODS=schema.SETTINGS["login_methods"].choices(), google_ready=google_login.configured(),
+                   google_domains=google_login.allowed_domains(), app_role_users=len(user_roles.all_users()),
+                   admin_emails=sorted(ADMIN_EMAILS))
         ctx.update(db_on=db_sql.configured(), data_mode=app_settings.get("data_mode"),
                    expense_status=expense_items.status(), rates_status=rates.status(),
                    departments_status=departments.status(), organizations_status=organizations.status(),
@@ -176,7 +207,7 @@ def _parse_cfo_rules(form, changes, errors):
 
 
 @bp.route("/admin/settings", methods=["GET", "POST"])
-@auth.login_required
+@login_required
 @requires("admin")
 def admin_settings(*, context):
     if request.method == "GET":
@@ -199,6 +230,8 @@ def admin_settings(*, context):
     if changes.get("doc_extensions") == []:
         errors["doc_extensions"] = "Залиште дозволеним хоча б один формат документів"
     back = url_for("admin.admin_settings", tab="approval" if legacy else tab)
+    if not errors and (error := _check_login_switch(changes, g.user["email"])):
+        errors["login_methods"] = error
     if errors:
         for message in errors.values():
             flash(message, "error")
@@ -211,7 +244,7 @@ def admin_settings(*, context):
 # ---------------------------------------------------------------- експорт / імпорт
 
 @bp.route("/admin/settings/export")
-@auth.login_required
+@login_required
 @requires("admin")
 def admin_settings_export(*, context):
     data = {"system": "Система заявок на оплату", "exported_at": date.today().isoformat(),
@@ -232,7 +265,7 @@ def _import_preview():
 
 
 @bp.route("/admin/settings/import", methods=["POST"])
-@auth.login_required
+@login_required
 @requires("admin")
 def admin_settings_import(*, context):
     back = url_for("admin.admin_settings", tab="data") + "#import"
@@ -257,7 +290,7 @@ def admin_settings_import(*, context):
 
 
 @bp.route("/admin/settings/import/apply", methods=["POST"])
-@auth.login_required
+@login_required
 @requires("admin")
 def admin_settings_import_apply(*, context):
     pending = session.pop(IMPORT_KEY, None)
@@ -267,6 +300,8 @@ def admin_settings_import_apply(*, context):
         return redirect(back)
     # Ще раз перевірити: між переглядом і застосуванням налаштування могли змінитися
     changes, errors, _ = schema.parse_import({"settings": pending["changes"]}, app_settings.get)
+    if not errors and (error := _check_login_switch(changes, g.user["email"])):
+        errors = [error]
     if errors:
         for message in errors:
             flash(message, "error")

@@ -105,6 +105,27 @@ SMTP, незалежно від «Розсилка увімкнена»; вим�
 - API permissions → Microsoft Graph (Delegated): `User.ReadBasic.All`, `GroupMember.ReadWrite.All`,
   `GroupMember.Read.All` → Grant admin consent
 
+### Вхід через Google (ролі в системі)
+«Налаштування → Дані й система → Вхід у систему» (`login_methods`):
+- **Microsoft** (за замовчуванням) — як описано вище, ролі в групах Azure;
+- **Google і Microsoft** — співробітники входять робочим акаунтом Google (той самий, що й пошта Google Workspace),
+  вхід через Microsoft лишається. Ролі зберігаються в системі (`user_roles`, у базі або `/home/data/user_roles.json`)
+  і змінюються в картці користувача — діють одразу. Нового співробітника додають за робочою поштою;
+- **Лише Google** — через Microsoft входять тільки `ADMIN_EMAILS` (запасний вхід, кнопка внизу сторінки входу).
+
+Під час перемикання з Microsoft ролі з груп Azure автоматично переносяться в систему (токен самого додатку,
+`GroupMember.Read.All`); якщо Graph недоступний — вхід не перемикається. Людину на вході знаходять за поштою, тож
+її заявки й налаштування (Entra id) лишаються її. Повернення до Microsoft — ролі знову з груп Azure (зміни,
+зроблені в системі, туди не переносяться). Керівник відділу й «бачить заявки відділу» — як і раніше, з картки.
+
+Змінні App Service (без них вибір Google недоступний, діє Microsoft):
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` — OAuth-клієнт «Web application» у Google Cloud Console
+  (доступ до консолі адміністратора Workspace не потрібен; OAuth consent screen — Internal або External);
+- `GOOGLE_ALLOWED_DOMAINS` — домени пошти через кому, напр. `ftpua.com` (без них не пускаємо нікого).
+
+Authorized redirect URI клієнта: `https://<сайт>/auth/google/callback` (локально `http://localhost:5000/auth/google/callback`).
+Сторінка входу — `/login`, вихід — `/auth/logout` (Google — забути сеанс; Microsoft — ще й вихід із Microsoft).
+
 Маршрут погодження: Ініціатор → Бухгалтер → Фіндиректор → Оплата. Режим задається в «Адмініструванні →
 Налаштування процесу» (`data/app_settings.json`, на Azure — `/home/data/`):
 - **послідовно** — фіндиректор отримує заявку після погодження бухгалтера;

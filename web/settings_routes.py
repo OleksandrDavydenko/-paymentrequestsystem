@@ -11,14 +11,14 @@ import telegram_notify
 import user_prefs
 import workflow as wf
 
-from web.auth import auth, _deciding_roles, requires
+from web.auth import _deciding_roles, login_required, requires
 
 
 bp = Blueprint("settings", __name__)
 
 
 @bp.route("/settings/notifications", methods=["GET", "POST"])
-@auth.login_required
+@login_required
 @requires()
 def notification_settings(*, context):
     email = g.user["email"]
@@ -72,7 +72,7 @@ def _send_address_confirmation(email, alt_email):
 
 
 @bp.route("/settings/notifications/address", methods=["POST"])
-@auth.login_required
+@login_required
 @requires()
 def notification_address(*, context):
     email = g.user["email"]
@@ -117,7 +117,7 @@ def notification_address(*, context):
 
 
 @bp.route("/settings/notifications/confirm/<token>")
-@auth.login_required
+@login_required
 @requires()
 def notification_address_confirm(token, *, context):
     email = g.user["email"]
