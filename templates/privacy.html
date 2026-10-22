@@ -3,7 +3,8 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Конфіденційність — Система заявок на оплату</title>
+  <meta name="robots" content="noindex">
+  <title>Політика конфіденційності</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" sizes="any">
   <style>
@@ -22,40 +23,43 @@
 <body>
   <div class="box">
     <h1>Політика конфіденційності</h1>
-    <p class="muted">Система заявок на оплату — внутрішній сервіс компанії для подання й погодження заявок на оплату.</p>
+    <p class="muted">Сервіс призначений лише для користувачів, яким адміністратор надав доступ.</p>
 
     <h2>Які дані ми отримуємо під час входу</h2>
-    <p>Коли ви входите через Google або Microsoft, система отримує лише ваше ім'я та адресу електронної пошти
+    <p>Коли ви входите через Google або Microsoft, сервіс отримує лише ваше ім'я та адресу електронної пошти
       й підтвердження, що пошту перевірено. Пароль ми не бачимо й не зберігаємо — його перевіряє Google або Microsoft.
-      Доступу до вашої пошти, файлів, контактів чи календаря система не має.</p>
+      Доступу до вашої пошти, файлів, контактів чи календаря сервіс не має.</p>
 
     <h2>Навіщо</h2>
     <ul>
-      <li>щоб упізнати вас і показати сторінки відповідно до ролей, які вам призначив адміністратор;</li>
-      <li>щоб указати вас автором або погоджувачем у заявках та їхній історії;</li>
-      <li>щоб надсилати сповіщення про заявки (пошта, Telegram — якщо ви їх увімкнули).</li>
+      <li>щоб упізнати вас і надати доступ, який вам призначив адміністратор;</li>
+      <li>щоб зазначати вас у записах, які ви створюєте або погоджуєте;</li>
+      <li>щоб надсилати вам сповіщення, якщо ви їх увімкнули.</li>
     </ul>
 
-    <h2>Де зберігаються й кому доступні</h2>
-    <p>Дані зберігаються в базі даних системи в Microsoft Azure. Їх бачать лише користувачі системи в межах своїх
-      ролей і адміністратори. Третім особам дані не передаються й не продаються; реклама й аналітика не використовуються.</p>
+    <h2>Кому доступні</h2>
+    <p>Дані бачать лише користувачі сервісу в межах наданого їм доступу та адміністратори. Третім особам дані
+      не передаються й не продаються; реклама й аналітика не використовуються.</p>
 
     <h2>Як видалити або змінити</h2>
-    <p>Щоб змінити дані чи закрити доступ, зверніться до адміністратора системи. Записи в історії заявок
-      зберігаються як частина фінансового документообігу компанії.</p>
+    <p>Щоб змінити дані чи закрити доступ, зверніться до адміністратора. Записи про дії в сервісі можуть
+      зберігатися як частина документообігу.</p>
 
+    {% if contact %}
     <h2>Контакт</h2>
-    <p>Адміністратор системи: <a href="mailto:{{ contact }}">{{ contact }}</a></p>
+    <p>Адміністратор: <a href="mailto:{{ contact }}">{{ contact }}</a></p>
+    {% endif %}
 
     <hr>
     <h1 style="font-size:18px">Privacy policy (summary)</h1>
-    <p>Payment Request System is an internal company service. When you sign in with Google or Microsoft we receive only
-      your name and verified email address; we never see your password and have no access to your mailbox, files,
-      contacts or calendar. The data is used to identify you, apply the roles assigned by an administrator, record you
-      in request history and send request notifications. It is stored in the system's database in Microsoft Azure,
-      is visible only to system users within their roles and to administrators, and is never sold or shared with third
-      parties. To change or remove your data, contact the administrator: <a href="mailto:{{ contact }}">{{ contact }}</a>.</p>
-    <p class="muted"><a href="{{ url_for('login.login_page') }}">← Увійти в систему</a></p>
+    <p>This service is intended only for users granted access by an administrator. When you sign in with Google or
+      Microsoft we receive only your name and verified email address; we never see your password and have no access
+      to your mailbox, files, contacts or calendar. The data is used to identify you, apply the access assigned by an
+      administrator, record you in the entries you create or approve and send notifications you have enabled. It is
+      visible only to users of the service within their access and to administrators, and is never sold or shared with
+      third parties.{% if contact %} To change or remove your data, contact the administrator:
+      <a href="mailto:{{ contact }}">{{ contact }}</a>.{% endif %}</p>
+    <p class="muted"><a href="{{ url_for('login.login_page') }}">← Увійти</a></p>
   </div>
 </body>
 </html>

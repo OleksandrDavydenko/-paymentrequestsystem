@@ -34,8 +34,9 @@ page = lambda url: c.get(url).get_data(as_text=True)
 r = c.get("/requests")
 check("not logged in -> login page with next", r.status_code == 302 and "/login?next=/requests" in r.headers["Location"])
 r = c.get("/privacy")
-check("privacy page: public, contact", r.status_code == 200 and "Політика конфіденційності" in r.get_data(as_text=True)
-      and "mailto:boss@ftpua.com" in r.get_data(as_text=True))
+html = r.get_data(as_text=True)
+check("privacy page: public, contact, nothing about the system", r.status_code == 200 and "Політика конфіденційності" in html
+      and "mailto:boss@ftpua.com" in html and not any(w in html for w in ("заяв", "Azure", "оплат", "Payment")))
 html = page("/login")
 check("no Google client: only Microsoft button", "Увійти через Microsoft" in html and "Увійти через Google" not in html
       and 'href="/privacy"' in html)
@@ -62,7 +63,7 @@ check("notifications: role members from the system", [p["email"] for p in m._rol
 ms_logout()
 html = page("/login?next=/requests")
 check("both: Google, external link, Microsoft", "Увійти через Google" in html and "Увійти через Microsoft" in html
-      and "Зовнішній користувач — увійти іншим акаунтом Google" in html)
+      and "Увійти іншим акаунтом Google" in html and "Зовнішній" not in html)
 
 def id_token(**over):
     claims_ = {"iss": "https://accounts.google.com", "aud": "cid.apps.googleusercontent.com", "exp": time.time() + 600,
@@ -174,8 +175,8 @@ check("switched to google only", wa.login_mode() == "google")
 c.get("/auth/logout")
 check("logout forgets google session", c.get("/requests").status_code == 302)
 html = page("/login")
-check("google only: Google button + admin fallback", "Увійти через Google" in html and "Увійти через Microsoft" not in html
-      and "Вхід адміністратора через Microsoft" in html)
+check("google only: only Google buttons", "Увійти через Google" in html and "Microsoft" not in html)
+check("hidden admin fallback address", "Увійти через Microsoft" in page("/login?method=microsoft"))
 ms_login("ini@ftpua.com")
 check("microsoft non-admin blocked", c.get("/requests").status_code == 302)
 ms_login("boss@ftpua.com")

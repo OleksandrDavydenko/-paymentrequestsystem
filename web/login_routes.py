@@ -45,8 +45,7 @@ def login_page(error=None):
         google_url=url_for("login.google_start", next=nxt) if mode != "microsoft" else None,
         external_url=url_for("login.google_start", next=nxt, external=1) if mode != "microsoft" else None,
         microsoft_url=_microsoft_url(nxt) if mode != "google" or request.args.get("method") == "microsoft"
-        else None,
-        admin_fallback_url=_microsoft_url(nxt) if mode == "google" else None)
+        else None)
 
 
 @bp.route("/privacy")
