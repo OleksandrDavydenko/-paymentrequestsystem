@@ -29,6 +29,11 @@ m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 graph.group_members = lambda t, gid: []
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 H = {"X-Api-Key": "k"}
 
 login("author@ftpua.com", ["g-i"])
@@ -68,7 +73,7 @@ page = c.get("/admin/notifications").get_data(as_text=True)
 check("journal page", "Журнал сповіщень" in page and "cfo@ftpua.com" in page and "надіслано" in page)
 check("filter channel", "author@ftpua.com" not in c.get("/admin/notifications?channel=email&q=cfo").get_data(as_text=True).split("<tbody>")[1])
 check("filter skipped", "не надсилалось" in c.get("/admin/notifications?status=skipped").get_data(as_text=True))
-check("admin users: link to journal", "📜 Журнал сповіщень" in c.get("/admin/users").get_data(as_text=True))
+check("admin users: link to journal", "📜 Журнал сповіщень" in admin_page())
 login("author@ftpua.com", ["g-i"])
 check("non-admin 403", c.get("/admin/notifications").status_code == 403)
 

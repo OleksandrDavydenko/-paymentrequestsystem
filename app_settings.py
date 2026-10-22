@@ -8,39 +8,10 @@ import threading
 
 import clock
 import docstore
+import settings_schema
 
-DEFAULTS = {
-    "approval_mode": "sequential",
-    "mail_enabled": False,
-    "mail_sender": "",
-    "mail_sender_name": "Система заявок на оплату",
-    "smtp_host": "smtp.gmail.com",
-    "smtp_port": 587,
-    "smtp_security": "starttls",
-    "smtp_username": "",
-    "smtp_password": "",  # зашифрований (secret_box)
-    "allow_custom_email": False,  # користувачі можуть вказати іншу пошту для сповіщень
-    "error_alerts": True,  # листи адміністраторам про помилки сайту (alerts.py)
-    "dept_head_mode": "view",  # керівник відділу: view — лише бачить заявки відділу, approve — погоджує першим
-    "pending_cp_payment": "block",  # контрагент, якого ще немає в 1С: block — не можна «Оплачено», allow — з попередженням
-    # Організації, які НЕ можна вибирати в заявках (коди). Порожньо — дозволені всі, зокрема нові з 1С.
-    "disabled_organizations": [],
-    # Хто з бухгалтерів веде організацію: {код: {"cash": роль, "bank": роль}}; немає — автоматично за правилом
-    "org_accountants": {},
-    # Бухгалтер обов'язково вибирає «Вид оплати» при погодженні (і перед оплатою), якщо йому є що вибрати
-    "require_payment_account": True,
-    # Готівка через автора заявки: після «Оплачено» автор підтверджує, що передав гроші підряднику
-    "cash_handover_confirm": True,
-    "cash_handover_remind_days": 1,  # нагадувати автору кожні N днів (0 — не нагадувати)
-    # Розподіл обов'язків: автор не погоджує власну заявку, навіть якщо має роль погоджувача
-    "no_self_approval": False,
-    "cfo_mode": "approve",
-    "cfo_threshold_usd": 1000,  # режим «Погоджує від суми»: фіндиректор погоджує заявки від цієї суми в еквіваленті USD  # фіндиректор: approve — погоджує, observe — лише спостерігає (погоджує тільки бухгалтер)
-    "cp_onec_owner": "accountant",  # хто заводить нового контрагента в 1С і прив'язує в заявці: accountant | admin
-    "data_mode": "work",
-    "mail_enabled_work": None,  # стан «Розсилка увімкнена» до переходу в тестовий режим — відновлюється при поверненні
-    "org_field_mode": "organization",  # що вибирає ініціатор: organization — організацію, payer — лише платника  # що показує система, коли підключено базу: work — робочі заявки, test — демо-дані
-}
+# Значення за замовчуванням, назви й перевірка — у реєстрі налаштувань (settings_schema.py)
+DEFAULTS = settings_schema.defaults()
 
 _lock = threading.Lock()
 _data = None
@@ -99,10 +70,16 @@ def info(key):
 
 
 def set(key, value, updated_by):
+    """Зберегти значення; зміна потрапляє в журнал змін налаштувань (settings_log)."""
     with _lock:
+        entry = _load().get(key)
+        old = entry["value"] if entry else DEFAULTS.get(key)
         _load()[key] = {"value": value, "updated_by": updated_by,
                         "updated_at": clock.now().isoformat(timespec="seconds")}
         docstore.write("app_settings", _path(), _data)
+    if old != value and key != "mail_enabled_work":
+        import settings_log
+        settings_log.record(key, old, value, updated_by)
 
 
 # Інший процес сайту змінив документ — перечитати (docstore.sync)

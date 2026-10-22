@@ -30,6 +30,11 @@ def login(email, groups):
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 def flush():
     mailer.wait(); out = list(sent); sent.clear(); return out
 for k, v in {"mail_enabled": True, "mail_sender": "noreply@ftpua.com"}.items():
@@ -210,7 +215,7 @@ flush()
 
 # ---------- налаштування в адмінці
 login("admin@ftpua.com", ADMIN)
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("admin settings block", "Готівка через автора заявки" in page and 'name="cash_handover_remind_days"' in page)
 c.post("/admin/settings", data={"approval_mode": "sequential", "dept_head_mode": "view", "pending_cp_payment": "block",
                                 "cash_handover_sent": "1", "cash_handover_confirm": "1", "cash_handover_remind_days": "3"})

@@ -31,6 +31,11 @@ graph.group_members = lambda t, gid: [{"id": u, "name": u.split("@")[0].title(),
 graph.get_user = lambda t, uid: {"id": uid, "name": uid.split("@")[0].title(), "email": uid}
 graph.add_member = graph.remove_member = lambda *a, **k: None
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 H = {"X-Api-Key": "k"}
 def flush():
     mailer.wait(); out = list(sent); sent.clear(); return out
@@ -79,7 +84,7 @@ c.post("/api/telegram/linked", headers=H, json={"emails": ["res.personal@gmail.c
 login("admin@ftpua.com", ["g-a"])
 page = c.get("/admin/users/res@ftpua.com").get_data(as_text=True)
 check("card: found via manual email", "Знайдено в боті" in page and "вказаною вручну: res.personal@gmail.com" in page)
-lst = c.get("/admin/users").get_data(as_text=True)
+lst = admin_page()
 check("users list: telegram mark (manual)", "✈ Telegram (вручну: res.personal@gmail.com)" in lst)
 login("res@ftpua.com", ["g-r"])
 check("settings: found", "Вас знайдено" in c.get("/settings/notifications").get_data(as_text=True))

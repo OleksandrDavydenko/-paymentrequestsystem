@@ -29,6 +29,11 @@ def login(email, groups):
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 def flush():
     mailer.wait(); out = list(sent); sent.clear(); return out
 for k, v in {"mail_enabled": True, "mail_sender": "noreply@ftpua.com"}.items():
@@ -58,7 +63,7 @@ for r in db.list_all():
 
 # ---------- адмінка
 login("admin@ftpua.com", ADMIN)
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("admin: cfo block + cp owner block", "Лише спостерігає" in page and "Хто заводить нового контрагента в 1С" in page)
 
 # заявка, відправлена ДО перемикання (фіндиректор погоджує)
@@ -70,8 +75,8 @@ check("observe saved + flash", app_settings.get("cfo_mode") == "observe" and "ф
 # радіокнопки порядку неактивні й не надсилаються — режим лишається попереднім
 html = settings(cfo_mode="observe", approval_mode="")
 check("disabled approval_mode not posted -> keeps value", app_settings.get("approval_mode") == "sequential")
-check("admin page: approval order disabled", 'id="cfo-off-note" ' in c.get("/admin/users").get_data(as_text=True)
-      and "disabled" in c.get("/admin/users").get_data(as_text=True).split('name="approval_mode"')[1][:120])
+check("admin page: approval order disabled", 'id="cfo-off-note" ' in admin_page()
+      and "disabled" in admin_page().split('name="approval_mode"')[1][:120])
 
 # ---------- маршрут без фіндиректора
 flush()
@@ -148,7 +153,7 @@ check("accountant: link -> 403", c.post(f"/counterparties/{new['id']}/link", dat
 login("admin@ftpua.com", ADMIN)
 page = c.get(f"/requests/{rid4}").get_data(as_text=True)
 check("admin: link block", 'class="card cp-link"' in page)
-adm = c.get("/admin/users").get_data(as_text=True)
+adm = admin_page()
 check("admin settings: pending list links to request", f"/requests/{rid4}#cp-link" in adm)
 c.post(f"/counterparties/{new['id']}/link", data={"onec_id": "6", "next": f"/requests/{rid4}"})
 check("admin linked", db.get_request(rid4)["counterparty_id"] == "6")

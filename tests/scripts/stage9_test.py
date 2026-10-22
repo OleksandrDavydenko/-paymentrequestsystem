@@ -63,6 +63,11 @@ def login(email, groups):
     claims.clear(); claims.update({"name": email, "preferred_username": email, "oid": email, "groups": groups})
 m.auth._auth.get_user = lambda: dict(claims)
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 BASE = {"pay_date": "2026-10-10", "counterparty_id": "1", "organization_id": "1", "currency": "UAH",
         "amount": "100", "payment_form": "bank", "action": "save"}
 login("i@ftpua.com", ["g-i"])
@@ -93,7 +98,7 @@ graph.group_members = lambda t, g: []
 n = calls["n"]
 r = c.post("/admin/expense-items/refresh")
 check("admin refresh -> PBI called", r.status_code == 302 and calls["n"] == n + 1)
-t = c.get("/admin/users").get_data(as_text=True)
+t = admin_page()
 check("admin page shows directory status", "Довідник статей витрат" in t and "Power BI" in t)
 print("ALL OK" if ok else "SOME FAILED")
 login("res@ftpua.com", ["g-r"])

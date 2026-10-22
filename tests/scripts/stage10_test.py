@@ -86,6 +86,11 @@ m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".j
 import graph
 graph.group_members = lambda t, g: [{"id": "u-ira", "name": "Ірина", "email": "ira@ftpua.com"}] if g == "g-i" else []
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 BASE = {"pay_date": "2026-10-10", "counterparty_id": "1", "organization_id": "1", "currency": "UAH",
         "amount": "100", "payment_form": "bank", "action": "save"}
 
@@ -99,14 +104,14 @@ check("no budget, empty code -> message", "не призначено статт�
 
 check("non-admin cannot set budget", c.post("/admin/users/u-ira", data={"mode": "all"}).status_code == 403)
 login("od@ftpua.com", ["g-a"], "u-od")
-t = c.get("/admin/users").get_data(as_text=True)
+t = admin_page()
 check("admin table shows 'Не налаштовано'", "Не налаштовано" in t and "/admin/users/u-ira" in t)
 r = c.post("/admin/users/u-ira", data={"roles": ["initiator"], "direct": "1", "mode": "selected",
                                        "departments": ["БАА", "Невідомий"]})
 check("admin saved budget", r.status_code == 302)
 saved = json.load(open(os.environ["USER_BUDGET_FILE"], encoding="utf-8"))["u-ira"]
 check("file: direct + BAA, unknown dropped, audit", saved["direct"] and saved["departments"] == ["БАА"] and saved["updated_by"] == "od@ftpua.com")
-t = c.get("/admin/users").get_data(as_text=True)
+t = admin_page()
 check("chips in table", "bchip-direct" in t and ">БАА<" in t)
 ub.reload()
 check("reload from file keeps settings", ub.get("u-ira")["departments"] == ["БАА"])

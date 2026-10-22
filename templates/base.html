@@ -37,7 +37,7 @@
       <a href="{{ url_for('lists.admin_requests') }}" class="{{ 'active' if request.endpoint == 'lists.admin_requests' }}">Усі заявки</a>
       {% endif %}
       {% if 'admin' in roles %}
-      <a href="{{ url_for('admin.admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin.admin_users') }}">Адміністрування</a>
+      <a href="{{ url_for('admin.admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}">Адміністрування</a>
       {% endif %}
     </nav>
     {% if user_name %}
@@ -63,7 +63,7 @@
   {% if test_mode %}
   <div class="test-banner">Тестовий режим: показано демо-дані, нові заявки й зміни не зберігаються в базі,
     {{ 'email-розсилку вимкнено' if test_mail_muted else 'сповіщення надсилаються з позначкою «[ТЕСТ]»' }}.
-    {% if 'admin' in roles %}<a href="{{ url_for('admin.admin_users') }}#process-settings">Повернутися до робочої бази</a>{% endif %}</div>
+    {% if 'admin' in roles %}<a href="{{ url_for('admin.admin_settings', tab='data') }}">Повернутися до робочої бази</a>{% endif %}</div>
   {% endif %}
   <main class="{% block main_class %}{% endblock %}">
     {% with messages = get_flashed_messages(with_categories=true) %}

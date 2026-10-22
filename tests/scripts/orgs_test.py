@@ -16,12 +16,17 @@ def login(email, groups):
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 BASE = {"pay_date": "2026-10-20", "counterparty_id": "1", "expense_code": "01.001", "currency": "UAH", "amount": "10", "payment_form": "bank"}
 check("default: all allowed", set(orgs.options()) == {"1", "2", "3", "4"})
 login("i@ftpua.com", ["g-i"])
 check("non-admin 403", c.post("/admin/organizations", data={"allowed": ["1"]}).status_code == 403)
 login("od@ftpua.com", ["g-a"])
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("admin section listed", 'id="organizations"' in page and "дозволено 4 з 4" in page)
 r = c.post("/admin/organizations", data={}, follow_redirects=True)
 check("cannot disable all", "хоча б одну" in r.get_data(as_text=True) and app_settings.get("disabled_organizations") == [])
@@ -58,6 +63,6 @@ check("in-flight request moves to newly assigned accountant", db.get_request(rid
 login("res@ftpua.com", ["g-r"])
 check("old accountant no longer sees it", db.get_request(rid)["number"] not in c.get("/approvals").get_data(as_text=True))
 login("od@ftpua.com", ["g-a"])
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("admin table shows selects", 'name="acc_bank_1"' in page and "Автоматично" in page)
 print("ALL OK" if ok else "SOME FAILED")

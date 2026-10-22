@@ -33,6 +33,11 @@ graph.add_member = lambda t, g, u: calls.append(("add", g, u))
 graph.remove_member = lambda t, g, u: calls.append(("remove", g, u))
 c = m.app.test_client()
 
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
+
 # Бухгалтер при погодженні вибирає «Вид оплати» — у старих тестах підставляємо перший доступний
 import payment_accounts as _pa, storage as _md
 _orig_post = c.post
@@ -168,7 +173,7 @@ flush()
 # ---------- 6. адмінка
 c.post("/admin/settings", data={"approval_mode": "parallel", "dept_head_mode": "approve"})
 check("admin saves dept_head_mode", app_settings.get("dept_head_mode") == "approve" and app_settings.get("approval_mode") == "parallel")
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("route summary shown", "Керівник відділу → Бухгалтер + Фіндиректор (одночасно) → Оплата" in page)
 check("departments source shown", "Відділи співробітників" in page and "Мокові дані" in page)
 graph.group_members = lambda t, g: [{"id": "new@ftpua.com", "name": "New", "email": "new@ftpua.com"}] if g == "g-i" else []
@@ -185,7 +190,7 @@ login("od@ftpua.com", ["g-a"])
 page = c.get("/admin/requests?dep=LOG").get_data(as_text=True); print("DEPSEL", "Усі відділи" in page, [r["number"] for r in db.list_all() if f">{r['number']}<" in page and r.get("department") != "LOG"])
 check("department filter on all requests", 'name="dep"' in page and all(
     r["department"] == "LOG" for r in db.list_all() if f">{r['number']}<" in page))
-adm = c.get("/admin/users").get_data(as_text=True)
+adm = admin_page()
 check("no Azure column for dept head; no departments section", "Кер. відділу" not in adm and 'id="departments"' not in adm)
 check("non-head cannot open /department", (login("i@ftpua.com", INIT), c.get("/department").status_code)[1] == 403)
 print("ALL OK" if ok else "SOME FAILED")

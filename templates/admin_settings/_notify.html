@@ -1,0 +1,151 @@
+<div class="card mail-settings" id="mail-settings">
+  <div class="toolbar">
+    <h2 style="margin:0">Email-сповіщення</h2>
+    <span class="badge {{ 'green' if mail.mail_enabled else 'grey' }}">{{ 'Увімкнено' if mail.mail_enabled else 'Вимкнено' }}</span>
+    {% if test_mode %}<span class="badge amber" title="«Налаштування → Дані й система»">тестовий режим</span>{% endif %}
+  </div>
+  <form method="post" action="{{ url_for('admin.admin_mail') }}" class="mail-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="notif-master">
+      <input type="checkbox" name="mail_enabled" value="1" {{ 'checked' if mail.mail_enabled }}>
+      <span><strong>Розсилка увімкнена</strong><span class="muted"> — якщо вимкнути, листи не отримує ніхто</span>
+        {% if test_mode %}<span class="mode-hint">Зараз тестовий режим («Налаштування → Дані й система»): при переході в нього
+          розсилку вимкнено автоматично. Якщо ввімкнути — листи й Telegram про тестові заявки підуть справжнім людям
+          з позначкою «[ТЕСТ]». Після повернення до робочої бази розсилка стане такою, як була до тестового режиму.
+          «Надіслати тестовий лист собі» працює завжди.</span>{% endif %}</span>
+    </label>
+    <label class="notif-master">
+      <input type="checkbox" name="error_alerts" value="1" {{ 'checked' if mail.error_alerts }}>
+      <span><strong>Листи адміністраторам про помилки сайту</strong><span class="muted"> — якщо сторінка не відкрилася
+        через збій або не спрацювала фонова задача; надсилаються незалежно від «Розсилка увімкнена» й тестового
+        режиму, та сама помилка — не частіше ніж раз на годину</span></span>
+    </label>
+    <label class="notif-master">
+      <input type="checkbox" name="allow_custom_email" value="1" {{ 'checked' if mail.allow_custom_email }}>
+      <span><strong>Дозволити користувачам вказувати іншу пошту</strong><span class="muted"> — для сповіщень, з підтвердженням
+        посиланням з листа; якщо вимкнути, листи знову йдуть на робочу пошту</span></span>
+    </label>
+    <div class="mail-grid">
+      <label for="mail_sender">Пошта відправника</label>
+      <input type="email" id="mail_sender" name="mail_sender" value="{{ mail.mail_sender }}" placeholder="noreply@ftpua.com">
+      <label for="mail_sender_name">Ім'я відправника</label>
+      <input type="text" id="mail_sender_name" name="mail_sender_name" value="{{ mail.mail_sender_name }}">
+    </div>
+
+    <div class="budget-section-title">SMTP-сервер</div>
+    <div class="smtp-presets">
+      <span class="muted">Шаблон:</span>
+      {% for code, (label, host, port, sec) in SMTP_PRESETS.items() %}
+      <button type="button" class="chip smtp-preset" data-host="{{ host }}" data-port="{{ port }}" data-sec="{{ sec }}">{{ label }}</button>
+      {% endfor %}
+    </div>
+    <div class="mail-grid">
+      <label for="smtp_host">Сервер</label>
+      <input type="text" id="smtp_host" name="smtp_host" value="{{ mail.smtp_host }}" placeholder="smtp.gmail.com" autocomplete="off">
+      <label for="smtp_port">Порт</label>
+      <div class="smtp-port-row">
+        <input type="number" id="smtp_port" name="smtp_port" value="{{ mail.smtp_port }}" min="1" max="65535">
+        <select id="smtp_security" name="smtp_security" aria-label="Шифрування">
+          {% for code, label in SMTP_SECURITY.items() %}
+          <option value="{{ code }}" {{ 'selected' if code == mail.smtp_security }}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <label for="smtp_username">Логін</label>
+      <div>
+        <input type="text" id="smtp_username" name="smtp_username" value="{{ mail.smtp_username }}"
+               placeholder="{{ mail.mail_sender or 'зазвичай — та сама адреса' }}" autocomplete="off">
+        <div class="muted smtp-pass-info">Обліковий запис, яким система входить на поштовий сервер.
+          Залиште порожнім — буде використано пошту відправника. Пароль додатку створюється саме для цього запису.</div>
+      </div>
+      <label for="smtp_password">Пароль додатку</label>
+      <div>
+        <div class="pass-field">
+          <input type="password" id="smtp_password" name="smtp_password" autocomplete="new-password" spellcheck="false"
+                 placeholder="{{ '••••••••••••••••' if mail_password.value else 'вставте пароль додатку' }}">
+          {% if mail_password.value %}
+          <button type="button" class="pass-btn" id="pass-show" title="Показати збережений пароль" aria-label="Показати пароль">👁</button>
+          <button type="button" class="pass-btn" id="pass-copy" title="Скопіювати збережений пароль" aria-label="Скопіювати пароль">⧉</button>
+          {% endif %}
+        </div>
+        <div class="muted smtp-pass-info" id="pass-info">
+          {% if mail_password.value %}
+            🔒 Збережено зашифрованим{% if mail_password.updated_by %} · {{ mail_password.updated_by }}, {{ mail_password.updated_at.replace('T', ' ') }}{% endif %}.
+            Щоб замінити — вставте новий.
+            <label class="inline-check"><input type="checkbox" name="smtp_password_clear" value="1"> видалити</label>
+          {% else %}
+            <span class="pass-missing">Пароль не задано — Gmail не прийме лист без нього.</span>
+            Для Gmail це «пароль додатку» (16 символів), не звичайний пароль.
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <p class="muted">Підійде будь-яка пошта з SMTP: Gmail / Google Workspace, Microsoft 365, SendPulse тощо.
+      Користувачі вибирають події в меню «✉ Сповіщення на пошту».</p>
+    <div class="mail-actions">
+      <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+      <button type="submit" class="btn btn-sm" formaction="{{ url_for('admin.admin_mail_test') }}" {{ 'disabled' if not (mail.mail_sender and mail.smtp_host) }}
+              title="Лист прийде на вашу адресу">✉ Надіслати тестовий лист собі</button>
+    </div>
+  </form>
+  <div class="tg-admin" id="telegram">
+    <div class="budget-section-title">Telegram-бот</div>
+    {% if telegram.enabled %}
+    <p style="margin:0 0 6px"><span class="badge green">Підключено</span>
+      <span class="muted">бот востаннє забирав повідомлення: {{ telegram.last_poll | dt if telegram.last_poll else 'ще ні (після перезапуску сайту)' }}
+        · у черзі: {{ telegram.counts.get('queued', 0) + telegram.counts.get('taken', 0) }}
+        · надіслано: {{ telegram.counts.get('sent', 0) }}
+        · знайдено в боті: {{ telegram.linked }} людей{% if telegram.linked_updated %} ({{ telegram.linked_updated.replace('T', ' ')[:16] }}){% endif %}</span></p>
+    <form method="post" action="{{ url_for('admin.admin_telegram_test') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-sm">✈ Надіслати тестове повідомлення в Telegram собі</button>
+    </form>
+    {% else %}
+    <p class="muted" style="margin:0">Не підключено. Користувачі зможуть вибрати Telegram у своїх налаштуваннях, коли в App Service
+      з'явиться <code>TELEGRAM_BOT_KEY</code> (той самий секрет, що й <code>PAYREQ_TELEGRAM_KEY</code> у бота на Heroku).</p>
+    {% endif %}
+  </div>
+  <p style="margin:14px 0 0"><a class="btn btn-sm" href="{{ url_for('admin.admin_notifications') }}">📜 Журнал сповіщень</a>
+    <span class="muted">— пошта й Telegram: кому, коли, про яку заявку, результат; кому не надіслано й чому.
+      {% if mail_problems %}<a href="{{ url_for('admin.admin_notifications', status='problems') }}" class="err">Проблем: {{ mail_problems }}</a>{% endif %}</span></p>
+</div>
+
+<script>
+  // Пароль SMTP: показати (розмитим, чітко при наведенні) і скопіювати. Береться окремим запитом.
+  (function () {
+    const input = document.getElementById('smtp_password');
+    const show = document.getElementById('pass-show');
+    const copy = document.getElementById('pass-copy');
+    if (!show) return;
+    let cached = null;
+    async function load() {
+      if (cached !== null) return cached;
+      const r = await fetch('{{ url_for("admin.admin_mail_password") }}', {method: 'POST', headers: {'X-Requested-With': 'fetch',
+        'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content}});
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error || 'Не вдалося отримати пароль');
+      return (cached = data.password);
+    }
+    show.addEventListener('click', async () => {
+      try {
+        if (input.type === 'password' || !input.value) {
+          if (!input.value) input.value = await load();
+          input.type = 'text'; input.classList.add('revealed'); show.textContent = '🙈'; show.title = 'Сховати';
+        } else {
+          input.type = 'password'; input.classList.remove('revealed'); show.textContent = '👁'; show.title = 'Показати збережений пароль';
+        }
+      } catch (e) { alert(e.message); }
+    });
+    copy.addEventListener('click', async () => {
+      try {
+        await navigator.clipboard.writeText(input.value || await load());
+        copy.textContent = '✓'; setTimeout(() => { copy.textContent = '⧉'; }, 1500);
+      } catch (e) { alert(e.message); }
+    });
+  })();
+
+  // Шаблони SMTP: підставити сервер, порт і шифрування
+  document.querySelectorAll('.smtp-preset').forEach(b => b.addEventListener('click', () => {
+    document.getElementById('smtp_host').value = b.dataset.host;
+    document.getElementById('smtp_port').value = b.dataset.port;
+    document.getElementById('smtp_security').value = b.dataset.sec;
+  }));
+</script>

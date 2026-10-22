@@ -32,6 +32,11 @@ m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 import graph; graph.group_members = lambda t, g: []
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 def flush():
     mailer.wait(); out = list(sent); sent.clear(); return out
 to = lambda msgs: sorted(x["to"] for x in msgs)
@@ -46,9 +51,9 @@ SMTP = {"mail_enabled": "1", "mail_sender": "noreply@ftpua.com", "smtp_host": "s
         "smtp_security": "starttls", "smtp_password": "x"}
 c.post("/admin/mail", data=SMTP)
 check("allow_custom_email off by default", app_settings.get("allow_custom_email") is False)
-page = c.get("/admin/users").get_data(as_text=True)
-check("admin sections collapsible + toggle all", page.count("data-collapsible") == 5 and "sec-expand-all" in page
-      and "admin-sections.js" in page and "allow_custom_email" in page)
+page = admin_page()
+check("admin: settings in tabs, custom-email switch on 'Сповіщення'", 'class="tab' in page
+      and "allow_custom_email" in c.get("/admin/settings?tab=notify").get_data(as_text=True))
 
 # --- вимкнено: блоку немає, POST відхиляється
 login("i@ftpua.com", ["g-i"])
@@ -94,13 +99,13 @@ msgs = flush()
 check("author letter goes only to alt", "Me@Gmail.com" in to(msgs) and "i@ftpua.com" not in to(msgs))
 login("od@ftpua.com", ["g-a"])
 graph.group_members = lambda t, g: [{"id": "oid-i", "name": "I", "email": "i@ftpua.com"}] if g == "g-i" else []
-check("admin table shows alt address", "листи на: Me@Gmail.com" in c.get("/admin/users").get_data(as_text=True))
+check("admin table shows alt address", "листи на: Me@Gmail.com" in admin_page())
 
 # адмін вимкнув -> знову робоча, адреса зберігається
 c.post("/admin/mail", data=SMTP)
 check("disabled -> work email", user_prefs.delivery_address("i@ftpua.com", app_settings.get("allow_custom_email")) == "i@ftpua.com"
       and user_prefs.get("i@ftpua.com")["alt_email"] == "Me@Gmail.com")
-check("admin table hides alt when disabled", "листи на:" not in c.get("/admin/users").get_data(as_text=True))
+check("admin table hides alt when disabled", "листи на:" not in admin_page())
 c.post("/admin/mail", data={**SMTP, "allow_custom_email": "1"})
 
 # зміна адреси скидає підтвердження; протермінований токен

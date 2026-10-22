@@ -39,6 +39,11 @@ m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 c = m.app.test_client()
 
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
+
 check("db mode: work store empty (no demo)", db.list_all() == [] and db_sql.configured() and db.work_mode())
 h = c.get("/health")
 check("health: db, 0 requests", h.status_code == 200 and h.get_json()["db"] == db_sql.kind() and h.get_json()["requests"] == 0)
@@ -144,7 +149,7 @@ mailer.transport = lambda cfg, to, subject, html: sent.append(subject)
 for k, v in {"mail_enabled": True, "mail_sender": "noreply@ftpua.com"}.items():
     app_settings.set(k, v, "t")
 login("admin@ftpua.com", ["g-a"])
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("admin: data mode block", 'name="data_mode"' in page and "Тестові дані" in page)
 c.post("/admin/settings", data={"approval_mode": "sequential", "dept_head_mode": "view", "pending_cp_payment": "block",
                                 "cfo_mode": "approve", "cp_onec_owner": "accountant", "data_mode": "test"})
@@ -152,7 +157,7 @@ check("test mode on", app_settings.get("data_mode") == "test" and not db.work_mo
 check("test mode: demo requests shown", len(db.list_all()) > 10 and "000000020" in c.get("/admin/requests").get_data(as_text=True))
 check("banner for everyone", "Тестовий режим" in c.get("/admin/requests").get_data(as_text=True))
 check("banner: mail off", "email-розсилку вимкнено" in c.get("/admin/requests").get_data(as_text=True))
-admin_page = c.get("/admin/users").get_data(as_text=True)
+admin_page = admin_page()
 check("switching to test mode unticks 'mailing on', no separate switch",
       app_settings.get("mail_enabled") is False and app_settings.get("mail_enabled_work") is True
       and 'name="test_mode_mail"' not in admin_page and "розсилку вимкнено автоматично" in admin_page)

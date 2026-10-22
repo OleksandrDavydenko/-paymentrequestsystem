@@ -30,6 +30,11 @@ def login(email, groups):
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 def flush():
     mailer.wait(); out = list(sent); sent.clear(); return out
 INIT, RES, NON, CASH, CFO, ADMIN = ["g-i"], ["g-r"], ["g-n"], ["g-c"], ["g-f"], ["g-a"]
@@ -62,7 +67,7 @@ check("no rate -> None", rates.to_usd(5, "TUSD")[0] is None)
 
 # ---------- адмінка: режим «від суми»
 login("admin@ftpua.com", ADMIN)
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("admin: threshold mode + input + rates status", "Погоджує від суми" in page and 'name="cfo_threshold_usd"' in page and "Курси валют" in page)
 r = c.post("/admin/settings", data={**SETTINGS, "cfo_mode": "threshold", "cfo_threshold_usd": "0"}, follow_redirects=True)
 check("threshold 0 rejected", app_settings.get("cfo_mode") == "approve" and "більшу за 0" in r.get_data(as_text=True))

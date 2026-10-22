@@ -1,0 +1,225 @@
+"""Адміністрування → Налаштування: вкладки, збереження, журнал змін, експорт / імпорт.
+
+Що є налаштуванням, його назва, вкладка й перевірка — у реєстрі settings_schema.py. Пошта (SMTP)
+і організації мають власні форми (admin_routes.py) й лише показуються на своїх вкладках.
+"""
+import json
+from datetime import date
+
+from flask import Response, flash, g, redirect, render_template, request, session, url_for
+
+import app_settings
+import counterparties
+import currencies
+import db_sql
+import departments
+import expense_items
+import mailer
+import notify_log
+import organizations
+import payment_types
+import rates
+import settings_log
+import settings_schema as schema
+import storage as db
+import telegram_notify
+import workflow as wf
+
+from web.admin_routes import bp
+from web.auth import auth, requires
+
+ROUTE_KEYS = ("approval_mode", "dept_head_mode", "cfo_mode", "cfo_threshold_usd")
+IMPORT_KEY = "settings_import"  # зміни з файлу, що чекають підтвердження (у сеансі)
+
+
+def _switch_mail_for_mode(data_mode, who):
+    """Перехід у тестовий режим вимикає розсилку («Email-сповіщення» → «Розсилка увімкнена»); повернення
+    до робочої бази відновлює її стан, який був до тестового режиму."""
+    if data_mode == "test":
+        app_settings.set("mail_enabled_work", bool(app_settings.get("mail_enabled")), who)
+        if app_settings.get("mail_enabled"):
+            app_settings.set("mail_enabled", False, who)
+            flash("Розсилку вимкнено на час тестового режиму. Щоб перевірити сповіщення, увімкніть її в "
+                  "«Email-сповіщення» — листи й Telegram підуть з позначкою «[ТЕСТ]».", "success")
+        return
+    before = app_settings.get("mail_enabled_work")
+    if before is not None:
+        app_settings.set("mail_enabled_work", None, who)
+        if bool(before) != bool(app_settings.get("mail_enabled")):
+            app_settings.set("mail_enabled", bool(before), who)
+            flash("Розсилку " + ("знову увімкнено" if before else "вимкнено") + ", як було до тестового режиму.",
+                  "success")
+
+
+def _message(key, value):
+    """Повідомлення про збережену зміну (для маршруту — один підсумок, див. _apply)."""
+    if key == "org_field_mode":
+        return "У заявці ініціатор вибирає: " + {"payer": "лише платника — українська чи іноземна компанія",
+                                                "accountant": "тип бухгалтера"}.get(value, "організацію")
+    if key == "data_mode":
+        return "Система показує: " + ("тестові дані — нові заявки не зберігаються в базі" if value == "test"
+                                      else "робочу базу даних")
+    if key == "cp_onec_owner":
+        return "Нових контрагентів у 1С заводить: " + ("адміністратор" if value == "admin" else "бухгалтер")
+    if key == "pending_cp_payment":
+        return f"Контрагент, якого ще немає в 1С: {schema.PENDING_CP_MODES[value]}"
+    if key == "cash_handover_remind_days":
+        return f"Нагадування про передачу готівки: кожні {value} дн." if value else "Нагадування про передачу готівки вимкнено"
+    return f"{schema.label(key)}: {schema.value_label(key, value)}"
+
+
+def _apply(changes, who):
+    """Зберегти зміни з побічними діями й повідомленнями. Повертає кількість змін."""
+    for key, value in changes.items():
+        app_settings.set(key, value, who)
+    if any(k in changes for k in ROUTE_KEYS):
+        flash(f"Маршрут: {wf.route_label(app_settings.get('approval_mode'), app_settings.get('dept_head_mode'), app_settings.get('cfo_mode'), app_settings.get('cfo_threshold_usd'))}. "
+              "Діє для нових і повторно відправлених заявок.", "success")
+    for key, value in changes.items():
+        if key not in ROUTE_KEYS:
+            flash(_message(key, value), "success")
+        if key == "data_mode":
+            _switch_mail_for_mode(value, who)
+        if key == "org_accountants":
+            db.reindex()  # бухгалтер заявки — похідна колонка в базі
+    return len(changes)
+
+
+def _context(tab):
+    """Дані для вкладки (лише те, що вона показує)."""
+    ctx = {"TABS": schema.TABS, "tab": tab, "route_label": wf.route_label}
+    if tab == "approval":
+        ctx.update(approval_mode=app_settings.info("approval_mode"), head_mode=app_settings.info("dept_head_mode"),
+                   cfo_mode=app_settings.info("cfo_mode"), cfo_threshold=app_settings.get("cfo_threshold_usd"),
+                   APPROVAL_MODES=wf.APPROVAL_MODES, HEAD_MODES=wf.HEAD_MODES, CFO_MODES=wf.CFO_MODES,
+                   no_self_approval=app_settings.get("no_self_approval"))
+    elif tab == "request":
+        ctx.update(org_mode=app_settings.get("org_field_mode"), ORG_FIELD_MODES=wf.ORG_FIELD_MODES)
+    elif tab == "payment":
+        pending = counterparties.pending_items()
+        ctx.update(require_payment_account=app_settings.get("require_payment_account"),
+                   cash_handover_confirm=app_settings.get("cash_handover_confirm"),
+                   cash_handover_remind_days=app_settings.get("cash_handover_remind_days"),
+                   handover_max_reminders=wf.HANDOVER_MAX_REMINDERS,
+                   pending_cp=app_settings.info("pending_cp_payment"), PENDING_CP_MODES=schema.PENDING_CP_MODES,
+                   cp_owner=app_settings.get("cp_onec_owner"), CP_OWNER_MODES=wf.CP_OWNER_MODES,
+                   pending_counterparties=pending,
+                   pending_cp_requests={c["id"]: db.first_request_with_counterparty(c["id"]) for c in pending},
+                   org_list=organizations.get_all(), org_disabled=organizations.disabled_codes(),
+                   org_accountants=organizations.accountant_overrides(),
+                   ACCOUNTANT_ROLE_LIST=[(r, wf.ROLE_SHORT[r]) for r in ("acc_cash", "acc_resident", "acc_nonresident")])
+    elif tab == "notify":
+        ctx.update(mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name", "smtp_host",
+                                                          "smtp_port", "smtp_security", "smtp_username",
+                                                          "allow_custom_email", "error_alerts")},
+                   mail_password=app_settings.info("smtp_password"), SMTP_PRESETS=mailer.PRESETS,
+                   SMTP_SECURITY=mailer.SECURITY, telegram=telegram_notify.status(),
+                   mail_problems=len(notify_log.query(200, status="problems")))
+    elif tab == "data":
+        ctx.update(db_on=db_sql.configured(), data_mode=app_settings.get("data_mode"),
+                   expense_status=expense_items.status(), rates_status=rates.status(),
+                   departments_status=departments.status(), organizations_status=organizations.status(),
+                   currencies_status=currencies.status(), counterparties_status=counterparties.status(),
+                   payment_types_status=payment_types.status(), import_preview=_import_preview())
+    elif tab == "log":
+        key = request.args.get("key") or None
+        ctx.update(log=settings_log.query(300, key), log_key=key,
+                   log_keys=[(s.key, s.label) for s in schema.exportable()])
+    return ctx
+
+
+@bp.route("/admin/settings", methods=["GET", "POST"])
+@auth.login_required
+@requires("admin")
+def admin_settings(*, context):
+    if request.method == "GET":
+        tab = request.args.get("tab") if request.args.get("tab") in schema.TAB_NAMES else "approval"
+        return render_template("admin_settings.html", user_name=g.user["name"], **_context(tab))
+    tab = request.form.get("tab")
+    legacy = tab not in schema.TAB_NAMES  # стара спільна форма «Налаштування процесу»
+    changes, errors = schema.parse_tab(tab, request.form, app_settings.get, legacy=legacy)
+    if "cfo_threshold_usd" in errors:
+        mode = changes.get("cfo_mode", app_settings.get("cfo_mode"))
+        if mode == "threshold":
+            errors["cfo_threshold_usd"] = "Вкажіть поріг фіндиректора — суму в USD, більшу за 0"
+        else:
+            errors.pop("cfo_threshold_usd")  # поріг не діє в цьому режимі — порожнє поле не помилка
+    if (changes.get("cfo_mode") == "threshold" and "cfo_threshold_usd" not in changes
+            and not app_settings.get("cfo_threshold_usd")):
+        errors["cfo_threshold_usd"] = "Вкажіть поріг фіндиректора — суму в USD, більшу за 0"
+    back = url_for("admin.admin_settings", tab="approval" if legacy else tab)
+    if errors:
+        for message in errors.values():
+            flash(message, "error")
+        return redirect(back)
+    if not _apply(changes, g.user["email"]):
+        flash("Змін немає", "success")
+    return redirect(back)
+
+
+# ---------------------------------------------------------------- експорт / імпорт
+
+@bp.route("/admin/settings/export")
+@auth.login_required
+@requires("admin")
+def admin_settings_export(*, context):
+    data = {"system": "Система заявок на оплату", "exported_at": date.today().isoformat(),
+            "exported_by": g.user["email"],
+            "settings": {s.key: app_settings.get(s.key) for s in schema.exportable()}}
+    body = json.dumps(data, ensure_ascii=False, indent=1, default=str)
+    return Response(body, mimetype="application/json", headers={
+        "Content-Disposition": f"attachment; filename=payreq-settings-{date.today().isoformat()}.json"})
+
+
+def _import_preview():
+    pending = session.get(IMPORT_KEY)
+    if not pending:
+        return None
+    return [{"key": k, "label": schema.label(k), "tab": schema.TAB_NAMES.get(schema.SETTINGS[k].tab, ""),
+             "old": schema.value_label(k, app_settings.get(k)), "new": schema.value_label(k, v)}
+            for k, v in pending["changes"].items() if k in schema.SETTINGS]
+
+
+@bp.route("/admin/settings/import", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_settings_import(*, context):
+    back = url_for("admin.admin_settings", tab="data") + "#import"
+    f = request.files.get("file")
+    try:
+        data = json.loads((f.read() if f else b"").decode("utf-8-sig"))
+    except (ValueError, UnicodeDecodeError):
+        flash("Не вдалося прочитати файл — потрібен JSON, збережений кнопкою «Завантажити налаштування»", "error")
+        return redirect(back)
+    changes, errors, unknown = schema.parse_import(data, app_settings.get)
+    if errors:
+        for message in errors:
+            flash(message, "error")
+        return redirect(back)
+    if not changes:
+        flash("У файлі ті самі налаштування, що й зараз — змін немає", "success")
+        return redirect(back)
+    session[IMPORT_KEY] = {"changes": changes, "unknown": unknown}
+    if unknown:
+        flash("Пропущено невідомі для цієї версії налаштування: " + ", ".join(unknown), "error")
+    return redirect(back)
+
+
+@bp.route("/admin/settings/import/apply", methods=["POST"])
+@auth.login_required
+@requires("admin")
+def admin_settings_import_apply(*, context):
+    pending = session.pop(IMPORT_KEY, None)
+    back = url_for("admin.admin_settings", tab="data") + "#import"
+    if request.form.get("action") != "apply" or not pending:
+        flash("Імпорт скасовано", "success")
+        return redirect(back)
+    # Ще раз перевірити: між переглядом і застосуванням налаштування могли змінитися
+    changes, errors, _ = schema.parse_import({"settings": pending["changes"]}, app_settings.get)
+    if errors:
+        for message in errors:
+            flash(message, "error")
+        return redirect(back)
+    n = _apply(changes, g.user["email"])
+    flash(f"Імпортовано налаштувань: {n}", "success")
+    return redirect(back)

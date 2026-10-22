@@ -307,6 +307,8 @@ def _back_target(path):
         return url_for("requests.request_card")
     if path.startswith("/to-pay"):
         return url_for("payments.to_pay")
+    if path.startswith("/admin/settings"):
+        return url_for("admin.admin_settings")
     if path.startswith("/admin"):
         return url_for("admin.admin_users")
     if path.startswith("/settings"):

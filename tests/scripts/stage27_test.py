@@ -30,6 +30,11 @@ m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".j
 import graph
 graph.group_members = lambda t, gid: []
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 def flush():
     mailer.wait(); out = list(sent); sent.clear(); return out
 H = {"X-Api-Key": "s3cret-key"}
@@ -133,7 +138,7 @@ app_settings.set("mail_enabled", was, "t")
 
 # ---------- адмінка
 login("admin@ftpua.com", ["g-a"])
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("admin: telegram block", "Telegram-бот" in page and "Підключено" in page)
 c.post("/admin/telegram/test")
 m4 = [x for x in c.get("/api/telegram/outbox", headers=H).get_json()["messages"] if x["email"] == "admin@ftpua.com"]

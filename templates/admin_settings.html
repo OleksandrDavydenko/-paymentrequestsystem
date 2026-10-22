@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+
+{% block title %}Налаштування — {{ TABS | selectattr(0, 'equalto', tab) | map(attribute=1) | first }}{% endblock %}
+
+{% block content %}
+{% include "_admin_tabs.html" %}
+<nav class="tabs settings-tabs" aria-label="Налаштування">
+  {% for code, title in TABS %}
+  <a href="{{ url_for('admin.admin_settings', tab=code) }}" class="tab {{ 'active' if tab == code }}">{{ title }}</a>
+  {% endfor %}
+</nav>
+
+{% if tab == 'log' %}
+<div class="card">
+  <div class="toolbar">
+    <h2 style="margin:0">Журнал змін налаштувань</h2>
+    <span class="spacer"></span>
+    <form method="get" class="log-filter">
+      <input type="hidden" name="tab" value="log">
+      <select name="key" onchange="this.form.submit()" aria-label="Налаштування" class="{{ 'is-active' if log_key }}">
+        <option value="">Усі налаштування</option>
+        {% for k, label in log_keys %}<option value="{{ k }}" {{ 'selected' if log_key == k }}>{{ label }}</option>{% endfor %}
+      </select>
+    </form>
+  </div>
+  <p class="muted" style="margin-top:0">Хто, коли й що змінив — у налаштуваннях процесу, пошти, організацій, при імпорті з файлу.
+    Пароль SMTP показується як «••••». Показано останні 300 змін.</p>
+  <div class="table-wrap">
+  <table class="stack">
+    <thead><tr><th>Коли</th><th>Хто</th><th>Розділ</th><th>Налаштування</th><th>Було</th><th>Стало</th></tr></thead>
+    <tbody>
+    {% for r in log %}
+      <tr>
+        <td data-label="Коли">{{ r.at | dt }}</td>
+        <td data-label="Хто">{{ r.by or '—' }}</td>
+        <td data-label="Розділ" class="muted">{{ r.tab }}</td>
+        <td data-label="Налаштування"><strong>{{ r.label }}</strong></td>
+        <td data-label="Було" class="muted">{{ r.old_label }}</td>
+        <td data-label="Стало">{{ r.new_label }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="empty">Змін ще не було{{ ' для цього налаштування' if log_key }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% else %}
+{% include "admin_settings/_" ~ tab ~ ".html" %}
+{% endif %}
+{% endblock %}

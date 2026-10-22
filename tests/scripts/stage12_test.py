@@ -33,6 +33,11 @@ m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".j
 import graph; graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
+
 # Бухгалтер при погодженні вибирає «Вид оплати» — у старих тестах підставляємо перший доступний
 import payment_accounts as _pa, storage as _md
 _orig_post = c.post
@@ -70,7 +75,7 @@ raw = json.load(open(os.environ["APP_SETTINGS_FILE"], encoding="utf-8"))["smtp_p
 check("password stored encrypted", raw and "abcd" not in raw)
 check("password decrypts in config", notifications.smtp_config()["password"] == "abcd efgh ijkl mnop"
       and notifications.smtp_config()["username"] == "noreply@ftpua.com")
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("password never rendered", "abcd efgh" not in page and "Збережено зашифрованим" in page)
 c.post("/admin/mail", data={"mail_enabled": "1", "mail_sender": "noreply@ftpua.com", "mail_sender_name": "PRS", **SMTP})
 check("empty password field keeps saved", notifications.smtp_config()["password"] == "abcd efgh ijkl mnop")
@@ -85,7 +90,7 @@ fail["on"] = True
 r = c.post("/admin/mail/test", follow_redirects=True)
 check("test mail error shown", "не надіслано" in r.get_data(as_text=True) and "535" in r.get_data(as_text=True))
 fail["on"] = False
-check("admin page shows mail block + log", "Email-сповіщення" in c.get("/admin/users").get_data(as_text=True))
+check("admin page shows mail block + log", "Email-сповіщення" in admin_page())
 
 # ---- послідовно: submit -> бухгалтер
 login("i@ftpua.com", ["g-i"])
@@ -182,7 +187,7 @@ print("ALL OK" if ok else "SOME FAILED")
 # --- показ/копіювання пароля
 login("od@ftpua.com", ["g-a"])
 c.post("/admin/mail", data={"mail_enabled": "1", "mail_sender": "noreply@ftpua.com", "smtp_password": "qwer tyui opas dfgh", **SMTP})
-page = c.get("/admin/users").get_data(as_text=True)
+page = admin_page()
 check("password not embedded in page", "qwer tyui" not in page and 'id="pass-show"' in page)
 r = c.post("/admin/mail/password")
 check("reveal endpoint returns password, no-store", r.json["password"] == "qwer tyui opas dfgh" and r.headers["Cache-Control"] == "no-store")

@@ -32,11 +32,16 @@ def remove_member(t, gid, uid): calls.append(("remove", gid, uid)); MEMBERS[gid]
 graph.add_member, graph.remove_member = add_member, remove_member
 c = m.app.test_client()
 
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
+
 login("ira@ftpua.com", ["g-i"], "ira")
 check("non-admin: card 403", c.get("/admin/users/ira").status_code == 403)
 
 login("od@ftpua.com", ["g-a", "g-i"], "od")
-lst = c.get("/admin/users").get_data(as_text=True)
+lst = admin_page()
 check("list links to cards", "/admin/users/ira" in lst and "Відкрити" in lst and 'name="roles"' not in lst)
 page = c.get("/admin/users/ira").get_data(as_text=True)
 check("card: 4 numbered sections with explanations", all(t in page for t in

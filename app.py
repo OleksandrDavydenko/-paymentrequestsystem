@@ -21,7 +21,7 @@ import clock  # noqa: F401  (для сценарних тестів: m.clock)
 import db_sql
 import sessions_db
 import workflow as wf  # noqa: F401  (для сценарних тестів: m.wf)
-from web import background, context, errors
+from web import admin_settings, background, context, errors  # noqa: F401  (admin_settings — маршрути в admin_bp)
 from web.admin_routes import bp as admin_bp
 from web.api_routes import bp as api_bp
 from web.auth import auth

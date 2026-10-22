@@ -1,0 +1,95 @@
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="process-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="data">
+  <div class="toolbar"><h2 style="margin:0">Дані</h2></div>
+  {% if db_on %}
+  {% for code, title, hint in [('work', 'Робоча база', 'Справжні заявки з бази даних Azure SQL.'),
+                               ('test', 'Тестові дані', 'Демо-заявки на справжніх довідниках — щоб показати чи перевірити систему. Усі користувачі бачать банер «Тестовий режим»; нові заявки й зміни живуть лише до перезапуску сайту і в базу не потрапляють; розсилка при переході вимикається (увімкнути можна в «Email-сповіщення»); нагадування про готівку не надсилаються. Налаштування (відділи, бюджети, пошта) — спільні для обох режимів.')] %}
+  <label class="mode-option">
+    <input type="radio" name="data_mode" value="{{ code }}" {{ 'checked' if data_mode == code }}>
+    <span>
+      <strong>{{ title }}</strong>{% if data_mode == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      <span class="mode-hint">{{ hint }}</span>
+    </span>
+  </label>
+  {% endfor %}
+  {% else %}
+  <p class="muted">База даних не підключена — система показує демо-дані (в пам'яті).</p>
+  {% endif %}
+  {% if db_on %}
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+  {% endif %}
+</form>
+
+{% set es = expense_status %}
+<div class="card expense-status" id="expense-items">
+  <div class="toolbar">
+    <h2 style="margin:0">Довідники з 1С</h2>
+    <span class="sec-summary muted">{{ es.count }} статей{% if es.updated %} · оновлено {{ es.updated.replace('T', ' ')[:16] }}{% endif %}</span>
+    <span class="spacer"></span>
+    <form method="post" action="{{ url_for('admin.admin_expense_refresh') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-sm">⟳ Оновити зараз</button>
+    </form>
+  </div>
+  <dl class="status-grid">
+    <dt>Джерело</dt>
+    <dd>{{ {'powerbi': 'Power BI', 'copy': 'Збережена копія (Power BI зараз недоступний)',
+             'mock': 'Мокові дані — Power BI не налаштований', 'empty': 'Немає даних'}[es.source] | default(es.source) }}</dd>
+    <dt>Статей (лише елементи)</dt><dd>{{ es.count }} <span class="muted">· прямих {{ es.direct }} · з розподілом {{ es.allocated }} · відділів {{ es.departments }}</span></dd>
+    <dt>Оновлено</dt><dd>{{ es.updated.replace('T', ' ') if es.updated else '—' }}</dd>
+  </dl>
+  {% set SRC = {'powerbi': 'Power BI', 'copy': 'Збережена копія (Power BI зараз недоступний)', 'mock': 'Мокові дані', 'empty': 'Немає даних'} %}
+  <div class="budget-section-title">Інші довідники з 1С</div>
+  <dl class="status-grid">
+    {% for title, st, note in [('Контрагенти', counterparties_status, 'пошук на сервері; нових, ще не заведених у 1С: ' ~ counterparties_status.pending),
+                               ('Види оплати', payment_types_status, 'з доступами бухгалтерів (UserPaymentTypes): користувачів 1С — ' ~ payment_types_status.users),
+                               ('Організації', organizations_status, 'резидент — країна Україна; порожня чи інша країна — нерезидент'),
+                               ('Валюти', currencies_status, 'буквений код (Name) — у заявках; UAH, USD, EUR — першими'),
+                               ('Курси валют', rates_status, 'останній відомий курс кожної валюти (за 31 день) — для порогу фіндиректора в USD'),
+                               ('Відділи співробітників', departments_status, "окремий довідник оргструктури, не пов'язаний з відділами статей")] %}
+    <dt>{{ title }}</dt>
+    <dd>{{ SRC.get(st.source, st.source) }} · {{ st.active }}{% if st.count != st.active %} <span class="muted">(+{{ st.count - st.active }} помічених на видалення)</span>{% endif %}
+      {% if st.updated %}<span class="muted">· оновлено {{ st.updated.replace('T', ' ')[:16] }}</span>{% endif %}
+      <span class="muted">· таблиця «{{ st.table }}» · {{ note }}</span>
+      {% if st.error %}<div class="flash error" style="margin:4px 0 0">Остання помилка: {{ st.error }}</div>{% endif %}</dd>
+    {% endfor %}
+  </dl>
+  {% if es.error %}<div class="flash error">Остання помилка: {{ es.error }}</div>{% endif %}
+  {% if not es.configured %}
+  <p class="muted">Щоб брати статті з Power BI, задайте в App Service змінні <code>PBI_GROUP_ID</code> і <code>PBI_DATASET_ID</code>.</p>
+  {% endif %}
+</div>
+
+<div class="card" id="import">
+  <div class="toolbar"><h2 style="margin:0">Резервна копія налаштувань</h2></div>
+  <p class="muted" style="margin-top:0">Файл JSON з усіма налаштуваннями процесу, пошти (без пароля) й організацій — щоб зберегти
+    копію або перенести налаштування. Під час завантаження з файлу спершу показуються зміни «було → стало», і лише
+    після «Застосувати» вони діють (кожна потрапляє в журнал змін).</p>
+  {% if import_preview %}
+  <form method="post" action="{{ url_for('admin.admin_settings_import_apply') }}" class="import-preview"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="budget-section-title">Зміни з файлу ({{ import_preview | length }})</div>
+    <div class="table-wrap">
+    <table class="stack">
+      <thead><tr><th>Розділ</th><th>Налаштування</th><th>Зараз</th><th>З файлу</th></tr></thead>
+      <tbody>
+      {% for r in import_preview %}
+        <tr><td data-label="Розділ" class="muted">{{ r.tab }}</td><td data-label="Налаштування"><strong>{{ r.label }}</strong></td>
+          <td data-label="Зараз" class="muted">{{ r.old }}</td><td data-label="З файлу">{{ r.new }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    <div class="form-actions" style="justify-content:flex-start">
+      <button type="submit" name="action" value="apply" class="btn btn-primary btn-sm">Застосувати</button>
+      <button type="submit" name="action" value="cancel" class="btn btn-sm">Скасувати</button>
+    </div>
+  </form>
+  {% else %}
+  <div class="form-actions" style="justify-content:flex-start;flex-wrap:wrap">
+    <a class="btn btn-sm" href="{{ url_for('admin.admin_settings_export') }}">⬇ Завантажити налаштування</a>
+    <form method="post" action="{{ url_for('admin.admin_settings_import') }}" enctype="multipart/form-data" class="import-form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="file" name="file" accept=".json,application/json" required aria-label="Файл налаштувань">
+      <button type="submit" class="btn btn-sm">⬆ Завантажити з файлу</button>
+    </form>
+  </div>
+  {% endif %}
+</div>

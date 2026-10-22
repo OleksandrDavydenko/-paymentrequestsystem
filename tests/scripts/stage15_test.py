@@ -30,6 +30,11 @@ m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".j
 import graph; graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
+
 # Бухгалтер при погодженні вибирає «Вид оплати» — у старих тестах підставляємо перший доступний
 import payment_accounts as _pa, storage as _md
 _orig_post = c.post
@@ -173,6 +178,6 @@ check("prefs page: department group + participant group", "Заявки відд
 
 # ---------- адмінка
 login("od@ftpua.com", ["g-a"])
-adm = c.get("/admin/users").get_data(as_text=True)
+adm = admin_page()
 check("admin: departments section removed", 'id="departments"' not in adm and "viewers-dialog" not in adm)
 print("ALL OK" if ok else "SOME FAILED")

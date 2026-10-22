@@ -214,6 +214,17 @@ lease_t = sa.Table(
     sa.Column("last_run", sa.DateTime),
 )
 
+settings_log_t = sa.Table(
+    "settings_log", metadata,  # журнал змін налаштувань: хто, коли, що було → стало
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("at", DateTime2, nullable=False),
+    sa.Column("key", sa.Unicode(100), nullable=False),
+    sa.Column("old", sa.UnicodeText),
+    sa.Column("new", sa.UnicodeText),
+    sa.Column("by", sa.Unicode(320)),
+)
+sa.Index("ix_settings_log_key", settings_log_t.c.key, settings_log_t.c.id)
+
 sessions_t = sa.Table(
     "web_sessions", metadata,  # сеанси входу (спільні для всіх процесів сайту)
     sa.Column("id", sa.Unicode(255), primary_key=True),
@@ -529,6 +540,21 @@ def session_delete(sid):
 def session_cleanup(now):
     with engine().begin() as c:
         return c.execute(sessions_t.delete().where(sessions_t.c.expires_at <= now)).rowcount
+
+
+# ---------------------------------------------------------------- журнал змін налаштувань
+
+def settings_log_add(row):
+    with engine().begin() as c:
+        c.execute(settings_log_t.insert().values(**row))
+
+
+def settings_log_query(limit, key=None):
+    stmt = sa.select(settings_log_t).order_by(settings_log_t.c.id.desc()).limit(limit)
+    if key:
+        stmt = stmt.where(settings_log_t.c.key == key)
+    with engine().connect() as c:
+        return [dict(r) for r in c.execute(stmt).mappings().all()]
 
 
 # ---------------------------------------------------------------- журнал сповіщень

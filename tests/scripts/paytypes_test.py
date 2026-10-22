@@ -19,6 +19,11 @@ m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 graph.group_members = lambda t, g: [{"id": "irina", "name": "Iryna Chagan", "email": "i.chagan@ftpua.com"}] if g == "g-r" else []
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 BASE = {"pay_date": "2026-10-20", "counterparty_id": "1", "organization_id": "1", "expense_code": "01.001",
         "currency": "UAH", "amount": "500", "payment_form": "bank"}
 
@@ -38,7 +43,7 @@ login("od@ftpua.com", ["g-a"])
 _r = db.get_request(rid); _r["status"] = "accountant"; db.save_request(_r)
 c.post("/admin/users/irina", data={"roles": ["acc_resident"], "onec_user": "U-IRINA", "mode": "none"})
 check("link saved", user_onec.guid_for("irina") == "U-IRINA")
-check("list shows 1C link", "1С: Irina.Chagan" in c.get("/admin/users").get_data(as_text=True))
+check("list shows 1C link", "1С: Irina.Chagan" in admin_page())
 login("i.chagan@ftpua.com", ["g-r"], "irina")
 opts = [a["name"] for a in pa.options_for(db.get_request(rid), {"oid": "irina"}, frozenset({"acc_resident"}))]
 check("accountant sees only her 1C payment types", opts == ["КАРТА", "НАЛ", "ПУМБ ФТП, ТОВ"])

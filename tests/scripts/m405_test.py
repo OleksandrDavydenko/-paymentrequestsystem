@@ -19,6 +19,7 @@ check("flash explains", "Сеанс входу оновився" in page and "ф
 r = c.get("/requests/7/action")
 check("GET action -> card", r.status_code == 302 and r.headers["Location"].endswith("/requests/7"))
 check("GET to-pay/pay -> to-pay", c.get("/to-pay/pay").headers["Location"].endswith("/to-pay"))
-check("GET admin/settings -> admin", c.get("/admin/settings").headers["Location"].endswith("/admin/users"))
+check("GET admin/mail -> admin", c.get("/admin/mail").headers["Location"].endswith("/admin/users"))
+check("GET admin/settings -> settings page", c.get("/admin/settings").status_code == 200)
 check("POST to GET-only route still 405", c.post("/health").status_code == 405)
 print("ALL OK" if ok else "SOME FAILED")

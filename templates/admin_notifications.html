@@ -5,11 +5,12 @@
 {% block main_class %}wide{% endblock %}
 
 {% block content %}
+{% include "_admin_tabs.html" %}
 <div class="card">
   <div class="toolbar">
     <h1 style="margin:0">Журнал сповіщень</h1>
     <span class="spacer"></span>
-    <a class="btn btn-sm" href="{{ url_for('admin.admin_users') }}#mail-settings">← Налаштування пошти й Telegram</a>
+    <a class="btn btn-sm" href="{{ url_for('admin.admin_settings', tab='notify') }}#mail-settings">← Налаштування пошти й Telegram</a>
   </div>
   <p class="muted" style="margin-top:0">Пошта й Telegram: кому, коли й про яку заявку надіслано, з яким результатом.
     «Не надсилалось» — кому система могла б надіслати, але не надіслала, і чому (власна дія, вимкнена подія, порожня група ролі).

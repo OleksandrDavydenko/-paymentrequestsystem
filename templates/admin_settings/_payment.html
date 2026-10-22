@@ -1,0 +1,137 @@
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="process-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="payment">
+  <div class="toolbar"><h2 style="margin:0">Оплата й готівка</h2></div>
+  <div class="budget-section-title">Вид оплати</div>
+  <input type="hidden" name="require_payment_account_sent" value="1">
+  <label class="mode-option">
+    <input type="checkbox" name="require_payment_account" value="1" {{ 'checked' if require_payment_account }}>
+    <span>
+      <strong>Бухгалтер обов'язково вибирає «Вид оплати» при погодженні</strong>
+      <span class="muted">— і перед позначкою «Оплачено»</span>
+      <span class="mode-hint">«Вид оплати» — з чого платимо (види оплати з 1С). Його бачать і змінюють лише бухгалтери, фіндиректор
+        і адміністратор; ініціатор і учасники заявки не бачать. Бухгалтер вибирає з тих, до яких має доступ у 1С; якщо йому
+        не призначено жодного (або його не зв'язано з користувачем 1С) — поле не блокує погодження. Вимкніть, щоб вибір
+        був необов'язковим для всіх.</span>
+    </span>
+  </label>
+
+  <div class="budget-section-title">Готівка через автора заявки</div>
+  <input type="hidden" name="cash_handover_sent" value="1">
+  <label class="mode-option">
+    <input type="checkbox" name="cash_handover_confirm" value="1" {{ 'checked' if cash_handover_confirm }}>
+    <span>
+      <strong>Автор підтверджує, що передав готівку підряднику</strong>
+      <span class="muted">— після «Оплачено»</span>
+      <span class="mode-hint">Готівку в касі завжди отримує автор заявки й передає підряднику. Тому після «Оплачено» кожна
+        готівкова заявка чекає підтвердження автора — дата передачі й коментар, документ не потрібен. Статус «Оплачено» й проведення в 1С не змінюються. Непідтверджені видачі бачить
+        бухгалтер по готівці на вкладці «До оплати → Готівка не підтверджена».</span>
+    </span>
+  </label>
+  <label class="mode-option">
+    <span>
+      <strong>Нагадувати автору кожні
+        <input type="number" name="cash_handover_remind_days" value="{{ cash_handover_remind_days }}" min="0" max="30"
+               style="width:64px" aria-label="Кожні N днів"> дн.</strong>
+      <span class="mode-hint">Лист лише автору заявки, доки він не підтвердить передачу, — не більше {{ handover_max_reminders }}
+        нагадувань. 0 — не нагадувати. Вимкнути ці листи в особистих налаштуваннях не можна.</span>
+    </span>
+  </label>
+
+  <div class="budget-section-title">Контрагент, якого ще немає в 1С</div>
+  {% for code, label in PENDING_CP_MODES.items() %}
+  <label class="mode-option">
+    <input type="radio" name="pending_cp_payment" value="{{ code }}" {{ 'checked' if pending_cp.value == code }}>
+    <span>
+      <strong>{{ 'Заборонити «Оплачено»' if code == 'block' else 'Дозволити оплату' }}</strong>{% if pending_cp.value == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      <span class="muted">— {{ label }}</span>
+      <span class="mode-hint">{% if code == 'block' %}Ініціатор може внести нового контрагента в заявці; бухгалтер заводить його в 1С і прив'язує в картці заявки (або система прив'яже сама за ЄДРПОУ під час оновлення довідника). До прив'язки заявку не можна позначити оплаченою.{% else %}Заявку з новим контрагентом можна оплатити й до появи його в 1С — у картці та в «До оплати» буде попередження.{% endif %}</span>
+    </span>
+  </label>
+  {% endfor %}
+  <div class="budget-section-title">Хто заводить нового контрагента в 1С</div>
+  {% for code, label in CP_OWNER_MODES.items() %}
+  <label class="mode-option">
+    <input type="radio" name="cp_onec_owner" value="{{ code }}" {{ 'checked' if cp_owner == code }}>
+    <span>
+      <strong>{{ label.split(':')[0] }}</strong>{% if cp_owner == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
+      <span class="mode-hint">{% if code == 'accountant' %}У картці заявки бухгалтер бачить реквізити нового контрагента, кнопки «Перевірити в 1С зараз» і «Прив'язати».{% else %}Блок прив'язки бачить лише адміністратор; бухгалтер бачить примітку. Адміністратори отримують лист, коли надходить заявка з новим контрагентом.{% endif %}</span>
+    </span>
+  </label>
+  {% endfor %}
+  {% if pending_counterparties %}
+  <p class="muted">Зараз чекають на заведення в 1С: {% for c in pending_counterparties %}{% set rid = pending_cp_requests.get(c.id) %}{% if rid %}<a href="{{ url_for('requests.request_card', request_id=rid) }}#cp-link"><strong>{{ c.name }}</strong></a>{% else %}<strong>{{ c.name }}</strong>{% endif %}{{ ' (' ~ c.edrpou ~ ')' if c.edrpou }}{{ ', ' if not loop.last }}{% endfor %}.</p>
+  {% endif %}
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+</form>
+
+{% set org_on = org_list | rejectattr('code', 'in', org_disabled) | list %}
+<form method="post" action="{{ url_for('admin.admin_organizations') }}" class="card organizations" id="organizations"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="toolbar">
+    <h2 style="margin:0">Організації</h2>
+    <span class="sec-summary muted">дозволено {{ org_on | length }} з {{ org_list | length }}{% if org_accountants %} · призначено бухгалтерів: {{ org_accountants | length }}{% endif %}</span>
+  </div>
+  <p class="muted" style="margin-top:0"><strong>Вибір</strong> — які організації ініціатор може вибрати в заявці (нові з 1С
+    дозволені автоматично; вимкнена лишається в уже створених заявках і у фільтрах).
+    <strong>Хто перевіряє</strong> — бухгалтер, якому йдуть заявки організації. «Автоматично»: готівка — бухгалтеру готівки,
+    безготівка — бухгалтеру резидентів чи нерезидентів за країною. Можна призначити інакше, напр. ФОП, якого веде бухгалтер
+    готівки, — «Бух. готівка» в обох колонках. Зміна діє й на заявки, що вже в роботі.</p>
+  <div class="budget-deps-tools org-tools">
+    <input type="search" id="org-search" placeholder="Пошук організації…" autocomplete="off">
+    <button type="button" class="btn btn-sm" id="org-all">Дозволити всі</button>
+    <button type="button" class="btn btn-sm" id="org-none">Зняти всі</button>
+    <span class="muted" id="org-count"></span>
+  </div>
+  <div class="table-wrap org-wrap">
+  <table class="stack org-table" id="org-list">
+    <thead><tr><th class="chk" title="Можна вибирати в заявках">Вибір</th><th>Організація</th>
+      <th>Готівка — хто перевіряє</th><th>Безготівка — хто перевіряє</th></tr></thead>
+    <tbody>
+    {% for o in org_list %}
+    {% set acc = org_accountants.get(o.code, {}) %}
+    <tr class="org-item">
+      <td class="chk" data-label="Можна вибирати"><input type="checkbox" name="allowed" value="{{ o.code }}" {{ 'checked' if o.code not in org_disabled }}
+          aria-label="Можна вибирати: {{ o.name }}"></td>
+      <td data-label="Організація"><span class="org-name">{{ o.name }}</span>
+        <div class="muted org-meta">{{ o.code }}{{ ' · ' ~ o.country if o.country }} ·
+          <span class="badge {{ 'green' if o.resident else 'grey' }}">{{ 'резидент' if o.resident else 'нерезидент' }}</span></div></td>
+      {% for f, auto in [('cash', 'acc_cash'), ('bank', 'acc_resident' if o.resident else 'acc_nonresident')] %}
+      <td data-label="{{ 'Готівка' if f == 'cash' else 'Безготівка' }}">
+        <select name="acc_{{ f }}_{{ o.code }}" class="org-acc {{ 'is-active' if acc.get(f) }}" aria-label="{{ 'Готівка' if f == 'cash' else 'Безготівка' }} — {{ o.name }}">
+          <option value="">Автоматично ({{ ROLE_SHORT[auto] }})</option>
+          {% for r, label in ACCOUNTANT_ROLE_LIST %}<option value="{{ r }}" {{ 'selected' if acc.get(f) == r }}>{{ label }}</option>{% endfor %}
+        </select>
+      </td>
+      {% endfor %}
+    </tr>
+    {% else %}
+    <tr><td colspan="4" class="muted">Довідник організацій порожній — перевірте підключення в розділі «Довідники з 1С».</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="form-actions" style="justify-content:flex-start">
+    <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+  </div>
+</form>
+<script>
+(function () {
+  const list = document.getElementById('org-list');
+  if (!list) return;
+  const boxes = () => [...list.querySelectorAll('input[name=allowed]')];
+  const count = () => {
+    const b = boxes();
+    document.getElementById('org-count').textContent = `Дозволено ${b.filter(x => x.checked).length} з ${b.length}`;
+  };
+  document.getElementById('org-search').addEventListener('input', e => {
+    const q = e.target.value.trim().toLowerCase();
+    list.querySelectorAll('.org-item').forEach(l => { l.hidden = q && !l.querySelector('.org-name').parentNode.textContent.toLowerCase().includes(q); });
+  });
+  document.getElementById('org-search').addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  const setAll = on => { boxes().forEach(b => { if (!b.closest('tr').hidden) b.checked = on; }); count(); };
+  document.getElementById('org-all').addEventListener('click', () => setAll(true));
+  document.getElementById('org-none').addEventListener('click', () => setAll(false));
+  list.addEventListener('change', count);
+  count();
+})();
+</script>

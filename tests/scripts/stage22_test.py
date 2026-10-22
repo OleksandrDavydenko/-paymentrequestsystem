@@ -31,6 +31,11 @@ def login(email, groups):
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
 c = m.app.test_client()
+
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
 def flush():
     mailer.wait(); out = list(sent); sent.clear(); return out
 INIT, RES, NON, CASH, ADMIN = ["g-i"], ["g-r"], ["g-n"], ["g-c"], ["g-a"]
@@ -43,7 +48,7 @@ SETTINGS = {"approval_mode": "sequential", "dept_head_mode": "view", "pending_cp
 login("admin@ftpua.com", ADMIN)
 html = c.post("/admin/settings", data={**SETTINGS, "org_field_mode": "accountant"}, follow_redirects=True).get_data(as_text=True)
 check("accountant mode saved", app_settings.get("org_field_mode") == "accountant" and "тип бухгалтера" in html)
-check("admin hint", "Ініціатор, який знає, до кого звертатися" in c.get("/admin/users").get_data(as_text=True))
+check("admin hint", "Ініціатор, який знає, до кого звертатися" in admin_page())
 
 login(AUTHOR, INIT)
 page = c.get("/requests/new").get_data(as_text=True)

@@ -1,4 +1,4 @@
-"""Адміністрування: користувачі й ролі, налаштування процесу, пошта, організації, журнал сповіщень."""
+"""Адміністрування: користувачі й ролі, пошта, організації, журнал сповіщень (налаштування — web/admin_settings.py)."""
 import re
 from decimal import Decimal, InvalidOperation
 
@@ -53,7 +53,7 @@ def admin_mail(*, context):
         errors.append("порт має бути числом від 1 до 65535")
     if errors:
         flash("Налаштування не збережено: " + "; ".join(errors), "error")
-        return redirect(url_for("admin.admin_users") + "#mail-settings")
+        return redirect(url_for("admin.admin_settings", tab="notify") + "#mail-settings")
 
     who = g.user["email"]
     app_settings.set("mail_sender", sender, who)
@@ -78,7 +78,7 @@ def admin_mail(*, context):
     app_settings.set("error_alerts", f.get("error_alerts") == "1", who)
     flash("Налаштування пошти збережено" + (" — розсилку увімкнено" if enabled else " — розсилку вимкнено"),
           "success")
-    return redirect(url_for("admin.admin_users") + "#mail-settings")
+    return redirect(url_for("admin.admin_settings", tab="notify") + "#mail-settings")
 
 
 @bp.route("/admin/mail/password", methods=["POST"])
@@ -111,13 +111,7 @@ def admin_mail_test(*, context):
         flash("Тестовий лист не надіслано: " + error, "error")
     else:
         flash(f"Тестовий лист надіслано на {to} від {cfg['sender']}. Перевірте пошту (і папку «Спам»).", "success")
-    return redirect(url_for("admin.admin_users") + "#mail-settings")
-
-
-PENDING_CP_MODES = {
-    "block": "заборонити позначати «Оплачено», доки контрагента не прив'язано до 1С",
-    "allow": "дозволити оплату з попередженням",
-}
+    return redirect(url_for("admin.admin_settings", tab="notify") + "#mail-settings")
 
 
 @bp.route("/admin/organizations", methods=["POST"])
@@ -129,7 +123,7 @@ def admin_organizations(*, context):
     known = {o["code"] for o in organizations.get_all()}
     if not allowed & known:
         flash("Залиште дозволеною хоча б одну організацію — інакше заявку не можна буде створити", "error")
-        return redirect(url_for("admin.admin_users") + "#organizations")
+        return redirect(url_for("admin.admin_settings", tab="payment") + "#organizations")
     # Вимкнені, яких зараз немає в довіднику (напр. помічені на видалення), лишаються вимкненими
     disabled = sorted((known - allowed) | (organizations.disabled_codes() - known))
     app_settings.set("disabled_organizations", disabled, g.user["email"])
@@ -145,115 +139,7 @@ def admin_organizations(*, context):
     flash(f"Організації збережено: дозволено для вибору {len(known & allowed)} з {len(known)}; "
           f"призначено бухгалтерів для {len([c for c in overrides if c in known])}. "
           "Заявки, що вже в роботі, переходять до призначеного бухгалтера одразу.", "success")
-    return redirect(url_for("admin.admin_users") + "#organizations")
-
-
-def _switch_mail_for_mode(data_mode, who):
-    """Перехід у тестовий режим вимикає розсилку («Email-сповіщення» → «Розсилка увімкнена»); повернення
-    до робочої бази відновлює її стан, який був до тестового режиму."""
-    if data_mode == "test":
-        app_settings.set("mail_enabled_work", bool(app_settings.get("mail_enabled")), who)
-        if app_settings.get("mail_enabled"):
-            app_settings.set("mail_enabled", False, who)
-            flash("Розсилку вимкнено на час тестового режиму. Щоб перевірити сповіщення, увімкніть її в "
-                  "«Email-сповіщення» — листи й Telegram підуть з позначкою «[ТЕСТ]».", "success")
-        return
-    before = app_settings.get("mail_enabled_work")
-    if before is not None:
-        app_settings.set("mail_enabled_work", None, who)
-        if bool(before) != bool(app_settings.get("mail_enabled")):
-            app_settings.set("mail_enabled", bool(before), who)
-            flash("Розсилку " + ("знову увімкнено" if before else "вимкнено") + ", як було до тестового режиму.",
-                  "success")
-
-
-@bp.route("/admin/settings", methods=["POST"])
-@auth.login_required
-@requires("admin")
-def admin_settings(*, context):
-    mode = request.form.get("approval_mode")
-    head_mode = request.form.get("dept_head_mode", app_settings.get("dept_head_mode"))
-    cp_mode = request.form.get("pending_cp_payment", app_settings.get("pending_cp_payment"))
-    cfo_mode = request.form.get("cfo_mode", app_settings.get("cfo_mode"))
-    if "cfo_threshold_usd" in request.form:
-        try:
-            threshold = int(Decimal((request.form.get("cfo_threshold_usd") or "").replace(" ", "").replace(",", ".")))
-        except (InvalidOperation, ValueError):
-            threshold = 0
-        if threshold <= 0 and cfo_mode == "threshold":
-            flash("Вкажіть поріг фіндиректора — суму в USD, більшу за 0", "error")
-            return redirect(url_for("admin.admin_users") + "#process-settings")
-        if threshold > 0 and threshold != app_settings.get("cfo_threshold_usd"):
-            app_settings.set("cfo_threshold_usd", threshold, g.user["email"])
-            flash(f"Поріг фіндиректора: від {wf.fmt_usd(threshold)} USD", "success")
-            changed = True
-    cp_owner = request.form.get("cp_onec_owner", app_settings.get("cp_onec_owner"))
-    mode = mode or app_settings.get("approval_mode")  # радіокнопки неактивні, поки фіндиректор спостерігає
-    if (mode not in wf.APPROVAL_MODES or head_mode not in wf.HEAD_MODES or cp_mode not in PENDING_CP_MODES
-            or cfo_mode not in wf.CFO_MODES or cp_owner not in wf.CP_OWNER_MODES):
-        flash("Невідомий режим погодження", "error")
-        return redirect(url_for("admin.admin_users") + "#process-settings")
-    changed = False
-    if (mode != app_settings.get("approval_mode") or head_mode != app_settings.get("dept_head_mode")
-            or cfo_mode != app_settings.get("cfo_mode")):
-        app_settings.set("approval_mode", mode, g.user["email"])
-        app_settings.set("dept_head_mode", head_mode, g.user["email"])
-        app_settings.set("cfo_mode", cfo_mode, g.user["email"])
-        flash(f"Маршрут: {wf.route_label(mode, head_mode, cfo_mode, app_settings.get('cfo_threshold_usd'))}. "
-              "Діє для нових і повторно відправлених заявок.",
-              "success")
-        changed = True
-    org_mode = request.form.get("org_field_mode")
-    if org_mode in wf.ORG_FIELD_MODES and org_mode != app_settings.get("org_field_mode"):
-        app_settings.set("org_field_mode", org_mode, g.user["email"])
-        flash("У заявці ініціатор вибирає: " + {"payer": "лише платника — українська чи іноземна компанія",
-                                                 "accountant": "тип бухгалтера"}.get(org_mode, "організацію"), "success")
-        changed = True
-    data_mode = request.form.get("data_mode")
-    if data_mode in ("work", "test") and db_sql.configured() and data_mode != app_settings.get("data_mode"):
-        app_settings.set("data_mode", data_mode, g.user["email"])
-        flash("Система показує: " + ("тестові дані — нові заявки не зберігаються в базі" if data_mode == "test"
-                                     else "робочу базу даних"), "success")
-        _switch_mail_for_mode(data_mode, g.user["email"])
-        changed = True
-    if cp_owner != app_settings.get("cp_onec_owner"):
-        app_settings.set("cp_onec_owner", cp_owner, g.user["email"])
-        flash("Нових контрагентів у 1С заводить: " + ("адміністратор" if cp_owner == "admin" else "бухгалтер"),
-              "success")
-        changed = True
-    require_acc = request.form.get("require_payment_account") == "1"
-    if "require_payment_account_sent" in request.form and require_acc != bool(app_settings.get("require_payment_account")):
-        app_settings.set("require_payment_account", require_acc, g.user["email"])
-        flash("«Вид оплати» при погодженні бухгалтером: " + ("обов'язковий" if require_acc else "необов'язковий"), "success")
-        changed = True
-    if "no_self_approval_sent" in request.form:
-        no_self = request.form.get("no_self_approval") == "1"
-        if no_self != bool(app_settings.get("no_self_approval")):
-            app_settings.set("no_self_approval", no_self, g.user["email"])
-            flash("Автор погоджує власну заявку: " + ("заборонено" if no_self else "дозволено"), "success")
-            changed = True
-    if "cash_handover_sent" in request.form:
-        handover_on = request.form.get("cash_handover_confirm") == "1"
-        try:
-            remind_days = max(0, min(int(request.form.get("cash_handover_remind_days") or 0), 30))
-        except ValueError:
-            remind_days = app_settings.get("cash_handover_remind_days")
-        if handover_on != bool(app_settings.get("cash_handover_confirm")):
-            app_settings.set("cash_handover_confirm", handover_on, g.user["email"])
-            flash("Підтвердження передачі готівки підряднику: " + ("увімкнено" if handover_on else "вимкнено"), "success")
-            changed = True
-        if remind_days != app_settings.get("cash_handover_remind_days"):
-            app_settings.set("cash_handover_remind_days", remind_days, g.user["email"])
-            flash(f"Нагадування про передачу готівки: кожні {remind_days} дн." if remind_days
-                  else "Нагадування про передачу готівки вимкнено", "success")
-            changed = True
-    if cp_mode != app_settings.get("pending_cp_payment"):
-        app_settings.set("pending_cp_payment", cp_mode, g.user["email"])
-        flash(f"Контрагент, якого ще немає в 1С: {PENDING_CP_MODES[cp_mode]}", "success")
-        changed = True
-    if not changed:
-        flash("Змін немає", "success")
-    return redirect(url_for("admin.admin_users") + "#process-settings")
+    return redirect(url_for("admin.admin_settings", tab="payment") + "#organizations")
 
 
 ADMIN_ROLE_ORDER = ["admin", "initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo"]
@@ -307,62 +193,15 @@ def admin_users(*, context):
         group_url=_azure_group_url,
         error=error,
         me_oid=g.user["oid"],
-        expense_status=expense_items.status(),
-        approval_mode=app_settings.info("approval_mode"),
-        head_mode=app_settings.info("dept_head_mode"),
-        HEAD_MODES=wf.HEAD_MODES,
-        cfo_mode=app_settings.info("cfo_mode"),
-        cfo_threshold=app_settings.get("cfo_threshold_usd"),
-        rates_status=rates.status(),
-        db_on=db_sql.configured(),
-        org_mode=app_settings.get("org_field_mode"),
-        ORG_FIELD_MODES=wf.ORG_FIELD_MODES,
-        data_mode=app_settings.get("data_mode"),
-        CFO_MODES=wf.CFO_MODES,
-        cp_owner=app_settings.get("cp_onec_owner"),
-        CP_OWNER_MODES=wf.CP_OWNER_MODES,
-        pending_cp_requests={c["id"]: db.first_request_with_counterparty(c["id"])
-                             for c in counterparties.pending_items()},
-        pending_cp=app_settings.info("pending_cp_payment"),
-        require_payment_account=app_settings.get("require_payment_account"),
-        no_self_approval=app_settings.get("no_self_approval"),
-        cash_handover_confirm=app_settings.get("cash_handover_confirm"),
-        cash_handover_remind_days=app_settings.get("cash_handover_remind_days"),
-        handover_max_reminders=wf.HANDOVER_MAX_REMINDERS,
-        PENDING_CP_MODES=PENDING_CP_MODES,
-        pending_counterparties=counterparties.pending_items(),
-        route_label=wf.route_label,
-        departments_list=departments.get_departments(),
-        departments_status=departments.status(),
-        organizations_status=organizations.status(),
-        currencies_status=currencies.status(),
-        counterparties_status=counterparties.status(),
-        payment_types_status=payment_types.status(),
-        org_list=organizations.get_all(),
-        org_disabled=organizations.disabled_codes(),
-        org_accountants=organizations.accountant_overrides(),
-        ACCOUNTANT_ROLE_LIST=[(r, wf.ROLE_SHORT[r]) for r in ("acc_cash", "acc_resident", "acc_nonresident")],
         user_departments={uid: org_structure.department_of(uid) for uid in users},
         onec_links=user_onec.all_links(),
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
-        mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name", "smtp_host",
-                                                "smtp_port", "smtp_security", "smtp_username",
-                                                "allow_custom_email", "error_alerts")},
         alt_addresses=user_prefs.confirmed_addresses() if app_settings.get("allow_custom_email") else {},
         tg_on=telegram_notify.enabled(),
         tg_overrides=user_prefs.telegram_overrides(),
         tg_linked=lambda e: telegram_notify.is_linked(user_prefs.telegram_lookup(e)),
-        mail_password=app_settings.info("smtp_password"),
-        SMTP_PRESETS=mailer.PRESETS,
-        SMTP_SECURITY=mailer.SECURITY,
-        mail_log=list(mailer.LOG)[:20],
-        mail_problems=len(notify_log.query(200, status="problems")),
-        telegram=telegram_notify.status(),
-        APPROVAL_MODES=wf.APPROVAL_MODES,
         budgets={uid: user_budget.get(uid) for uid in users},
         budget_summary=user_budget.summary,
-        budget_departments=expense_items.get_departments(),
-        budget_items=[{"k": i["kind"], "d": i["departments"]} for i in expense_items.get_items()],
     )
 
 
@@ -387,7 +226,7 @@ def admin_expense_refresh(*, context):
         flash(f"Довідник статей витрат оновлено: {st['count']} статей", "success")
     else:
         flash("Не вдалося оновити довідник: " + (expense_items.status()["error"] or "невідома помилка"), "error")
-    return redirect(url_for("admin.admin_users") + "#expense-items")
+    return redirect(url_for("admin.admin_settings", tab="data") + "#expense-items")
 
 
 @bp.route("/admin/users/search")
@@ -595,4 +434,4 @@ def admin_telegram_test(*, context):
                                          "Якщо ви його бачите — сповіщення в Telegram працюють.", request.host_url)
         notify_log.record("telegram", g.user["email"], "queued", "Тестове повідомлення", event="test", ref=f"tg:{msg_id}")
         flash("Тестове повідомлення поставлено в чергу — бот забере його протягом ~30 секунд", "success")
-    return redirect(url_for("admin.admin_users") + "#mail-settings")
+    return redirect(url_for("admin.admin_settings", tab="notify") + "#mail-settings")

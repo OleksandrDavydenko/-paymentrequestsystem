@@ -23,6 +23,11 @@ import graph
 graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
+def admin_page():
+    """Сторінки адмінки разом (користувачі + вкладки налаштувань) — для перевірок вмісту."""
+    return "".join(c.get(u).get_data(as_text=True) for u in ["/admin/users"] + [
+        f"/admin/settings?tab={t}" for t in ("approval", "request", "payment", "notify", "data")])
+
 # Бухгалтер при погодженні вибирає «Вид оплати» — у старих тестах підставляємо перший доступний
 import payment_accounts as _pa, storage as _md
 _orig_post = c.post
@@ -51,7 +56,7 @@ check("saved to file with audit", json.load(open(os.environ["APP_SETTINGS_FILE"]
 app_settings.reload()
 check("survives reload", app_settings.get("approval_mode") == "parallel")
 check("bogus mode rejected", c.post("/admin/settings", data={"approval_mode": "x"}).status_code == 302 and app_settings.get("approval_mode") == "parallel")
-check("admin page shows block", "Налаштування процесу" in c.get("/admin/users").get_data(as_text=True))
+check("admin page shows block", "Маршрут погодження" in admin_page())
 
 # --- паралельно
 login("i@ftpua.com", ["g-i"])
