@@ -10,7 +10,7 @@ os.environ.update(UPLOAD_DIR=tmp, GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", GROU
 import app as m
 for k in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "GOOGLE_ALLOWED_DOMAINS"):
     os.environ.pop(k, None)  # після import app: локальний .env міг їх задати
-import app_settings, google_login, graph, mailer, user_roles
+import app_settings, google_login, graph, mailer, user_directory, user_roles
 import web.auth as wa
 
 ok = True
@@ -31,7 +31,9 @@ GROUP_PEOPLE = {"g-a": [{"id": "oid-admin@ftpua.com", "name": "Адмін", "ema
                 "g-i": [{"id": "oid-ini@ftpua.com", "name": "Ініціатор", "email": "ini@ftpua.com"},
                         {"id": "oid-admin@ftpua.com", "name": "Адмін", "email": "admin@ftpua.com"}],
                 "g-r": [{"id": "oid-acc@ftpua.com", "name": "Бухгалтер", "email": "acc@ftpua.com"}]}
-graph.group_members = lambda t, g: list(GROUP_PEOPLE.get(g, []))
+# Токен адміністратора (Graph User.ReadBasic.All) — ім'я й пошта; токен самого додатку — лише ID учасників
+graph.group_members = lambda t, g: [p if t != "app-token" else {"id": p["id"], "name": "", "email": ""}
+                                    for p in GROUP_PEOPLE.get(g, [])]
 mailer.app_token = lambda: "app-token"
 c = m.app.test_client()
 page = lambda url: c.get(url).get_data(as_text=True)
@@ -59,12 +61,18 @@ mailer.app_token = lambda: (_ for _ in ()).throw(mailer.MailError("немає д
 c.post("/admin/settings", data={"tab": "data", "login_methods": "both"})
 check("graph failure -> not switched", app_settings.get("login_methods") == "microsoft")
 mailer.app_token = real_import
+user_directory._load().clear()  # хто входив — у довіднику; бухгалтер ще не входив
+user_directory.remember([{"id": "oid-admin@ftpua.com", "name": "Адмін", "email": "admin@ftpua.com"},
+                         {"id": "oid-ini@ftpua.com", "name": "Ініціатор", "email": "ini@ftpua.com"}])
 r = c.post("/admin/settings", data={"tab": "data", "login_methods": "both"}, follow_redirects=True)
 check("switched to both", app_settings.get("login_methods") == "both" and wa.login_mode() == "both")
 check("roles imported", user_roles.get("oid-admin@ftpua.com")["roles"] == {"admin", "initiator"}
       and user_roles.get("oid-acc@ftpua.com")["roles"] == {"acc_resident"}
       and "Ролі перенесено з груп Azure в систему: 3" in r.get_data(as_text=True))
-check("notifications: role members from the system", [p["email"] for p in m._role_members("acc_resident")] == ["acc@ftpua.com"])
+check("imported with only IDs: email and name from the directory", user_roles.get("oid-ini@ftpua.com")["email"] == "ini@ftpua.com"
+      and user_roles.find_by_email("admin@ftpua.com")["id"] == "oid-admin@ftpua.com")
+check("never logged in -> no email yet, no mail", user_roles.get("oid-acc@ftpua.com")["email"] == ""
+      and m._role_members("acc_resident") == [])
 
 ms_logout()
 html = page("/login?next=/requests")
@@ -123,8 +131,20 @@ check("google user without roles -> no access", c.get("/requests").status_code =
 graph.group_members = lambda t, g: (_ for _ in ()).throw(AssertionError("Graph must not be used"))
 r, _ = google_flow("admin@ftpua.com", name="Адмін")
 html = page("/admin/users")
-check("admin via google: users from the system", "Ініціатор" in html and "Бухгалтер" in html
+check("admin via google: users from the system", "Ініціатор" in html and "Адмін" in html
       and "Не налаштовано групи" not in html)
+check("users list: warning about unknown email", "Невідома пошта в 1 користувачів" in html and "oid-acc@ftpua.com" in html)
+html = page("/admin/users/oid-acc@ftpua.com")
+check("card: email field for ID-only person", 'name="person_email"' in html)
+c.post("/admin/users/oid-acc@ftpua.com", data={"roles": ["acc_resident"], "person_email": "x@gmail.com"})
+check("foreign-domain email refused", user_roles.get("oid-acc@ftpua.com")["email"] == "")
+c.post("/admin/users/oid-acc@ftpua.com", data={"roles": ["acc_resident"], "person_email": "ini@ftpua.com"})
+check("email of another user refused", user_roles.get("oid-acc@ftpua.com")["email"] == "")
+c.post("/admin/users/oid-acc@ftpua.com", data={"roles": ["acc_resident"], "person_email": "Acc@ftpua.com",
+                                               "person_name": "Бухгалтер"})
+rec = user_roles.get("oid-acc@ftpua.com")
+check("email and name saved", rec["email"] == "acc@ftpua.com" and rec["name"] == "Бухгалтер" and rec["roles"] == {"acc_resident"})
+check("notifications: role members from the system", [p["email"] for p in m._role_members("acc_resident")] == ["acc@ftpua.com"])
 found = c.get("/admin/users/search?q=new@ftpua.com").get_json()["users"]
 check("search: new email suggested", any(u["id"] == "new@ftpua.com" and u.get("new") for u in found))
 check("search: foreign domain not suggested",

@@ -32,6 +32,14 @@
   </div>
   {% endif %}
   {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
+  {% set no_email = users | rejectattr('email') | list %}
+  {% if roles_in_app and no_email %}
+  <div class="flash error">
+    Невідома пошта в {{ no_email | length }} користувачів (перенесені з Azure лише за ID):
+    {% for u in no_email %}<a href="{{ url_for('admin.admin_user_card', user_id=u.id) }}">{{ u.name }}</a>{{ ', ' if not loop.last }}{% endfor %}.
+    Відкрийте картку й укажіть робочу пошту — без неї людина не увійде через Google і не отримає листів.
+  </div>
+  {% endif %}
 
   {% if users | length > 5 %}
   <input type="search" id="users-filter" class="users-filter" placeholder="Пошук: ім'я, пошта, роль або відділ" autocomplete="off">

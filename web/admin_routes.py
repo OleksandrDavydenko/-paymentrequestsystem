@@ -343,6 +343,7 @@ def admin_user_card(user_id, *, context):
         user_name=g.user["name"],
         person=person,
         is_new=not person["roles"],
+        google_domain=(google_login.allowed_domains() or [None])[0],
         error=error,
         me_oid=g.user["oid"],
         groups=groups,
@@ -392,11 +393,21 @@ def _save_user_card(token, person):
     if uid == g.user["oid"] and "admin" in current:
         wanted.add("admin")
     if roles_in_app():  # ролі в системі: записати одразу, діють з наступної сторінки
-        if (person.get("name") or "") == email and (f.get("person_name") or "").strip():
+        if not email:  # перенесено з Azure лише за ID — пошту вводить адміністратор
+            email = (f.get("person_email") or "").strip().lower()
+            other = user_roles.find_by_email(email)
+            if not new_person_allowed(email) or (other and other["id"] != uid):
+                flash("Вкажіть робочу пошту людини" + (f" — {email} вже має інший користувач" if other else
+                                                       " з дозволеного домену"), "error")
+                return redirect(url_for("admin.admin_user_card", user_id=uid))
+            changes.append(f"пошта — {email}")
+            if name == uid:
+                name = email
+        if name in (email, uid) and (f.get("person_name") or "").strip():
             name = f.get("person_name").strip()  # нова людина: ім'я вводить адміністратор
         added = [wf.ROLES[r] for r in ADMIN_ROLE_ORDER if r in wanted - current]
         removed = [wf.ROLES[r] for r in ADMIN_ROLE_ORDER if r in current - wanted]
-        if added or removed or user_roles.get(uid) is None or name != person.get("name"):
+        if added or removed or user_roles.get(uid) is None or name != person.get("name") or email != person["email"]:
             user_roles.set_roles(uid, email, name, wanted, who)
     else:
         try:

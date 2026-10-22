@@ -28,6 +28,16 @@
     {% endif %}
   </div>
   {% endif %}
+  {% if roles_in_app and not person.email %}
+  <div class="callout uc-new" id="uc-email">
+    <strong>Невідома пошта.</strong> Людину перенесено з груп Azure лише за ID, і вона ще не входила в систему.
+    Вкажіть робочу пошту — без неї людина не зможе увійти й не отримає листів.
+    <label class="uc-name">Робоча пошта
+      <input type="email" name="person_email" maxlength="120" required placeholder="name@{{ google_domain or 'company.com' }}" style="width:100%"></label>
+    <label class="uc-name">Прізвище та ім'я
+      <input type="text" name="person_name" maxlength="120" placeholder="Як показувати в заявках" style="width:100%"></label>
+  </div>
+  {% endif %}
   {% if error %}<div class="flash error">Не вдалося прочитати ролі з Azure: {{ error }}</div>{% endif %}
 
   <section class="card uc-section" id="uc-roles">

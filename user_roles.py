@@ -12,6 +12,7 @@ import threading
 
 import clock
 import docstore
+import user_directory
 
 ROLES = ("admin", "initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo")
 
@@ -41,18 +42,27 @@ def reload():
         _load()
 
 
+def _person(uid, u):
+    """Запис для показу: пошта й ім'я, яких немає в записі (перенесені з Azure лише з ID), — з довідника
+    користувачів (хто вже входив у систему)."""
+    email, name = (u.get("email") or "").strip(), u.get("name") or ""
+    if not email or not name:
+        known = user_directory.lookup(uid) or {}
+        email, name = email or known.get("email") or "", name or known.get("name") or ""
+    return {"id": uid, "email": email, "name": name or email or uid, "roles": set(u.get("roles") or [])}
+
+
 def all_users():
     """[{"id", "email", "name", "roles"}] — усі, кому в системі призначено ролі (зокрема з порожнім списком)."""
     with _lock:
-        return [{"id": uid, "email": u.get("email") or "", "name": u.get("name") or u.get("email") or uid,
-                 "roles": set(u.get("roles") or [])} for uid, u in _load().items()]
+        items = list(_load().items())
+    return [_person(uid, u) for uid, u in items]
 
 
 def get(uid):
     with _lock:
         u = _load().get(uid)
-    return {"id": uid, "email": u.get("email") or "", "name": u.get("name") or "", "roles": set(u.get("roles") or [])} \
-        if u else None
+    return _person(uid, u) if u else None
 
 
 def find_by_email(email):
@@ -60,11 +70,7 @@ def find_by_email(email):
     email = (email or "").strip().lower()
     if not email:
         return None
-    with _lock:
-        for uid, u in _load().items():
-            if (u.get("email") or "").lower() == email:
-                return {"id": uid, "email": u.get("email"), "name": u.get("name") or "", "roles": set(u.get("roles") or [])}
-    return None
+    return next((p for p in all_users() if p["email"].lower() == email), None)
 
 
 def roles_of(uid):
@@ -100,7 +106,9 @@ def import_people(people, updated_by):
         for p in people:
             if not p.get("id") or p["id"] in data:
                 continue
-            data[p["id"]] = {"email": p.get("email") or "", "name": p.get("name") or "",
+            known = user_directory.lookup(p["id"]) or {}  # токен додатку дає лише ID учасників груп
+            data[p["id"]] = {"email": p.get("email") or known.get("email") or "",
+                             "name": p.get("name") or known.get("name") or "",
                              "roles": sorted(r for r in p.get("roles") or [] if r in ROLES),
                              "updated_by": updated_by, "updated_at": stamp}
             added += 1
