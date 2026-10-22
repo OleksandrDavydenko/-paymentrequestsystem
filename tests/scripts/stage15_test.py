@@ -27,7 +27,6 @@ def login(email, groups):
     claims.clear(); claims.update({"name": email.split("@")[0].title(), "preferred_username": email, "oid": email, "groups": groups})
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
-import graph; graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
 def admin_page():

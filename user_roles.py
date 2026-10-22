@@ -1,11 +1,12 @@
-"""Ролі користувачів у самій системі (коли вхід через Google: «Налаштування → Дані й система → Вхід у систему»).
+"""Ролі користувачів — у самій системі (адмінка → картка користувача); групи Azure не використовуються.
 
 {id користувача: {"email", "name", "roles": [...], "updated_by", "updated_at"}}. id — Entra object id для тих,
-кого перенесено з груп Azure, або пошта (нижнім регістром) для доданих в адмінці; людину на вході
-знаходимо за поштою, тож однаково працює вхід і через Google, і через Microsoft.
+кого колись перенесено з груп Azure, або пошта (нижнім регістром) для доданих в адмінці; людину на вході
+знаходимо за поштою, тож однаково працює вхід і через Google, і через Microsoft. Зовнішні користувачі
+(пошта не з домену компанії) входять лише тоді, коли тут є запис хоча б з однією роллю.
 
 У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure). Ролі керівника відділу й
-«бачить заявки відділу» — як і раніше, з оргструктури (org_structure), а не тут.
+«бачить заявки відділу» — з оргструктури (org_structure), а не тут.
 """
 import os
 import threading
@@ -46,7 +47,7 @@ def _person(uid, u):
     """Запис для показу: пошта й ім'я, яких немає в записі (перенесені з Azure лише з ID), — з довідника
     користувачів (хто вже входив у систему)."""
     email, name = (u.get("email") or "").strip(), u.get("name") or ""
-    if not email or not name:
+    if not email or not name:  # колись перенесені з Azure лише за ID
         known = user_directory.lookup(uid) or {}
         email, name = email or known.get("email") or "", name or known.get("name") or ""
     return {"id": uid, "email": email, "name": name or email or uid, "roles": set(u.get("roles") or [])}
@@ -96,25 +97,13 @@ def set_roles(uid, email, name, roles, updated_by):
     return set(roles)
 
 
-def import_people(people, updated_by):
-    """Перенести ролі з груп Azure: people — [{"id", "email", "name", "roles"}]. Уже наявні записи не
-    перезаписуються (їх могли змінити в системі). Повертає кількість доданих."""
-    added = 0
+def set_name(uid, name):
+    """Ім'я з акаунта на вході — для людей, яких адміністратор додав лише за поштою."""
     with _lock:
         data = _load()
-        stamp = clock.now().isoformat(timespec="seconds")
-        for p in people:
-            if not p.get("id") or p["id"] in data:
-                continue
-            known = user_directory.lookup(p["id"]) or {}  # токен додатку дає лише ID учасників груп
-            data[p["id"]] = {"email": p.get("email") or known.get("email") or "",
-                             "name": p.get("name") or known.get("name") or "",
-                             "roles": sorted(r for r in p.get("roles") or [] if r in ROLES),
-                             "updated_by": updated_by, "updated_at": stamp}
-            added += 1
-        if added:
+        if uid in data and name:
+            data[uid] = {**data[uid], "name": name}
             docstore.write("user_roles", _path(), data)
-    return added
 
 
 # Інший процес сайту змінив документ — перечитати (docstore.sync)

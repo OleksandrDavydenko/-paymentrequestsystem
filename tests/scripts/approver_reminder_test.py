@@ -8,7 +8,7 @@ os.environ.update(UPLOAD_DIR=tmp, GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", GROU
                   ADMIN_EMAILS="")
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
-import app_settings, clock, graph, mailer, notifications, user_prefs
+import app_settings, clock, mailer, notifications, user_prefs
 import storage as db
 import workflow as wf
 
@@ -29,7 +29,6 @@ claims = {}
 def login(email, groups):
     claims.clear(); claims.update({"name": email, "preferred_username": email, "oid": email, "groups": groups})
 m.auth._auth.get_user = lambda: dict(claims)
-graph.group_members = lambda t, g: []
 c = m.app.test_client()
 def flush():
     mailer.wait(); out = list(sent); sent.clear(); return out

@@ -93,8 +93,6 @@ check("legacy code shown as code", "OLD.1" in c.get(f"/requests/{rid}").get_data
 check("non-admin refresh -> 403", c.post("/admin/expense-items/refresh").status_code == 403)
 login("od@ftpua.com", ["g-a"])
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
-import graph
-graph.group_members = lambda t, g: []
 n = calls["n"]
 r = c.post("/admin/expense-items/refresh")
 check("admin refresh -> PBI called", r.status_code == 302 and calls["n"] == n + 1)

@@ -8,7 +8,7 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
                   TELEGRAM_BOT_KEY="k")
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
-import app_settings, mailer, notifications, telegram_notify, user_prefs, graph
+import app_settings, mailer, notifications, telegram_notify, user_prefs
 import storage as db
 
 ok = True
@@ -26,10 +26,9 @@ def login(email, groups):
     claims.clear(); claims.update({"name": email.split("@")[0].title(), "preferred_username": email, "oid": email, "groups": groups})
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
-MEMBERS = {"g-r": ["res@ftpua.com"], "g-a": ["admin@ftpua.com"]}
-graph.group_members = lambda t, gid: [{"id": u, "name": u.split("@")[0].title(), "email": u} for u in MEMBERS.get(gid, [])]
-graph.get_user = lambda t, uid: {"id": uid, "name": uid.split("@")[0].title(), "email": uid}
-graph.add_member = graph.remove_member = lambda *a, **k: None
+import user_roles
+user_roles.set_roles("res@ftpua.com", "res@ftpua.com", "Res", ["acc_resident"], "t")
+user_roles.set_roles("admin@ftpua.com", "admin@ftpua.com", "Admin", ["admin"], "t")
 c = m.app.test_client()
 
 def admin_page():

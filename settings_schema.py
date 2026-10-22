@@ -63,9 +63,8 @@ def _pending_cp_modes():
 
 
 def _login_methods():
-    return {"microsoft": "Microsoft — ролі в групах Azure (як було)",
-            "both": "Google і Microsoft — ролі в системі",
-            "google": "Лише Google — ролі в системі"}
+    return {"both": "Google і Microsoft",
+            "google": "Лише Google"}
 
 
 def _data_modes():
@@ -176,7 +175,7 @@ _LIST = [
             "bool", False),
     # ---- Дані й система
     Setting("data_mode", "Дані", "data", "choice", "work", _data_modes, available=_db_on),
-    Setting("login_methods", "Вхід у систему", "data", "choice", "microsoft", _login_methods),
+    Setting("login_methods", "Вхід у систему", "data", "choice", "both", _login_methods),
     # ---- службові
     Setting("mail_enabled_work", "Розсилка до тестового режиму", "data", "internal", None),
 ]

@@ -5,7 +5,6 @@ os.environ.update(UPLOAD_DIR=tempfile.mkdtemp(), GROUP_ADMIN="g-admin", GROUP_IN
                   GROUP_CFO="g-cfo", ADMIN_EMAILS="od@ftpua.com")
 import app as m
 import user_budget; user_budget.get = lambda oid: {'direct': True, 'all_departments': True, 'departments': []}
-import graph
 import storage as db
 
 ok = True
@@ -33,7 +32,6 @@ def _post(url, data=None, **kw):
     return _orig_post(url, data=data, **kw)
 c.post = _post
 
-check("legacy GROUP_ACCOUNTANT -> resident", m.GROUPS["acc_resident"] == "g-res-legacy")
 
 BASE = {"pay_date": "2026-10-10", "counterparty_id": "1", "organization_id": "1", "expense_code": "01.001",
         "currency": "UAH", "amount": "100", "action": "submit"}
@@ -79,7 +77,7 @@ page = c.get(f"/requests/{ids['bank_nonresident']}").get_data(as_text=True)
 check("route bar names nonresident accountant", "Бухгалтер (безготівка, нерезидент)" in page)
 
 login("od@ftpua.com", [])
-graph.group_members = lambda t, gid: [{"id": "u1", "name": "U", "email": "u@ftpua.com"}]
+import user_roles; user_roles.set_roles("u1", "u@ftpua.com", "U", ["initiator"], "t")
 page = c.get("/admin/users/u1").get_data(as_text=True)
 check("user card has 3 accountant roles", all(x in page for x in ["Бухгалтер (готівка)", "Бухгалтер (безготівка, резидент)", "Бухгалтер (безготівка, нерезидент)"]))
 print("ALL OK" if ok else "SOME FAILED")

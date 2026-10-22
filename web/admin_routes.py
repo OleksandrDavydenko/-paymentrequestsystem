@@ -11,7 +11,6 @@ import db_sql
 import departments
 import expense_items
 import google_login
-import graph
 import mailer
 import notifications
 import notify_log
@@ -29,7 +28,7 @@ import user_prefs
 import user_roles
 import workflow as wf
 
-from web.auth import GROUPS, login_required, requires, roles_in_app
+from web.auth import login_required, requires
 from web.request_helpers import _link_counterparty
 
 
@@ -147,56 +146,14 @@ def admin_organizations(*, context):
 ADMIN_ROLE_ORDER = ["admin", "initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo"]
 
 
-def _azure_group_url(group_id):
-    return f"https://portal.azure.com/#view/Microsoft_AAD_IAM/GroupDetailsMenuBlade/~/Members/groupId/{group_id}"
-
-
-def _configured_groups():
-    return {role: gid for role, gid in GROUPS.items() if gid}
-
-
-def _group_users(token):
-    """Користувачі з груп ролей: ({id: {id, name, email, roles}}, текст помилки або None)."""
-    users, error = {}, None
-    try:
-        for role, gid in _configured_groups().items():
-            for u in graph.group_members(token, gid):
-                users.setdefault(u["id"], {**u, "roles": set()})["roles"].add(role)
-    except graph.GraphError as e:
-        error = str(e)
-    user_directory.remember(users.values(), active=True)  # пошта погоджувачів для листів, список користувачів
-    return users, error
-
-
-def _roles_source(token):
-    """Звідки ролі для адмінки: ({id: людина з ролями}, {роль: група або «app»}, помилка).
-    Ролі в системі — user_roles; інакше — групи Azure через Microsoft Graph (токен адміністратора)."""
-    if roles_in_app():
-        return {u["id"]: u for u in user_roles.all_users()}, {r: "app" for r in ADMIN_ROLE_ORDER}, None
-    users, error = _group_users(token)
-    return users, _configured_groups(), error
-
-
-def import_azure_roles(who):
-    """Перенести ролі з груп Azure в систему (токен самого додатку): (скільки людей додано, помилка або None).
-    Хто вже має запис ролей у системі — не змінюється."""
-    try:
-        token = mailer.app_token()
-    except Exception as e:  # немає CLIENT_SECRET / доступу до Graph
-        return 0, str(e)
-    users, error = _group_users(token)
-    if error:
-        return 0, error
-    return user_roles.import_people(users.values(), who), None
-
-
-def new_person_allowed(email):
-    """Нового користувача (ролі в системі) додаємо за робочою поштою дозволеного домену."""
+def _valid_email(email):
     email = (email or "").strip().lower()
-    if not EMAIL_RE.match(email):
-        return False
-    domains = google_login.allowed_domains()
-    return not domains or email.rsplit("@", 1)[-1] in domains
+    return bool(EMAIL_RE.match(email))
+
+
+def _users():
+    """{id: людина з ролями} — усі, кому в системі призначено ролі."""
+    return {u["id"]: u for u in user_roles.all_users()}
 
 
 def _migrate_legacy_departments():
@@ -210,20 +167,17 @@ def _migrate_legacy_departments():
 
 
 @bp.route("/admin/users")
-@login_required(scopes=graph.ADMIN_SCOPES)
+@login_required
 @requires("admin")
 def admin_users(*, context):
     _migrate_legacy_departments()
-    users, groups, error = _roles_source(context.get("access_token"))
+    users = _users()
     return render_template(
         "admin_users.html",
         user_name=g.user["name"],
         users=sorted(users.values(), key=lambda u: u["name"].lower()),
         role_order=ADMIN_ROLE_ORDER,
-        groups=groups,
-        missing_groups=[r for r in ADMIN_ROLE_ORDER if r not in groups],
-        group_url=_azure_group_url,
-        error=error,
+        external=google_login.is_external,
         me_oid=g.user["oid"],
         user_departments={uid: org_structure.department_of(uid) for uid in users},
         onec_links=user_onec.all_links(),
@@ -234,7 +188,6 @@ def admin_users(*, context):
         tg_linked=lambda e: telegram_notify.is_linked(user_prefs.telegram_lookup(e)),
         budgets={uid: user_budget.get(uid) for uid in users},
         budget_summary=user_budget.summary,
-        roles_in_app=roles_in_app(),
         google_domain=(google_login.allowed_domains() or [None])[0],
     )
 
@@ -264,16 +217,12 @@ def admin_expense_refresh(*, context):
 
 
 @bp.route("/admin/users/search")
-@login_required(scopes=graph.ADMIN_SCOPES)
+@login_required
 @requires("admin")
 def admin_users_search(*, context):
+    """Серед тих, кому вже призначено ролі, і тих, хто входив; або нова людина за повною поштою (зокрема
+    зовнішня — не з домену компанії: додати її може лише адміністратор)."""
     q = (request.args.get("q") or "").strip()
-    if not roles_in_app():
-        try:
-            return {"users": graph.search_users(context["access_token"], q)}
-        except graph.GraphError as e:
-            return {"error": str(e)}, 502
-    # Ролі в системі: серед тих, кому вже призначено ролі, і тих, хто входив; або нова людина за поштою
     found, ql = {}, q.lower()
     for u in user_roles.all_users():
         if len(ql) >= 2 and (ql in u["name"].lower() or ql in u["email"].lower()):
@@ -281,62 +230,34 @@ def admin_users_search(*, context):
     for u in user_directory.search(q):
         found.setdefault(u["email"].lower(), {"id": u["id"], "name": u["name"], "email": u["email"]})
     users = list(found.values())[:15]
-    if new_person_allowed(q) and ql not in found:
-        users.append({"id": ql, "name": f"Додати {ql}", "email": "нова людина — ролі можна призначити одразу",
-                      "new": True})
+    if _valid_email(q) and ql not in found:
+        users.append({"id": ql, "name": f"Додати {ql}", "new": True,
+                      "email": "зовнішній користувач — не з домену компанії" if google_login.is_external(ql)
+                      else "нова людина — ролі можна призначити одразу"})
     return {"users": users}
 
 
-def _apply_role_changes(token, user_id, wanted, current):
-    """Додати/видалити людину в групах так, щоб її ролі стали = wanted. Повертає (додано, знято)."""
-    groups = _configured_groups()
-    if user_id == g.user["oid"] and "admin" in current and "admin" not in wanted:
-        raise graph.GraphError("Не можна зняти роль Адміністратора із самого себе")
-    added, removed = [], []
-    for role in ADMIN_ROLE_ORDER:
-        if role not in groups:
-            continue
-        if role in wanted and role not in current:
-            graph.add_member(token, groups[role], user_id)
-            added.append(wf.ROLES[role])
-        elif role in current and role not in wanted:
-            graph.remove_member(token, groups[role], user_id)
-            removed.append(wf.ROLES[role])
-    return added, removed
-
-
 @bp.route("/admin/users/<user_id>", methods=["GET", "POST"])
-@login_required(scopes=graph.ADMIN_SCOPES)
+@login_required
 @requires("admin")
 def admin_user_card(user_id, *, context):
     """Картка користувача: ролі, відділ, керівництво й перегляд відділів, статті бюджету — в одному місці."""
-    token = context.get("access_token")
-    users, groups, error = _roles_source(token)
-    person = users.get(user_id)
-    if not person and roles_in_app():  # новий: ще без ролей у системі
+    person = _users().get(user_id)
+    if not person:  # новий: ще без ролей у системі
         known = user_directory.lookup(user_id)
         if known:
             person = {"id": user_id, "email": known["email"], "name": known.get("name") or known["email"], "roles": set()}
-        elif new_person_allowed(user_id):
+        elif _valid_email(user_id):
             email = user_id.strip().lower()
             rec = user_roles.find_by_email(email) or user_directory.find_active(email)
             if rec:  # уже є в системі під своїм id (Entra oid) — його заявки лишаються його
                 return redirect(url_for("admin.admin_user_card", user_id=rec["id"]))
             person = {"id": email, "email": email, "name": email, "roles": set()}
         else:
-            flash("Користувача не знайдено — додайте його за робочою поштою", "error")
-            return redirect(url_for("admin.admin_users"))
-    elif not person:  # новий: ще не має жодної ролі
-        try:
-            person = {**graph.get_user(token, user_id), "roles": set()}
-        except graph.GraphError as e:
-            flash(f"Користувача не знайдено в Azure: {e}", "error")
+            flash("Користувача не знайдено — додайте його за поштою", "error")
             return redirect(url_for("admin.admin_users"))
     if request.method == "POST":
-        if error:  # не знаємо поточних ролей — нічого не змінюємо
-            flash("Не вдалося прочитати ролі з Azure, тож зміни не збережено: " + error, "error")
-            return redirect(url_for("admin.admin_user_card", user_id=user_id))
-        return _save_user_card(token, person)
+        return _save_user_card(person)
     allow_alt = app_settings.get("allow_custom_email")
     return render_template(
         "admin_user_card.html",
@@ -344,11 +265,8 @@ def admin_user_card(user_id, *, context):
         person=person,
         is_new=not person["roles"],
         google_domain=(google_login.allowed_domains() or [None])[0],
-        error=error,
+        is_external=bool(person["email"]) and google_login.is_external(person["email"]),
         me_oid=g.user["oid"],
-        groups=groups,
-        group_url=_azure_group_url,
-        roles_in_app=roles_in_app(),
         ROLE_GROUPS=wf.ROLE_GROUPS,
         ROLE_HINTS=wf.ROLE_HINTS,
         departments_list=departments.get_departments(),
@@ -382,39 +300,31 @@ def admin_user_card(user_id, *, context):
 EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
 
 
-def _save_user_card(token, person):
+def _save_user_card(person):
     f = request.form
     uid, name, email, who = person["id"], person["name"], person["email"], g.user["email"]
     current = set(person["roles"])
     changes = []
 
-    # Ролі (групи Azure). Свою роль адміністратора зняти не можна — поле вимкнене.
+    # Ролі (записуються одразу й діють з наступної сторінки). Свою роль адміністратора зняти не можна.
     wanted = {r for r in f.getlist("roles") if r in ADMIN_ROLE_ORDER}
     if uid == g.user["oid"] and "admin" in current:
         wanted.add("admin")
-    if roles_in_app():  # ролі в системі: записати одразу, діють з наступної сторінки
-        if not email:  # перенесено з Azure лише за ID — пошту вводить адміністратор
-            email = (f.get("person_email") or "").strip().lower()
-            other = user_roles.find_by_email(email)
-            if not new_person_allowed(email) or (other and other["id"] != uid):
-                flash("Вкажіть робочу пошту людини" + (f" — {email} вже має інший користувач" if other else
-                                                       " з дозволеного домену"), "error")
-                return redirect(url_for("admin.admin_user_card", user_id=uid))
-            changes.append(f"пошта — {email}")
-            if name == uid:
-                name = email
-        if name in (email, uid) and (f.get("person_name") or "").strip():
-            name = f.get("person_name").strip()  # нова людина: ім'я вводить адміністратор
-        added = [wf.ROLES[r] for r in ADMIN_ROLE_ORDER if r in wanted - current]
-        removed = [wf.ROLES[r] for r in ADMIN_ROLE_ORDER if r in current - wanted]
-        if added or removed or user_roles.get(uid) is None or name != person.get("name") or email != person["email"]:
-            user_roles.set_roles(uid, email, name, wanted, who)
-    else:
-        try:
-            added, removed = _apply_role_changes(token, uid, wanted, current)
-        except graph.GraphError as e:
-            flash(str(e), "error")
+    if not email:  # колись перенесено з Azure лише за ID — пошту вводить адміністратор
+        email = (f.get("person_email") or "").strip().lower()
+        other = user_roles.find_by_email(email)
+        if not _valid_email(email) or (other and other["id"] != uid):
+            flash("Вкажіть пошту людини" + (f" — {email} вже має інший користувач" if other else ""), "error")
             return redirect(url_for("admin.admin_user_card", user_id=uid))
+        changes.append(f"пошта — {email}")
+        if name == uid:
+            name = email
+    if name in (email, uid) and (f.get("person_name") or "").strip():
+        name = f.get("person_name").strip()  # нова людина: ім'я вводить адміністратор
+    added = [wf.ROLES[r] for r in ADMIN_ROLE_ORDER if r in wanted - current]
+    removed = [wf.ROLES[r] for r in ADMIN_ROLE_ORDER if r in current - wanted]
+    if added or removed or user_roles.get(uid) is None or name != person.get("name") or email != person["email"]:
+        user_roles.set_roles(uid, email, name, wanted, who)
     if added:
         changes.append("додано ролі: " + ", ".join(added))
     if removed:
@@ -479,9 +389,6 @@ def _save_user_card(token, person):
 
     if changes:
         flash(f"{name}: " + "; ".join(changes) + ".", "success")
-        if (added or removed) and not roles_in_app():
-            flash("Ролі вже змінено в Azure. Щоб вони запрацювали, користувачу треба вийти з системи й увійти знову.",
-                  "success")
         if current and not wanted:
             flash(f"{name} більше не має жодної ролі — доступу до системи немає.", "success")
     else:

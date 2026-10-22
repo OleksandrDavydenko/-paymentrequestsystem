@@ -94,12 +94,10 @@ r3 = db.get_request(db.last_id())
 check("org mode ignores accountant_type", r3.get("accountant_type") is None and wf.accountant_role(r3) == "acc_nonresident")
 
 # ---------- бухгалтер за замовчуванням
-import graph, org_structure
-MEMBERS = {"g-i": ["author@ftpua.com"], "g-a": ["admin@ftpua.com"]}
-graph.group_members = lambda t, gid: [{"id": u, "name": u.split("@")[0].title(), "email": u} for u in MEMBERS.get(gid, [])]
-graph.group_members_app = lambda gid: [{"id": u, "name": u.split("@")[0].title(), "email": u} for u in MEMBERS.get(gid, [])]
-graph.get_user = lambda t, uid: {"id": uid, "name": uid.split("@")[0].title(), "email": uid}
-graph.add_member = graph.remove_member = lambda *a, **k: None
+import org_structure
+import user_roles
+user_roles.set_roles("author@ftpua.com", "author@ftpua.com", "Author", ["initiator"], "t")
+user_roles.set_roles("admin@ftpua.com", "admin@ftpua.com", "Admin", ["admin"], "t")
 login("admin@ftpua.com", ADMIN)
 c.post("/admin/settings", data={**SETTINGS, "org_field_mode": "accountant"})
 page = c.get("/admin/users/author@ftpua.com").get_data(as_text=True)

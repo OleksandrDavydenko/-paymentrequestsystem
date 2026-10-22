@@ -36,5 +36,42 @@ if "--sql" in sys.argv:
         return eng
 
     dbs._engine = _engine
+
+# Ролі тестових користувачів сценарії задають так, як колись у Azure: ID груп у claims["groups"] і змінні GROUP_*.
+# Перед кожним запитом вони записуються в ролі системи (user_roles); ролі, змінені в адмінці, не перезаписуються,
+# доки сценарій не змінить групи цієї людини.
+GROUP_ENV = {"admin": ("GROUP_ADMIN",), "initiator": ("GROUP_INITIATOR",), "acc_cash": ("GROUP_ACC_CASH",),
+             "acc_resident": ("GROUP_ACC_RESIDENT", "GROUP_ACCOUNTANT"), "acc_nonresident": ("GROUP_ACC_NONRESIDENT",),
+             "cfo": ("GROUP_CFO",)}
+_seeded = {}
+
+
+def seed_roles(email, groups, name=None, uid=None):
+    import user_roles
+    roles = {r for r, envs in GROUP_ENV.items() if any(os.environ.get(e) and os.environ[e] in groups for e in envs)}
+    rec = user_roles.find_by_email(email)
+    uid = rec["id"] if rec else (uid or email.lower())
+    if _seeded.get(uid) != (frozenset(groups), email) or rec is None:
+        user_roles.set_roles(uid, email, name or (rec or {}).get("name") or email, roles, "test")
+        _seeded[uid] = (frozenset(groups), email)
+
+
+import flask  # noqa: E402
+
+_preprocess = flask.Flask.preprocess_request
+
+
+def _preprocess_with_roles(self):
+    import web.auth as wa
+    try:
+        claims = wa.auth._auth.get_user()
+    except Exception:
+        claims = None
+    if claims and "groups" in claims and claims.get("preferred_username"):
+        seed_roles(claims["preferred_username"], claims["groups"], claims.get("name"), claims.get("oid"))
+    return _preprocess(self)
+
+
+flask.Flask.preprocess_request = _preprocess_with_roles
 sys.argv = [script]
 runpy.run_path(script, run_name="__main__")

@@ -7,7 +7,6 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
                   GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", GROUP_ACC_RESIDENT="g-r", GROUP_CFO="g-f", ADMIN_EMAILS="")
 import app as m, storage as db, payment_accounts as pa, payment_types as pt, user_onec
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
-import graph
 ok = True
 def check(label, cond):
     global ok; ok &= bool(cond); print(("PASS " if cond else "FAIL ") + label)
@@ -17,7 +16,7 @@ def login(email, groups, oid=None):
     claims.clear(); claims.update({"name": email.split("@")[0].title(), "preferred_username": email, "oid": oid or email, "groups": groups})
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
-graph.group_members = lambda t, g: [{"id": "irina", "name": "Iryna Chagan", "email": "i.chagan@ftpua.com"}] if g == "g-r" else []
+import user_roles; user_roles.set_roles("irina", "i.chagan@ftpua.com", "Iryna Chagan", ["acc_resident"], "t")
 c = m.app.test_client()
 
 def admin_page():

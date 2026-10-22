@@ -6,7 +6,6 @@ os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"),
                   COUNTERPARTIES_PENDING_FILE=os.path.join(tmp, "cp.json"), GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", ADMIN_EMAILS="")
 import app as m, storage as db, departments, org_structure
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
-import graph; graph.group_members = lambda t, g: []
 ok = True
 def check(label, cond):
     global ok; ok &= bool(cond); print(("PASS " if cond else "FAIL ") + label)

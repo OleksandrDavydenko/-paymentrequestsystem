@@ -17,49 +17,50 @@
       {% for d in head_deps %}<span class="bchip bchip-head">Керівник: {{ dept_name(d) }}</span>{% endfor %}
     </div>
   </div>
+  {% if is_external %}
+  <div class="callout" id="uc-external">
+    <strong>Зовнішній користувач</strong> — пошта не з домену компанії. Входить на сайті через посилання
+    «Зовнішній користувач — увійти іншим акаунтом Google» своїм акаунтом Google з адресою {{ person.email }}
+    (Gmail, Google Workspace своєї компанії або Google-акаунт, створений на цю пошту). Без жодної ролі вхід закрито.
+  </div>
+  {% endif %}
   {% if is_new %}
   <div class="callout uc-new">
     <strong>Новий користувач — поки без доступу до системи.</strong>
     Оберіть ролі (пункт 1), за потреби відділ і статті бюджету, і натисніть «Зберегти» внизу.
-    {% if roles_in_app and person.name == person.email %}
+    {% if person.email and person.name == person.email %}
     <label class="uc-name">Прізвище та ім'я
       <input type="text" name="person_name" maxlength="120" placeholder="Як показувати в заявках" style="width:100%"></label>
     <span class="muted">Коли людина вперше увійде через Google, ім'я оновиться з її акаунта.</span>
     {% endif %}
   </div>
   {% endif %}
-  {% if roles_in_app and not person.email %}
+  {% if not person.email %}
   <div class="callout uc-new" id="uc-email">
-    <strong>Невідома пошта.</strong> Людину перенесено з груп Azure лише за ID, і вона ще не входила в систему.
-    Вкажіть робочу пошту — без неї людина не зможе увійти й не отримає листів.
-    <label class="uc-name">Робоча пошта
+    <strong>Невідома пошта.</strong> Людину колись перенесено з груп Azure лише за ID, і вона ще не входила в систему.
+    Вкажіть пошту — без неї людина не зможе увійти й не отримає листів.
+    <label class="uc-name">Пошта
       <input type="email" name="person_email" maxlength="120" required placeholder="name@{{ google_domain or 'company.com' }}" style="width:100%"></label>
     <label class="uc-name">Прізвище та ім'я
       <input type="text" name="person_name" maxlength="120" placeholder="Як показувати в заявках" style="width:100%"></label>
   </div>
   {% endif %}
-  {% if error %}<div class="flash error">Не вдалося прочитати ролі з Azure: {{ error }}</div>{% endif %}
 
   <section class="card uc-section" id="uc-roles">
     <div class="uc-title"><span class="uc-num">1</span><h2>Ролі в системі</h2></div>
-    <p class="uc-explain">Що людина робить у системі; можна вибрати кілька ролей.
-      {% if roles_in_app %}Ролі зберігаються в самій системі й діють одразу після «Зберегти» — людина входить
-      своїм робочим акаунтом Google (або Microsoft) з тією самою поштою.
-      {% else %}Ролі — це групи безпеки в Microsoft Entra ID:
-      зміни одразу записуються в Azure й починають діяти, коли людина вийде з системи й увійде знову.{% endif %}</p>
+    <p class="uc-explain">Що людина робить у системі; можна вибрати кілька ролей. Ролі діють одразу після «Зберегти» —
+      людина входить акаунтом Google (або Microsoft) з тією самою поштою.</p>
     {% for title, codes in ROLE_GROUPS %}
     <div class="uc-group-title">{{ title }}</div>
     <div class="uc-options">
       {% for r in codes %}
       {% set locked = r == 'admin' and person.id == me_oid and r in person.roles %}
-      <label class="uc-option {{ 'is-disabled' if not groups[r] }}">
-        <input type="checkbox" name="roles" value="{{ r }}" {{ 'checked' if r in person.roles }} {{ 'disabled' if not groups[r] or locked }}>
+      <label class="uc-option">
+        <input type="checkbox" name="roles" value="{{ r }}" {{ 'checked' if r in person.roles }} {{ 'disabled' if locked }}>
         <span>
           <strong>{{ ROLES[r] }}</strong>
-          {% if groups[r] and not roles_in_app %}<a href="{{ group_url(groups[r]) }}" target="_blank" class="uc-azure" title="Група в Azure">↗</a>{% endif %}
           {% if locked %}<span class="muted"> — свою роль адміністратора зняти не можна</span>{% endif %}
           <span class="uc-hint">{{ ROLE_HINTS[r] }}</span>
-          {% if not groups[r] %}<span class="uc-hint uc-warn">Група для цієї ролі не налаштована в App Service</span>{% endif %}
         </span>
       </label>
       {% endfor %}

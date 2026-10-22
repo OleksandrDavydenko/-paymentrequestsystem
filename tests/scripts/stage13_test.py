@@ -30,7 +30,6 @@ def login(email, groups):
     claims.clear(); claims.update({"name": email.split("@")[0], "preferred_username": email, "oid": email, "groups": groups})
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
-import graph; graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
 def admin_page():
@@ -98,7 +97,7 @@ c.post(f"/requests/{rid}/action", data={"action": "rework", "comment": "уточ
 msgs = flush()
 check("author letter goes only to alt", "Me@Gmail.com" in to(msgs) and "i@ftpua.com" not in to(msgs))
 login("od@ftpua.com", ["g-a"])
-graph.group_members = lambda t, g: [{"id": "oid-i", "name": "I", "email": "i@ftpua.com"}] if g == "g-i" else []
+import user_roles; user_roles.set_roles("oid-i", "i@ftpua.com", "I", ["initiator"], "t")
 check("admin table shows alt address", "листи на: Me@Gmail.com" in admin_page())
 
 # адмін вимкнув -> знову робоча, адреса зберігається

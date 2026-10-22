@@ -26,11 +26,6 @@ def login(email, groups):
     claims.clear(); claims.update({"name": email.split("@")[0], "preferred_username": email, "oid": email, "groups": groups})
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
-import graph
-graph.group_members = lambda t, g: []
-calls = []
-graph.add_member = lambda t, g, u: calls.append(("add", g, u))
-graph.remove_member = lambda t, g, u: calls.append(("remove", g, u))
 c = m.app.test_client()
 
 def admin_page():
@@ -176,7 +171,6 @@ check("admin saves dept_head_mode", app_settings.get("dept_head_mode") == "appro
 page = admin_page()
 check("route summary shown", "Керівник відділу → Бухгалтер + Фіндиректор (одночасно) → Оплата" in page)
 check("departments source shown", "Відділи співробітників" in page and "Мокові дані" in page)
-graph.group_members = lambda t, g: [{"id": "new@ftpua.com", "name": "New", "email": "new@ftpua.com"}] if g == "g-i" else []
 c.post("/admin/users/new@ftpua.com", data={"roles": ["initiator"], "department": "SAL"})
 check("admin saves user department (card)", org_structure.department_of("new@ftpua.com") == "SAL")
 c.post("/admin/users/new@ftpua.com", data={"roles": ["initiator"], "department": "BOGUS"})

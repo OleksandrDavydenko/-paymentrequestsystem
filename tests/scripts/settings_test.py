@@ -5,7 +5,7 @@ sys.path.insert(0, os.getcwd())
 tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", ADMIN_EMAILS="")
 import app as m
-import app_settings, graph, secret_box, settings_log, settings_schema
+import app_settings, secret_box, settings_log, settings_schema
 
 ok = True
 def check(label, cond):
@@ -17,7 +17,6 @@ def login(email, groups):
     claims.clear(); claims.update({"name": email, "preferred_username": email, "oid": email, "groups": groups})
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
-graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
 login("i@ftpua.com", ["g-i"])

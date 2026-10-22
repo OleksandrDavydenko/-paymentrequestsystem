@@ -2,8 +2,7 @@
 
 Сервер, логін і пароль додатку налаштовує адмін в інтерфейсі; пароль зберігається
 зашифрованим (secret_box). Листи ставляться в чергу й надсилаються у фоновому потоці,
-щоб дії в системі не чекали пошти. Токен Microsoft Graph (app_token) потрібен лише
-для читання складу груп ролей — щоб знати, кому з погоджувачів надіслати лист.
+щоб дії в системі не чекали пошти.
 
 З базою черга — таблиця mail_outbox: лист не губиться при перезапуску сайту, кожен лист надсилає рівно
 один процес, а налаштування SMTP (з паролем) у черзі не зберігаються — їх бере config_provider
@@ -22,14 +21,10 @@ from datetime import timedelta
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
-import msal
-
 import clock
 import db_sql
 
 logger = logging.getLogger(__name__)
-
-GRAPH_SCOPE = ["https://graph.microsoft.com/.default"]
 
 # Готові налаштування для популярних поштових сервісів
 PRESETS = {
@@ -39,7 +34,6 @@ PRESETS = {
 }
 SECURITY = {"starttls": "STARTTLS (порт 587)", "ssl": "SSL/TLS (порт 465)", "none": "Без шифрування"}
 
-_app = None
 _queue = queue.Queue()
 _worker = None
 _worker_lock = threading.Lock()
@@ -51,21 +45,6 @@ STALE_AFTER = timedelta(minutes=10)  # лист «узяв» процес, що 
 
 class MailError(Exception):
     pass
-
-
-def app_token():
-    """Токен додатку для Microsoft Graph (client credentials) — для читання груп ролей."""
-    global _app
-    if _app is None:
-        _app = msal.ConfidentialClientApplication(
-            os.environ["CLIENT_ID"],
-            authority=f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}",
-            client_credential=os.environ["CLIENT_SECRET"],
-        )
-    result = _app.acquire_token_for_client(scopes=GRAPH_SCOPE)
-    if "access_token" not in result:
-        raise MailError(f"Не вдалося отримати токен Microsoft Graph: {result.get('error')}")
-    return result["access_token"]
 
 
 def _explain(exc, host, has_password=True):

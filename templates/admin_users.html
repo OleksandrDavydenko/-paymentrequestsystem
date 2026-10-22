@@ -17,25 +17,15 @@
     <h1 style="margin:0">Користувачі та ролі</h1>
     <span class="sec-summary muted">{{ users | length }} користувачів</span>
     <span class="spacer"></span>
-    <button type="button" class="btn btn-primary" onclick="document.getElementById('add-dialog').showModal()"
-            {{ 'disabled' if not groups }}>+ Додати користувача</button>
+    <button type="button" class="btn btn-primary" onclick="document.getElementById('add-dialog').showModal()">+ Додати користувача</button>
   </div>
   <p class="muted" style="margin-top:0">Натисніть на людину, щоб відкрити її картку: там усі налаштування з поясненнями —
     ролі, відділ, керівництво й перегляд відділів, статті бюджету.</p>
 
-  {% if missing_groups %}
-  <div class="flash error">
-    Не налаштовано групи для ролей:
-    {% for r in missing_groups %}<strong>{{ ROLES[r] }}</strong>{{ ', ' if not loop.last }}{% endfor %}.
-    Створіть групи в Entra ID і додайте їх Object ID у змінні App Service
-    (<code>GROUP_ADMIN</code>, <code>GROUP_INITIATOR</code>, <code>GROUP_ACC_CASH</code>, <code>GROUP_ACC_RESIDENT</code>, <code>GROUP_ACC_NONRESIDENT</code>, <code>GROUP_CFO</code>).
-  </div>
-  {% endif %}
-  {% if error %}<div class="flash error">{{ error }}</div>{% endif %}
   {% set no_email = users | rejectattr('email') | list %}
-  {% if roles_in_app and no_email %}
+  {% if no_email %}
   <div class="flash error">
-    Невідома пошта в {{ no_email | length }} користувачів (перенесені з Azure лише за ID):
+    Невідома пошта в {{ no_email | length }} користувачів (колись перенесені з Azure лише за ID):
     {% for u in no_email %}<a href="{{ url_for('admin.admin_user_card', user_id=u.id) }}">{{ u.name }}</a>{{ ', ' if not loop.last }}{% endfor %}.
     Відкрийте картку й укажіть робочу пошту — без неї людина не увійде через Google і не отримає листів.
   </div>
@@ -62,7 +52,7 @@
       <tr class="clickable" onclick="location.href='{{ card }}'">
         <td data-label="Користувач">
           <a href="{{ card }}"><strong>{{ u.name }}</strong></a>{% if u.id == me_oid %} <span class="muted">(ви)</span>{% endif %}
-          <div class="muted">{{ u.email }}</div>
+          <div class="muted">{{ u.email }}{% if u.email and external(u.email) %} <span class="bchip bchip-none" title="Пошта не з домену компанії — входить своїм акаунтом Google">Зовнішній</span>{% endif %}</div>
           {% if alt_addresses.get(u.email | lower) %}<div class="muted alt-addr" title="Користувач підтвердив іншу адресу для сповіщень">✉ листи на: {{ alt_addresses[u.email | lower] }}</div>{% endif %}
           {% if onec_links.get(u.id) %}<div class="muted alt-addr" title="Користувач 1С (для видів оплати)">1С: {{ onec_links[u.id].name }}</div>{% endif %}
           {% if tg_on and tg_linked(u.email) %}<div class="muted alt-addr" title="Знайдено в Telegram-боті {{ 'за поштою, вказаною вручну' if tg_overrides.get(u.email | lower) else 'автоматично за робочою поштою' }}">✈ Telegram{{ ' (вручну: ' ~ tg_overrides[u.email | lower] ~ ')' if tg_overrides.get(u.email | lower) }}</div>{% endif %}
@@ -93,9 +83,9 @@
 <dialog id="add-dialog">
   <div class="dlg-head">Додати користувача</div>
   <div class="dlg-body">
-    <label class="muted" for="user-search">{% if roles_in_app %}Введіть ім'я або робочу пошту співробітника
-      (нового — повну адресу, напр. name@{{ google_domain or 'company.com' }}){% else %}Знайдіть співробітника в Azure (ім'я або пошта){% endif %}
-      — далі відкриється його картка, де можна вибрати ролі, відділ і статті бюджету.</label>
+    <label class="muted" for="user-search">Введіть ім'я або пошту. Нового співробітника — повною адресою
+      (напр. name@{{ google_domain or 'company.com' }}); можна й зовнішнього користувача з іншого домену — він входитиме
+      своїм акаунтом Google. Далі відкриється картка, де можна вибрати ролі, відділ і статті бюджету.</label>
     <input type="text" id="user-search" autocomplete="off" placeholder="Почніть вводити…" style="width:100%;margin-top:8px">
     <ul id="search-results" class="search-results"></ul>
   </div>

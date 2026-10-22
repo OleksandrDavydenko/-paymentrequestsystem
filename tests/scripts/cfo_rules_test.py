@@ -6,7 +6,7 @@ tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", ADMIN_EMAILS="")
 import app as m
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
-import app_settings, cfo_rules, counterparties, graph, settings_log
+import app_settings, cfo_rules, counterparties, settings_log
 import storage as db
 
 ok = True
@@ -19,7 +19,6 @@ def login(email, groups):
     claims.clear(); claims.update({"name": email, "preferred_username": email, "oid": email, "groups": groups})
 m.auth._auth.get_user = lambda: dict(claims)
 m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
-graph.group_members = lambda t, g: []
 c = m.app.test_client()
 
 RULES = {"tab": "approval", "cfo_mode": "threshold", "approval_mode": "sequential", "dept_head_mode": "view",
