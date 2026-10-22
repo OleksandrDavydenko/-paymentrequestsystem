@@ -293,7 +293,7 @@ def admin_user_card(user_id, *, context):
         onec_suggested=None if user_onec.get(user_id) else payment_types.suggest_user(person["name"], person["email"]),
         onec_types={u["guid"]: [t["name"] for t in payment_types.types_for_user(u["guid"])]
                     for u in payment_types.onec_users()},
-        is_accountant_or_cfo=bool(set(person["roles"]) & (wf.ACCOUNTANT_ROLES | {"cfo"})),
+        is_accountant=bool(set(person["roles"]) & wf.ACCOUNTANT_ROLES),
     )
 
 
@@ -366,8 +366,8 @@ def _save_user_card(person):
             user_prefs.set_telegram_email(email, tg, who)
             changes.append(f"пошта для Telegram — {tg}" if tg else "пошта для Telegram — автоматично за робочою")
 
-    # Користувач 1С (для «Видів оплати»)
-    if "onec_user" in f:
+    # Користувач 1С (для «Видів оплати») — лише бухгалтерам; без ролі бухгалтера поле вимкнене, зв'язок лишається
+    if "onec_user" in f and wanted & wf.ACCOUNTANT_ROLES:
         guid = (f.get("onec_user") or "").strip()
         known_onec = {u["guid"]: u["name"] for u in payment_types.onec_users()}
         current_link = user_onec.guid_for(uid)

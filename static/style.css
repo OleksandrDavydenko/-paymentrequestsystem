@@ -870,4 +870,6 @@ a.badge { text-decoration: none; }
 /* Неактивний розділ налаштувань (не діє в поточному режимі) */
 .org-fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
 .card.is-disabled .org-fieldset { opacity: .55; }
+.uc-section.is-disabled .uc-onec-fields { opacity: .55; }
+.uc-onec-off { margin: 0 0 12px; }
 .org-off-note { margin: 0 0 12px; }

@@ -163,11 +163,13 @@
     </div>
   </section>
 
-  <section class="card uc-section" id="uc-onec-section">
+  <section class="card uc-section {{ 'is-disabled' if not is_accountant }}" id="uc-onec-section">
     <div class="uc-title"><span class="uc-num">5</span><h2>Користувач 1С</h2></div>
     <p class="uc-explain">Хто ця людина в 1С. Від цього залежить, які «Види оплати» бухгалтер бачить у заявках — ті самі, що на
-      вкладці «Виды оплаты» в його картці користувача 1С{{ '' if is_accountant_or_cfo else ' (потрібно лише бухгалтерам; фіндиректор бачить усі види оплати)' }}.
-      Пошта і логін 1С різні, тому зв'язок задається тут один раз.</p>
+      вкладці «Виды оплаты» в його картці користувача 1С. Пошта і логін 1С різні, тому зв'язок задається тут один раз.</p>
+    <div class="callout orange uc-onec-off" id="uc-onec-off" {{ 'hidden' if is_accountant }}>Потрібно лише бухгалтерам —
+      відмітьте роль бухгалтера в пункті 1, і поле стане активним (фіндиректор бачить усі види оплати).</div>
+    <fieldset class="uc-onec-fields" id="uc-onec-fields" {{ 'disabled' if not is_accountant }}>
     {% set selected = onec_link.guid if onec_link else (onec_suggested.guid if onec_suggested else '') %}
     <select name="onec_user" id="uc-onec" class="uc-select">
       <option value="">— не зв'язано —</option>
@@ -182,6 +184,7 @@
     <div class="uc-note uc-suggest">Підібрано за схожістю імені: <strong>{{ onec_suggested.name }}</strong> — перевірте й натисніть «Зберегти».</div>
     {% endif %}
     <div class="uc-note" id="uc-onec-types"></div>
+    </fieldset>
     <script type="application/json" id="onec-types">{{ onec_types | tojson }}</script>
   </section>
 

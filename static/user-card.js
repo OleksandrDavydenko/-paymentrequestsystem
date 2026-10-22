@@ -35,6 +35,21 @@
   });
 
   // Пункт 5: які види оплати має вибраний користувач 1С
+  // «Користувач 1С» активний лише з роллю бухгалтера (вмикається одразу, як відмітити роль у пункті 1)
+  const onecSection = document.getElementById('uc-onec-section');
+  const onecFields = document.getElementById('uc-onec-fields');
+  const ACC_ROLES = ['acc_cash', 'acc_resident', 'acc_nonresident'];
+  const roleBoxes = [...document.querySelectorAll('input[name="roles"]')].filter(b => ACC_ROLES.includes(b.value));
+  if (onecSection && onecFields && roleBoxes.length) {
+    const sync = () => {
+      const on = roleBoxes.some(b => b.checked);
+      onecFields.disabled = !on;
+      onecSection.classList.toggle('is-disabled', !on);
+      document.getElementById('uc-onec-off').hidden = on;
+    };
+    roleBoxes.forEach(b => b.addEventListener('change', sync));
+  }
+
   const onec = document.getElementById('uc-onec');
   const onecTypes = document.getElementById('onec-types');
   if (onec && onecTypes) {

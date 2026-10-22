@@ -30,6 +30,14 @@ check("suggest by name", pt.suggest_user("Iryna Chagan")["name"] == "Irina.Chaga
 login("od@ftpua.com", ["g-a"])
 page = c.get("/admin/users/irina").get_data(as_text=True)
 check("card: 1C section with suggestion", "Користувач 1С" in page and "Підібрано за схожістю" in page and 'value="U-IRINA" selected' in page)
+check("accountant: 1C field active", 'id="uc-onec-fields" >' in page or ('id="uc-onec-fields"' in page
+      and 'id="uc-onec-fields" disabled' not in page))
+user_roles.set_roles("ini-x", "ini-x@ftpua.com", "Ini X", ["initiator", "cfo"], "t")
+page = c.get("/admin/users/ini-x").get_data(as_text=True)
+check("not an accountant: 1C field inactive with hint", 'id="uc-onec-fields" disabled' in page
+      and 'class="card uc-section is-disabled" id="uc-onec-section"' in page and "Потрібно лише бухгалтерам" in page)
+c.post("/admin/users/ini-x", data={"roles": ["initiator", "cfo"], "onec_user": "U-IRINA", "mode": "none"})
+check("not an accountant: 1C link not saved", user_onec.guid_for("ini-x") is None)
 login("i@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "submit"}); rid = db.last_id()
 
 login("i.chagan@ftpua.com", ["g-r"], "irina")
