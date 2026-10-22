@@ -60,7 +60,7 @@ csrf.exempt(api_bp)  # бот не має сеансу входу — API зах
 
 # Для сценарних тестів і скриптів, що звертаються до функцій як до app.<назва>
 from web.auth import GROUPS, _role_members  # noqa: E402,F401
-from web.background import run_handover_reminders, run_maintenance  # noqa: E402,F401
+from web.background import run_approver_reminders, run_handover_reminders, run_maintenance  # noqa: E402,F401
 from web.formatting import money  # noqa: E402,F401
 from web.listing import _currency_order, date_presets, payment_plan  # noqa: E402,F401
 from web.request_helpers import payer_label  # noqa: E402,F401

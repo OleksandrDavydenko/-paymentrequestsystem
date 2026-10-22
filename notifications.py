@@ -53,6 +53,7 @@ SUBJECTS = {
     "handover": "готівку передано підряднику",
     "handover_for_you": "бухгалтер підтвердив передачу готівки за вас",
     "handover_reminder": "нагадування — підтвердіть передачу готівки підряднику",
+    "approver_reminder": "чекає вашого рішення",
     "cp_new": "новий контрагент — потрібно завести в 1С",
 }
 
@@ -338,6 +339,44 @@ def _notify(event, req, actor, comment, target=None, before=None):
         notify_log.record("-", "", "skipped", f"Заявка № {req['number']}: {notify_log.EVENT_LABELS.get(event, event)}",
                           req.get("id"), req.get("number"), event, detail="для цієї події одержувачів немає")
     return list(recipients)
+
+
+def send_approver_reminder(req, days):
+    """Нагадування погоджувачам: заявка чекає рішення days днів (тим, у кого вона зараз у черзі; керівнику відділу —
+    лише свого відділу) і, якщо ввімкнено, копія фіндиректору, коли чекає бухгалтера. Потрібен контекст запиту Flask.
+    Повертає список адрес, яким поставлено лист / повідомлення, або None, якщо розсилку вимкнено."""
+    if not enabled() or test_mode():
+        return None
+    recipients = {}
+    for role in responsible_roles(req):
+        members = org_structure.heads_of(req.get("department")) if role == "dept_head" else cached_role_members(role)
+        for mbr in members:
+            email = (mbr.get("email") or "").lower()
+            if email and not wf.self_approval_blocked(req, email):
+                recipients.setdefault(email, f"заявка чекає вашого рішення {days} дн. ({wf.ROLES.get(role, role).lower()})")
+    if app_settings.get("approver_remind_cfo_copy") and wf.at_accountants(req):
+        for mbr in cached_role_members("cfo"):
+            email = (mbr.get("email") or "").lower()
+            if email:
+                recipients.setdefault(email, f"копія: заявка чекає рішення бухгалтера {days} дн.")
+    sent = []
+    for email, reason in recipients.items():
+        if not user_prefs.get(email)["enabled"] or not user_prefs.wants(email, "task_reminder"):
+            notify_log.record("-", email, "skipped", f"Заявка № {req['number']}: нагадування погоджувачу", req.get("id"),
+                              req.get("number"), "approver_reminder", detail=f"{reason}, але нагадування вимкнено в налаштуваннях")
+            continue
+        try:
+            _send(email, f"Заявка № {req['number']}: {SUBJECTS['approver_reminder']} {days} дн.", {
+                "req": req, "event": "approver_reminder", "handover_ask": False, "handover_days": days,
+                "actor": wf.SYSTEM_USER, "comment": "", "status": wf.STATUSES[req["status"]][0],
+                "headline": f"Заявка чекає вашого рішення {days} дн.", "reason": reason, "link": _link(req),
+                "settings_link": (os.environ.get("APP_BASE_URL", "").rstrip("/") + url_for("settings.notification_settings"))
+                if os.environ.get("APP_BASE_URL") else url_for("settings.notification_settings", _external=True),
+            })
+            sent.append(email)
+        except Exception:
+            logger.exception("Не вдалося підготувати нагадування погоджувачу")
+    return sent
 
 
 def send_handover_reminder(req, days):

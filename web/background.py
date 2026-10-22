@@ -61,6 +61,31 @@ def run_handover_reminders(today=None):
     return sent
 
 
+def run_approver_reminders(today=None):
+    """Нагадати погоджувачам про заявки, що довго чекають рішення («Налаштування → Сповіщення»).
+    Повертає номери заявок, щодо яких надіслано нагадування."""
+    docstore.sync()
+    every = app_settings.get("approver_remind_days") or 0
+    if every <= 0 or notifications.test_mode():
+        return []
+    max_count = app_settings.get("approver_remind_max") or 3
+    sent = []
+    for r in db.list_requests_full("awaiting_decision"):
+        days = wf.approver_reminder_due(r, every, max_count, today)
+        if not days:
+            continue
+        with _app.test_request_context(base_url=_public_base_url()):
+            if notifications.send_approver_reminder(r, days) is None:
+                continue  # розсилку вимкнено — нагадаємо, коли ввімкнуть
+        wf.mark_approver_reminded(r, today)
+        try:
+            db.save_request(r)
+        except db.StaleRequestError:  # заявку щойно змінили — наступна перевірка це врахує
+            continue
+        sent.append(r["number"])
+    return sent
+
+
 def run_maintenance():
     """Щоденне обслуговування бази: перерахунок похідних колонок заявок (довідники з 1С могли змінитися),
     прибирання прострочених сеансів і надісланих листів, старших за 30 днів (журнал сповіщень лишається)."""
@@ -75,6 +100,7 @@ def _reminder_loop():
     time.sleep(60)
     while True:
         for name, every, fn in (("handover_reminders", jobs.HOUR - timedelta(minutes=5), run_handover_reminders),
+                                ("approver_reminders", jobs.HOUR - timedelta(minutes=5), run_approver_reminders),
                                 ("maintenance", jobs.DAY - timedelta(minutes=5), run_maintenance)):
             try:
                 jobs.run(name, every, fn)

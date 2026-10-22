@@ -149,3 +149,23 @@
     document.getElementById('smtp_security').value = b.dataset.sec;
   }));
 </script>
+
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card" id="reminders"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="notify">
+  <div class="toolbar"><h2 style="margin:0">Нагадування погоджувачам</h2></div>
+  <label class="mode-option">
+    <span><strong>Нагадувати, якщо заявка чекає рішення довше
+      <input type="number" name="approver_remind_days" value="{{ approver_remind_days }}" min="0" max="30" style="width:64px"
+             aria-label="Днів"> дн., не більше
+      <input type="number" name="approver_remind_max" value="{{ approver_remind_max }}" min="1" max="20" style="width:64px"
+             aria-label="Разів"> разів</strong>
+      <span class="mode-hint">Лист / Telegram тим, у кого заявка зараз у черзі (керівнику відділу — лише свого відділу), і далі
+        кожні N днів, доки не ухвалять рішення. На новому етапі — знову з нуля. 0 — не нагадувати. Людина може вимкнути це
+        нагадування в особистих налаштуваннях сповіщень. У тестовому режимі не надсилаються.</span></span>
+  </label>
+  <label class="mode-option">
+    <input type="checkbox" name="approver_remind_cfo_copy" value="1" {{ 'checked' if approver_remind_cfo_copy }}>
+    <span><strong>Копія фіндиректору</strong><span class="muted"> — коли заявка довго чекає рішення бухгалтера</span></span>
+  </label>
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+</form>

@@ -11,7 +11,7 @@ import workflow as wf
 
 from . import derive
 
-ACTIVE = {"queue", "at_accountants", "to_pay", "handover", "handover_all", "handover_mine"}
+ACTIVE = {"queue", "at_accountants", "to_pay", "handover", "handover_all", "handover_mine", "awaiting_decision"}
 ARCHIVE = {"all", "author", "mine", "mine_paid", "participant", "department", "paid", "processed"}
 SCOPES = ACTIVE | ARCHIVE
 
@@ -44,6 +44,8 @@ def match(scope, req, roles, email):
         return wf.needs_handover(req) and wf.is_handover_accountant(req, roles)
     if scope == "handover_all":
         return wf.needs_handover(req)
+    if scope == "awaiting_decision":  # на будь-якому етапі погодження (нагадування погоджувачам)
+        return req["status"] in wf.APPROVAL_STAGES
     if scope == "handover_mine":
         return wf.needs_handover(req) and wf.is_author(req, email)
     raise ValueError(f"Невідомий список {scope}")
@@ -63,7 +65,7 @@ def sort_rows(scope, rows):
         rows.sort(key=lambda r: r["paid_at"] or r["created_at"], reverse=True)   # найсвіжіша оплата — першою
     elif scope == "processed":
         rows.sort(key=lambda r: r["sort_at"], reverse=True)              # найсвіжіше рішення — першим
-    elif scope in ("queue", "at_accountants"):
+    elif scope in ("queue", "at_accountants", "awaiting_decision"):
         rows.sort(key=lambda r: r["last_at"])                            # найдовше чекають — першими
     elif scope == "to_pay":
         rows.sort(key=lambda r: r["pay_date"])                           # найближча оплата — першою

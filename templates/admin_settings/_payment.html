@@ -31,9 +31,11 @@
     <span>
       <strong>Нагадувати автору кожні
         <input type="number" name="cash_handover_remind_days" value="{{ cash_handover_remind_days }}" min="0" max="30"
-               style="width:64px" aria-label="Кожні N днів"> дн.</strong>
-      <span class="mode-hint">Лист лише автору заявки, доки він не підтвердить передачу, — не більше {{ handover_max_reminders }}
-        нагадувань. 0 — не нагадувати. Вимкнути ці листи в особистих налаштуваннях не можна.</span>
+               style="width:64px" aria-label="Кожні N днів"> дн., не більше
+        <input type="number" name="handover_max_reminders" value="{{ handover_max_reminders }}" min="1" max="20"
+               style="width:64px" aria-label="Не більше N нагадувань"> разів</strong>
+      <span class="mode-hint">Лист лише автору заявки, доки він не підтвердить передачу. 0 днів — не нагадувати.
+        Вимкнути ці листи в особистих налаштуваннях не можна.</span>
     </span>
   </label>
 

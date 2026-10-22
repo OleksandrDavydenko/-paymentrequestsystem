@@ -2,6 +2,7 @@
 
 Права перевіряються за МНОЖИНОЮ ролей користувача (ролей може бути кілька).
 """
+from datetime import date
 
 import app_settings
 import clock
@@ -85,7 +86,12 @@ PAYMENT_FORMS = {
     "bank": "Безготівка",
 }
 # Готівку в касі отримує автор заявки й передає підряднику — після оплати він це підтверджує
-HANDOVER_MAX_REMINDERS = 5
+HANDOVER_MAX_REMINDERS = 5  # за замовчуванням; діє налаштування handover_max_reminders (handover_max())
+
+
+def handover_max():
+    """Скільки разів нагадувати автору про передачу готівки («Налаштування → Оплата й готівка»)."""
+    return int(app_settings.get("handover_max_reminders") or HANDOVER_MAX_REMINDERS)
 # Що вибирає ініціатор (налаштування в адмінці): організацію або лише платника — тоді організацію вказує бухгалтер
 ORG_FIELD_MODES = {
     "organization": "Організація: ініціатор вибирає організацію зі списку",
@@ -489,11 +495,11 @@ def undo_handover(req, user, comment):
 
 
 def handover_reminder_due(req, every_days, today=None):
-    """Чи час нагадати автору підтвердити передачу (кожні every_days днів, не більше HANDOVER_MAX_REMINDERS)."""
+    """Чи час нагадати автору підтвердити передачу (кожні every_days днів, не більше handover_max())."""
     if not needs_handover(req) or not every_days or every_days <= 0:
         return False
     h = req["handover"]
-    if h.get("reminders", 0) >= HANDOVER_MAX_REMINDERS:
+    if h.get("reminders", 0) >= handover_max():
         return False
     last = h.get("last_reminder") or h["since"]
     return ((today or clock.today()) - last).days >= every_days
@@ -503,6 +509,45 @@ def mark_reminded(req, today=None):
     h = req["handover"]
     h["reminders"] = h.get("reminders", 0) + 1
     h["last_reminder"] = today or clock.today()
+
+
+# ---------------------------------------------------------------- нагадування погоджувачам
+
+def waiting_since(req):
+    """Коли заявка потрапила на поточний етап погодження (дата-час) або None."""
+    for h in reversed(req.get("history") or []):
+        if h.get("to_status") == req["status"] and h.get("from_status") != req["status"]:
+            return h["at"]
+    return None
+
+
+def approver_reminder_due(req, every_days, max_count, today=None):
+    """Чи час нагадати погоджувачам: заявка на етапі погодження довше every_days днів, повтор — кожні
+    every_days днів, не більше max_count разів за етап. Повертає кількість днів очікування або 0."""
+    if req["status"] not in APPROVAL_STAGES or not every_days or every_days <= 0:
+        return 0
+    since = waiting_since(req)
+    if since is None:
+        return 0
+    today = today or clock.today()
+    days = (today - since.date()).days
+    state = req.get("approver_reminders") or {}
+    if state.get("stage") != f"{req['status']}@{since.isoformat()}":
+        state = {}  # новий етап — лічильник з нуля
+    if days < every_days or state.get("count", 0) >= max_count:
+        return 0
+    last = state.get("last")
+    if last and (today - date.fromisoformat(last)).days < every_days:
+        return 0
+    return days
+
+
+def mark_approver_reminded(req, today=None):
+    since = waiting_since(req)
+    key = f"{req['status']}@{since.isoformat()}" if since else req["status"]
+    state = req.get("approver_reminders") or {}
+    count = state.get("count", 0) if state.get("stage") == key else 0
+    req["approver_reminders"] = {"stage": key, "count": count + 1, "last": (today or clock.today()).isoformat()}
 
 
 # ---------------------------------------------------------------- дії автора: відкликати й скасувати

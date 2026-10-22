@@ -28,6 +28,7 @@ EVENT_LABELS = {
     "participant_add": "додано учасника", "handover": "передача готівки", "handover_reminder": "нагадування про готівку",
     "fallback": "запасний лист", "test": "тестове", "confirm_email": "підтвердження пошти",
     "error_alert": "помилка сайту", "withdraw": "відкликано автором", "cancel": "скасовано автором",
+    "approver_reminder": "нагадування погоджувачу",
 }
 CHANNELS = {"email": "Пошта", "telegram": "Telegram", "-": "—"}
 

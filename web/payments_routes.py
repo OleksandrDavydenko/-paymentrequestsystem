@@ -119,7 +119,7 @@ def _handover_view(all_rows, today):
         by_author=sorted(by_author.values(), key=lambda a: a["name"].lower()),
         days_waiting=lambda r: wf.handover_days(r, today),
         overdue_days=remind_days or 1,
-        max_reminders=wf.HANDOVER_MAX_REMINDERS,
+        max_reminders=wf.handover_max(),
         today=today,
         period=period,
         d_from=d_from,

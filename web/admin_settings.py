@@ -117,7 +117,7 @@ def _context(tab):
         ctx.update(require_payment_account=app_settings.get("require_payment_account"),
                    cash_handover_confirm=app_settings.get("cash_handover_confirm"),
                    cash_handover_remind_days=app_settings.get("cash_handover_remind_days"),
-                   handover_max_reminders=wf.HANDOVER_MAX_REMINDERS,
+                   handover_max_reminders=wf.handover_max(),
                    pending_cp=app_settings.info("pending_cp_payment"), PENDING_CP_MODES=schema.PENDING_CP_MODES,
                    cp_owner=app_settings.get("cp_onec_owner"), CP_OWNER_MODES=wf.CP_OWNER_MODES,
                    pending_counterparties=pending,
@@ -129,6 +129,8 @@ def _context(tab):
         ctx.update(mail={k: app_settings.get(k) for k in ("mail_enabled", "mail_sender", "mail_sender_name", "smtp_host",
                                                           "smtp_port", "smtp_security", "smtp_username",
                                                           "allow_custom_email", "error_alerts")},
+                   **{k: app_settings.get(k) for k in ("approver_remind_days", "approver_remind_max",
+                                                       "approver_remind_cfo_copy")},
                    mail_password=app_settings.info("smtp_password"), SMTP_PRESETS=mailer.PRESETS,
                    SMTP_SECURITY=mailer.SECURITY, telegram=telegram_notify.status(),
                    mail_problems=len(notify_log.query(200, status="problems")))

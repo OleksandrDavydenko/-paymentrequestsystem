@@ -146,6 +146,7 @@ _LIST = [
     Setting("cash_handover_confirm", "Автор підтверджує передачу готівки підряднику", "payment", "bool", True,
             marker="cash_handover_sent"),
     Setting("cash_handover_remind_days", "Нагадувати про передачу готівки кожні N днів", "payment", "int", 1, min=0, max=30),
+    Setting("handover_max_reminders", "Нагадувань про передачу готівки — не більше", "payment", "int", 5, min=1, max=20),
     Setting("pending_cp_payment", "Контрагент, якого ще немає в 1С", "payment", "choice", "block", _pending_cp_modes),
     Setting("cp_onec_owner", "Хто заводить нового контрагента в 1С", "payment", "choice", "accountant",
             _wf("CP_OWNER_MODES")),
@@ -162,6 +163,11 @@ _LIST = [
     Setting("smtp_password", "SMTP-пароль", "notify", "secret", "", managed=True),
     Setting("allow_custom_email", "Користувачі можуть вказати іншу пошту", "notify", "bool", False, managed=True),
     Setting("error_alerts", "Листи адміністраторам про помилки сайту", "notify", "bool", True, managed=True),
+    Setting("approver_remind_days", "Нагадувати погоджувачу, якщо заявка чекає довше N днів", "notify", "int", 0,
+            min=0, max=30),
+    Setting("approver_remind_max", "Нагадувань погоджувачу — не більше", "notify", "int", 3, min=1, max=20),
+    Setting("approver_remind_cfo_copy", "Копія нагадування фіндиректору, якщо заявка чекає бухгалтера", "notify",
+            "bool", False),
     # ---- Дані й система
     Setting("data_mode", "Дані", "data", "choice", "work", _data_modes, available=_db_on),
     # ---- службові

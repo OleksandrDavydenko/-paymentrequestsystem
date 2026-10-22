@@ -10,7 +10,9 @@
           <div style="font-size:13px;color:#57606a;">Заявка № {{ req.number }}</div>
           <div style="font-size:20px;font-weight:700;margin:4px 0 12px;">{{ headline }}</div>
           <div style="font-size:14px;margin-bottom:16px;">
-            {% if event == 'handover_reminder' %}
+            {% if event == 'approver_reminder' %}
+            Заявка чекає вашого рішення вже {{ handover_days }} дн. Відкрийте її й погодьте, поверніть на доопрацювання або відхиліть.
+            {% elif event == 'handover_reminder' %}
             Ви отримали готівку в касі {{ handover_days }} дн. тому, щоб передати підряднику, — але ще не підтвердили передачу.
             Якщо вже передали, натисніть кнопку нижче й підтвердіть у заявці.
             {% elif handover_ask %}
