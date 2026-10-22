@@ -6,7 +6,7 @@ from flask import Blueprint, redirect, render_template, request, session, url_fo
 import google_login
 import user_roles
 
-from web.auth import auth, current_claims, login_mode
+from web.auth import ADMIN_EMAILS, auth, current_claims, login_mode
 
 bp = Blueprint("login", __name__)
 logger = logging.getLogger(__name__)
@@ -47,6 +47,12 @@ def login_page(error=None):
         microsoft_url=_microsoft_url(nxt) if mode != "google" or request.args.get("method") == "microsoft"
         else None,
         admin_fallback_url=_microsoft_url(nxt) if mode == "google" else None)
+
+
+@bp.route("/privacy")
+def privacy():
+    """Політика конфіденційності — без входу (потрібна Google для OAuth-клієнта типу External)."""
+    return render_template("privacy.html", contact=sorted(ADMIN_EMAILS)[0] if ADMIN_EMAILS else "")
 
 
 @bp.route("/auth/google/login")

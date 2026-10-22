@@ -46,6 +46,7 @@
       <svg viewBox="0 0 23 23" aria-hidden="true"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M12 1h10v10H12z"/><path fill="#05a6f0" d="M1 12h10v10H1z"/><path fill="#ffba08" d="M12 12h10v10H12z"/></svg>
       Увійти через Microsoft</a>
     {% endif %}
+    <div class="fallback"><a href="{{ url_for('login.privacy') }}">Конфіденційність</a></div>
     {% if admin_fallback_url %}
     <div class="fallback"><a href="{{ admin_fallback_url }}">Вхід адміністратора через Microsoft</a></div>
     {% endif %}

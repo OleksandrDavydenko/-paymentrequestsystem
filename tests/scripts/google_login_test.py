@@ -33,8 +33,12 @@ page = lambda url: c.get(url).get_data(as_text=True)
 # ---------- Google не налаштований: лише Microsoft, ролі однаково з системи
 r = c.get("/requests")
 check("not logged in -> login page with next", r.status_code == 302 and "/login?next=/requests" in r.headers["Location"])
+r = c.get("/privacy")
+check("privacy page: public, contact", r.status_code == 200 and "Політика конфіденційності" in r.get_data(as_text=True)
+      and "mailto:boss@ftpua.com" in r.get_data(as_text=True))
 html = page("/login")
-check("no Google client: only Microsoft button", "Увійти через Microsoft" in html and "Увійти через Google" not in html)
+check("no Google client: only Microsoft button", "Увійти через Microsoft" in html and "Увійти через Google" not in html
+      and 'href="/privacy"' in html)
 check("google start disabled", "/login" in c.get("/auth/google/login").headers["Location"])
 ms_login("ini@ftpua.com")
 check("microsoft user: role from the system", c.get("/requests").status_code == 200
