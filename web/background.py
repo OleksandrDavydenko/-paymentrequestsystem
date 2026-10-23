@@ -16,6 +16,7 @@ import filestore
 import jobs
 import mailer
 import notifications
+import onec_sync
 import sessions_db
 import storage as db
 import workflow as wf
@@ -101,6 +102,7 @@ def _reminder_loop():
     while True:
         for name, every, fn in (("handover_reminders", jobs.HOUR - timedelta(minutes=5), run_handover_reminders),
                                 ("approver_reminders", jobs.HOUR - timedelta(minutes=5), run_approver_reminders),
+                                ("onec_sync", jobs.HOUR - timedelta(minutes=5), onec_sync.auto_sync),
                                 ("maintenance", jobs.DAY - timedelta(minutes=5), run_maintenance)):
             try:
                 jobs.run(name, every, fn)

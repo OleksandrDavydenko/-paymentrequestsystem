@@ -879,6 +879,7 @@ a.badge { text-decoration: none; }
 .onec-rule-row { display: flex; flex-wrap: wrap; gap: 6px 16px; align-items: center; margin: 6px 0; }
 .onec-check { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
 .onec-hint { font-size: 13px; margin: 6px 0 10px; }
+.onec-auto { margin-top: 10px; align-items: flex-start; }
 .onec-table td.c, .onec-table th.c { width: 32px; text-align: center; }
 .onec-issue { background: #fff8e6; }
 .onec-diff { display: block; color: #9a6700; font-size: 13px; }

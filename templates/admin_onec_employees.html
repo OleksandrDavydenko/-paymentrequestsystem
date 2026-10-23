@@ -32,6 +32,13 @@
       {% for d in profit_centers %}<strong>{{ dept_name(d) }}</strong>{{ ', ' if not loop.last }}{% endfor %}{% else %} (зараз таких відділів немає){% endif %}.
       Відділ — основний відділ із 1С; з позначкою DepartmentHead людина стає й керівником свого відділу
       (якщо у відділу вже є інший керівник — його буде замінено).</p>
+    <label class="onec-check onec-auto"><input type="checkbox" name="onec_auto_sync" value="1" {{ 'checked' if auto_sync }}>
+      <strong>Автоматично</strong>: нові співробітники з корпоративною поштою додаються за цим правилом самі, а звільненим
+      у 1С закривається доступ (раз на годину)</label>
+    <p class="muted onec-hint">Співробітників з особистою поштою (не з домену компанії) додають лише вручну. Розбіжності в тих,
+      хто вже є (відділ, керівник), автоматично не виправляються — їх видно нижче. Якщо в 1С раптом звільненими позначено
+      багатьох, доступ не закривається — адміністраторам іде лист.
+      {% if auto_last %}<br>Остання автоматична синхронізація: {{ auto_last.at.replace('T', ' ')[:16] }} — {{ describe(auto_last) }}.{% endif %}</p>
     <button type="submit" class="btn btn-sm">Зберегти правило</button>
   </form>
 </div>
@@ -44,6 +51,10 @@
     <span class="spacer"></span>
     {% if data.new %}<button type="submit" class="btn btn-primary btn-sm">Додати вибраних</button>{% endif %}
   </div>
+  {% if data.new and auto_sync %}
+  <p class="muted" style="margin-top:0">Увімкнено автоматичне додавання — тут лишаються ті, кого автоматично не додають
+    (особиста пошта) або ще не додано до наступної синхронізації.</p>
+  {% endif %}
   {% if data.new %}
   <div class="table-wrap">
   <table class="stack onec-table">

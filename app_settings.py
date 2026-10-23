@@ -77,7 +77,7 @@ def set(key, value, updated_by):
         _load()[key] = {"value": value, "updated_by": updated_by,
                         "updated_at": clock.now().isoformat(timespec="seconds")}
         docstore.write("app_settings", _path(), _data)
-    if old != value and key != "mail_enabled_work":
+    if old != value and getattr(settings_schema.SETTINGS.get(key), "kind", None) != "internal":  # службові — без журналу
         import settings_log
         settings_log.record(key, old, value, updated_by)
 

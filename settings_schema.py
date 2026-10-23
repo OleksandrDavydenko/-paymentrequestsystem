@@ -187,6 +187,9 @@ _LIST = [
             managed=True),
     Setting("new_user_budget_own", "Нові співробітники з 1С: статті з розподілом свого відділу", "data", "bool", True,
             managed=True),
+    Setting("onec_auto_sync", "Автоматично додавати співробітників з 1С (корпоративна пошта) і закривати доступ "
+            "звільненим", "data", "bool", False, managed=True),
+    Setting("onec_auto_last", "Остання автоматична синхронізація з 1С", "data", "internal", None),
     # ---- службові
     Setting("mail_enabled_work", "Розсилка до тестового режиму", "data", "internal", None),
 ]

@@ -136,4 +136,47 @@ check("LOG head sees and can approve", req["number"] in page("/department") and 
 login("m.koval@ftpua.com")
 html = page("/requests/new")
 check("one department: no select", 'name="department"' not in html and 'value="Відділ продажу" readonly' in html)
+
+# ---------- автоматична синхронізація
+import alerts
+os.environ["GOOGLE_ALLOWED_DOMAINS"] = "ftpua.com"
+rows = employees.MOCK + [{"EmployeeGUID": "EMP-GM", "Name": "Снітко Сергій", "Email": "snitko.mail@gmail.com",
+                          "IsDeleted": 0, "DepartmentGUID": "DEP-LOG"}]
+employees._table.items = lambda: employees._parse(rows)
+user_roles.set_roles("oid-sn", "sn@ftpua.com", "Сергій Науменко", ["initiator"], "t")  # знову з роллю, а в 1С звільнений
+org_structure.set_department(od["id"], "od@ftpua.com", od["name"], "IT", "t")         # розбіжність з 1С
+check("off: nothing", onec_sync.auto_sync() is None and user_roles.find_by_email("a.melnyk@ftpua.com") is None)
+login("admin@ftpua.com", "Адмін")
+r = c.post("/admin/users/onec", data={"action": "rule", "new_user_roles": ["initiator"], "new_user_budget_own": "1",
+                                      "onec_auto_sync": "1"}, follow_redirects=True)
+check("turned on -> synced at once", app_settings.get("onec_auto_sync") is True
+      and "Синхронізація з 1С: додано 2, закрито доступ 1" in r.get_data(as_text=True))
+check("company emails added by rule", user_roles.find_by_email("a.melnyk@ftpua.com")["roles"] == {"initiator"}
+      and user_roles.find_by_email("i.chagan@ftpua.com") is not None)
+check("personal email left for manual add", user_roles.find_by_email("snitko.mail@gmail.com") is None
+      and "snitko.mail@gmail.com" in [e["email"] for e in onec_sync.overview()["new"]])
+check("dismissed closed", user_roles.get("oid-sn")["roles"] == set())
+check("mismatch not fixed automatically", org_structure.department_of(od["id"]) == "IT")
+check("second run: nothing to do", onec_sync.auto_sync() == {"added": 0, "closed": 0, "skipped": None})
+check("closed person not re-added", user_roles.get("oid-sn")["roles"] == set())
+html = page("/admin/users/onec")
+check("page: auto checkbox on, last run shown", 'name="onec_auto_sync" value="1" checked' in html
+      and "Остання автоматична синхронізація" in html)
+check("internal value not in settings journal", not any(e.get("key") == "onec_auto_last"
+                                                        for e in __import__("settings_log").query(500)))
+
+employees._table._state["error"] = "Power BI недоступний"
+res = onec_sync.auto_sync()
+check("employees reference failed -> nothing done", res["added"] == 0 and "недоступний" in res["skipped"])
+employees._table._state["error"] = None
+
+reported = []
+alerts.report = lambda exc, where, **kw: reported.append(str(exc))
+for i in range(12):
+    rows.append({"EmployeeGUID": f"EMP-X{i}", "Name": f"Звільнений {i}", "Email": f"x{i}@ftpua.com", "IsDeleted": 1,
+                 "DepartmentGUID": "DEP-LOG"})
+    user_roles.set_roles(f"oid-x{i}", f"x{i}@ftpua.com", f"X {i}", ["initiator"], "t")
+res = onec_sync.auto_sync()
+check("mass dismissal -> not closed, admins alerted", res["closed"] == 0 and "звільненими позначено 12" in res["skipped"]
+      and reported and user_roles.get("oid-x0")["roles"] == {"initiator"})
 print("ALL OK" if ok else "SOME FAILED")

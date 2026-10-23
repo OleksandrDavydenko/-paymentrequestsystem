@@ -11,11 +11,20 @@
 Далі все це можна змінити в картці користувача. Тих, хто вже є, сторінка показує з розбіжностями з 1С (відділ,
 керівник відділу, користувач 1С), а звільнених у 1С, які ще мають ролі, — окремо, щоб закрити їм доступ.
 Що людина очолює інші відділи (не з 1С), сторінка не чіпає.
+
+Автоматично (налаштування onec_auto_sync; фонова задача раз на годину, а також одразу після ввімкнення й після
+«Оновити зараз»): додаються нові співробітники з корпоративною поштою (домени GOOGLE_ALLOWED_DOMAINS; з особистою —
+лише вручну) і закривається доступ звільненим. Розбіжності в тих, хто вже є, автоматично не виправляються.
+Запобіжники: без свіжого довідника співробітників (помилка, порожньо) нічого не робиться; якщо за раз треба
+закрити доступ багатьом (MASS_CLOSE), доступ не закривається — адміністраторам іде лист.
 """
+import alerts
 import app_settings
+import clock
 import departments
 import employees
 import expense_items
+import google_login
 import org_structure
 import payment_types
 import user_budget
@@ -23,6 +32,10 @@ import user_directory
 import user_onec
 import user_roles
 import workflow as wf
+
+
+AUTO_WHO = "1С (автоматично)"
+MASS_CLOSE = (10, 0.2)  # більше 10 людей і понад 20 % користувачів з ролями — підозріло (збій довідника)
 
 
 def rule():
@@ -172,3 +185,39 @@ def close_access(ids, who):
             user_roles.set_roles(p["id"], p["email"], p["user_name"], [], who)
             closed += 1
     return closed
+
+
+def _company(email):
+    return not google_login.is_external(email) and bool(google_login.allowed_domains())
+
+
+def auto_sync(who=AUTO_WHO):
+    """Автоматична синхронізація (див. опис модуля). Повертає {"added", "closed", "skipped"} і запам'ятовує
+    результат у onec_auto_last; без увімкненого налаштування — None."""
+    if not app_settings.get("onec_auto_sync"):
+        return None
+    st = employees.status()
+    result = {"added": 0, "closed": 0, "skipped": None}
+    if st["error"] or not st["active"] or st["source"] == "empty":
+        result["skipped"] = "довідник співробітників з 1С зараз недоступний" + (f": {st['error']}" if st["error"] else "")
+    else:
+        data = overview()
+        result["added"] = add([e["email"] for e in data["new"] if _company(e["email"])], who)
+        with_roles = sum(1 for u in user_roles.all_users() if u["roles"])
+        dismissed = data["dismissed"]
+        if len(dismissed) > MASS_CLOSE[0] and len(dismissed) > MASS_CLOSE[1] * with_roles:
+            result["skipped"] = (f"у 1С звільненими позначено {len(dismissed)} з {with_roles} користувачів — доступ не "
+                                 "закрито автоматично, перевірте таблицю Employees")
+            alerts.report(RuntimeError(result["skipped"]), "синхронізація співробітників з 1С")
+        else:
+            result["closed"] = close_access([p["id"] for p in dismissed], who)
+    app_settings.set("onec_auto_last", {**result, "at": clock.now().isoformat(timespec="seconds")}, who)
+    return result
+
+
+def describe(result):
+    """Підсумок синхронізації для повідомлення й сторінки."""
+    if not result:
+        return ""
+    text = f"додано {result['added']}, закрито доступ {result['closed']}"
+    return text + (f"; {result['skipped']}" if result.get("skipped") else "")

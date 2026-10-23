@@ -210,11 +210,17 @@ def admin_onec_employees(*, context):
                 flash(error, "error")
             else:
                 own = f.get("new_user_budget_own") == "1"
+                auto = f.get("onec_auto_sync") == "1"
+                turned_on = auto and not app_settings.get("onec_auto_sync")
                 if roles != app_settings.get("new_user_roles"):
                     app_settings.set("new_user_roles", roles, who)
                 if own != bool(app_settings.get("new_user_budget_own")):
                     app_settings.set("new_user_budget_own", own, who)
+                if auto != bool(app_settings.get("onec_auto_sync")):
+                    app_settings.set("onec_auto_sync", auto, who)
                 flash("Правило для нових співробітників збережено", "success")
+                if turned_on:  # одразу, не чекаючи фонової задачі
+                    flash("Синхронізація з 1С: " + onec_sync.describe(onec_sync.auto_sync()), "success")
         elif action == "add":
             n = onec_sync.add(f.getlist("emails"), who)
             flash(f"Додано співробітників: {n}" if n else "Нікого не вибрано", "success")
@@ -234,6 +240,9 @@ def admin_onec_employees(*, context):
         user_name=g.user["name"],
         data=onec_sync.overview(),
         rule=onec_sync.rule(),
+        auto_sync=bool(app_settings.get("onec_auto_sync")),
+        auto_last=app_settings.get("onec_auto_last"),
+        describe=onec_sync.describe,
         RULE_ROLES=schema.SETTINGS["new_user_roles"].choices(),
         profit_centers=departments.profit_centers(),
         employees_status=employees.status(),
@@ -260,6 +269,8 @@ def admin_expense_refresh(*, context):
     if expense_items.refresh():
         st = expense_items.status()
         flash(f"Довідник статей витрат оновлено: {st['count']} статей", "success")
+        if app_settings.get("onec_auto_sync"):
+            flash("Синхронізація співробітників з 1С: " + onec_sync.describe(onec_sync.auto_sync()), "success")
     else:
         flash("Не вдалося оновити довідник: " + (expense_items.status()["error"] or "невідома помилка"), "error")
     return redirect(url_for("admin.admin_settings", tab="data") + "#expense-items")
