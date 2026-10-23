@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from flask import abort, g, redirect, render_template, request, session, url_for
 
 import app_settings
+import dept_settings
 import google_login
 import notifications
 import org_structure
@@ -102,6 +103,8 @@ def requires(*needed):
             # Керівник відділу / «бачить заявки відділу» — з картки користувача
             heads = org_structure.head_departments(g.user["oid"])
             views = org_structure.viewer_departments(g.user["oid"])
+            # Заступник (бачить заявки відділу, де так налаштовано) погоджує замість керівника
+            heads = sorted(set(heads) | {d for d in views if dept_settings.deputies_approve(d)})
             if heads:
                 roles.add("dept_head")
             if views:
@@ -128,9 +131,12 @@ notifications.admin_emails = lambda: sorted(ADMIN_EMAILS)
 
 
 def _deciding_roles(roles):
-    """Ролі, якими користувач ухвалює рішення. Керівник відділу — лише якщо він погоджує (налаштування)."""
+    """Ролі, якими користувач ухвалює рішення. Керівник відділу — лише якщо хоч один його відділ погоджує (налаштування
+    відділу або загальне) чи в черзі вже є заявки, що чекають його рішення."""
     deciding = set(roles & wf.APPROVER_ROLES)
-    if app_settings.get("dept_head_mode") != "approve":
+    heads = wf.head_deps(roles)
+    if "dept_head" in deciding and not any(dept_settings.head_approves(d) for d in heads) \
+            and not db.count("queue", wf.RoleSet({"dept_head"}, heads)):
         deciding.discard("dept_head")
     # Фіндиректор-спостерігач — без черги (крім заявок, відправлених ще з його кроком)
     if "cfo" in deciding and app_settings.get("cfo_mode") == "observe" and not db.count("queue", frozenset({"cfo"})):

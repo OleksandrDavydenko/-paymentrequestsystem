@@ -15,6 +15,7 @@ from flask import render_template, url_for
 import app_settings
 import counterparties
 import departments
+import dept_settings
 import mailer
 import notify_log
 import org_structure
@@ -267,7 +268,7 @@ def _notify(event, req, actor, comment, target=None, before=None):
         kind = "task_pay" if req["status"] == "to_pay" else "task_new"
         for role in responsible_roles(req):
             # Керівник відділу — лише керівники відділу автора, а не вся група
-            members = org_structure.heads_of(req.get("department")) if role == "dept_head" \
+            members = dept_settings.approvers(req.get("department")) if role == "dept_head" \
                 else cached_role_members(role)
             if not members:
                 no_members(role)
@@ -280,7 +281,8 @@ def _notify(event, req, actor, comment, target=None, before=None):
     #     і тим, хто вже погодив її в цьому колі
     if event in ("withdraw", "cancel") and before:
         for role in responsible_roles(before):
-            members = org_structure.heads_of(before.get("department")) if role == "dept_head"                 else cached_role_members(role)
+            members = dept_settings.approvers(before.get("department")) if role == "dept_head" \
+                else cached_role_members(role)
             for m in members:
                 add(m["email"], "task_withdrawn", f"заявка чекала вашого рішення ({wf.ROLES.get(role, role).lower()})",
                     SUBJECTS[event])
@@ -349,7 +351,7 @@ def send_approver_reminder(req, days):
         return None
     recipients = {}
     for role in responsible_roles(req):
-        members = org_structure.heads_of(req.get("department")) if role == "dept_head" else cached_role_members(role)
+        members = dept_settings.approvers(req.get("department")) if role == "dept_head" else cached_role_members(role)
         for mbr in members:
             email = (mbr.get("email") or "").lower()
             if email and not wf.self_approval_blocked(req, email):

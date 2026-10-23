@@ -67,6 +67,10 @@ org_structure.set_department_staff("SAL", X, [], "t")
 def submit(author="i@ftpua.com", groups=INIT):
     login(author, groups); c.post("/requests/new", data=BASE); return db.last_id()
 
+# Демо-заявка, що чекає керівника, лишилася б у його черзі й у режимі «лише бачить» — перевіряємо лише заявки тесту
+for r_ in [x for x in db.list_all() if x["status"] == "dept_head"]:
+    r_["status"] = "accountant"; db.save_request(r_)
+
 # ---------- 1. view + sequential
 settings("sequential", "view")
 rid = submit()

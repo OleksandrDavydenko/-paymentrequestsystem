@@ -10,6 +10,7 @@ import app_settings
 import clock
 import counterparties
 import departments
+import dept_settings
 import expense_items
 import filestore
 import notifications
@@ -197,7 +198,7 @@ def request_card(request_id=None, *, context):
         admin_comment=session.pop("admin_comment", ""),
         comment_draft=session.pop("comment_draft", ""),
         parallel=req.get("route_mode") == "parallel",
-        head_names=", ".join(h["name"] or h["email"] for h in org_structure.heads_of(req.get("department"))),
+        head_names=", ".join(h["name"] or h["email"] for h in dept_settings.approvers(req.get("department"))),
         dept_options=org_structure.request_departments_of(user["oid"]),
         participants=req.get("participants") or [],
         # Учасники, як їх бачить форма: збережені або (після помилки в полях) ті, що користувач уже набрав

@@ -1,0 +1,161 @@
+"""Налаштування погодження для кожного відділу («Адміністрування → Відділи»).
+
+{код відділу: {"head_mode", "head_threshold", "deputy_approve", "cfo", "updated_by", "updated_at"}}:
+  head_mode       — default (як у «Налаштування → Погодження»), approve (керівник погоджує), view (лише бачить);
+  head_threshold  — керівник погоджує лише заявки від цієї суми (валюта — як у порога фіндиректора,
+                    перерахунок за курсом 1С); 0 — усі;
+  deputy_approve  — ті, хто «бачить заявки відділу», можуть погодити замість керівника;
+  cfo             — default (загальні правила фіндиректора) або always (фіндиректор погоджує завжди).
+Маршрут визначається під час відправки й запам'ятовується в заявці, тож зміна налаштувань не ламає заявки в роботі.
+У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure). Окремо від org_structure: там записи
+відділів (керівник, хто бачить) перезаписуються цілком.
+"""
+import os
+import threading
+from datetime import date
+from decimal import Decimal
+
+import app_settings
+import cfo_rules
+import clock
+import departments
+import docstore
+import org_structure
+import rates
+import workflow as wf
+
+HEAD_MODES = {"default": "Як у загальних налаштуваннях", "approve": "Погоджує", "view": "Лише бачить"}
+CFO_MODES = {"default": "За загальними правилами", "always": "Погоджує завжди"}
+DEFAULT = {"head_mode": "default", "head_threshold": 0, "deputy_approve": False, "cfo": "default"}
+LABELS = {"head_mode": "керівник відділу", "head_threshold": "поріг керівника", "deputy_approve": "заступник погоджує",
+          "cfo": "фіндиректор"}
+
+_lock = threading.Lock()
+_data = None
+
+
+def _path():
+    base = "/home/data" if os.environ.get("WEBSITE_SITE_NAME") else os.path.join(os.path.dirname(__file__), "data")
+    return os.environ.get("DEPT_SETTINGS_FILE") or os.path.join(base, "dept_settings.json")
+
+
+def _load():
+    global _data
+    if _data is None:
+        try:
+            _data = docstore.read("dept_settings", _path())
+        except (OSError, ValueError):
+            _data = {}
+    return _data
+
+
+def reload():
+    global _data
+    with _lock:
+        _data = None
+        _load()
+
+
+def get(code):
+    """Налаштування відділу (незбережені — за замовчуванням)."""
+    with _lock:
+        saved = _load().get(code or "") or {}
+    return {k: saved.get(k, v) for k, v in DEFAULT.items()}
+
+
+def head_approves(code):
+    """Чи погоджує керівник цього відділу (з урахуванням загального налаштування «Керівник відділу»)."""
+    mode = get(code)["head_mode"]
+    return app_settings.get("dept_head_mode") == "approve" if mode == "default" else mode == "approve"
+
+
+def deputies_approve(code):
+    return bool(code) and get(code)["deputy_approve"]
+
+
+def deputies(code):
+    """Ті, хто бачить заявки відділу і може погодити замість керівника (якщо так налаштовано)."""
+    return org_structure.staff(code)["viewers"] if deputies_approve(code) else []
+
+
+def approvers(code):
+    """Хто погоджує на кроці керівника: керівник і (за налаштуванням) заступники — для листів і нагадувань."""
+    return org_structure.heads_of(code) + deputies(code)
+
+
+def threshold_ok(code, req):
+    """(чи досягає заявка порога керівника, пояснення для історії або ""). Без порога — (True, "")."""
+    limit = get(code)["head_threshold"] or 0
+    if not limit:
+        return True, ""
+    cur = cfo_rules.get()["currency"]
+    value, day = rates.convert(req.get("amount"), req.get("currency"), cur)
+    if value is None or value >= Decimal(limit):
+        return True, ""  # не вдалося перерахувати — керівник погоджує (безпечніше)
+    when = f" (курс 1С на {date.fromisoformat(day):%d.%m.%Y})" if day else ""
+    return False, (f"Погодження керівника відділу пропущено: ≈ {cfo_rules._money(value)} {cur} — менше за поріг "
+                   f"керівника {wf.fmt_usd(limit)} {cur}{when}")
+
+
+def set_many(changes, updated_by):
+    """Зберегти {код: налаштування}; повертає [(код, поле, було, стало)] — для журналу змін."""
+    log = []
+    with _lock:
+        data = _load()
+        stamp = clock.now().isoformat(timespec="seconds")
+        for code, new in changes.items():
+            prev = {k: (data.get(code) or {}).get(k, d) for k, d in DEFAULT.items()}
+            new = {k: new.get(k, prev[k]) for k in DEFAULT}
+            if new == prev:
+                continue
+            log += [(code, k, prev[k], new[k]) for k in DEFAULT if prev[k] != new[k]]
+            if new == DEFAULT:
+                data.pop(code, None)
+            else:
+                data[code] = {**new, "updated_by": updated_by, "updated_at": stamp}
+        if log:
+            docstore.write("dept_settings", _path(), data)
+    return log
+
+
+def log_key(code, field):
+    return f"dept:{code}:{field}"
+
+
+def log_label(key):
+    """Підпис запису журналу змін («Відділ «Логістика»: поріг керівника») або None — не наш ключ."""
+    parts = key.split(":")
+    if len(parts) != 3 or parts[0] != "dept":
+        return None
+    return f"Відділ «{departments.get_name(parts[1])}»: {LABELS.get(parts[2], parts[2])}"
+
+
+def log_value(key, value):
+    field = key.split(":")[-1]
+    if field == "head_mode":
+        return HEAD_MODES.get(value, value)
+    if field == "cfo":
+        return CFO_MODES.get(value, value)
+    if field == "deputy_approve":
+        return "так" if value else "ні"
+    return f"{wf.fmt_usd(value)} {cfo_rules.get()['currency']}" if value else "усі заявки"
+
+
+def route_text(code):
+    """Маршрут заявок відділу для сторінки «Відділи»."""
+    s, steps = get(code), []
+    if head_approves(code):
+        head = "Керівник" + (" або заступник" if s["deputy_approve"] else "")
+        if s["head_threshold"]:
+            head += f" (від {wf.fmt_usd(s['head_threshold'])} {cfo_rules.get()['currency']})"
+        steps.append(head)
+    steps.append("Бухгалтер")
+    if s["cfo"] == "always":
+        steps.append("Фіндиректор (завжди)")
+    elif app_settings.get("cfo_mode") != "observe":
+        steps.append("Фіндиректор" + (" (за правилами)" if app_settings.get("cfo_mode") == "threshold" else ""))
+    return " → ".join(steps + ["Оплата"])
+
+
+# Інший процес сайту змінив документ — перечитати (docstore.sync)
+docstore.register("dept_settings", reload)

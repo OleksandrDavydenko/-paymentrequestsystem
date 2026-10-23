@@ -879,6 +879,11 @@ a.badge { text-decoration: none; }
 @media (max-width: 640px) { .users-filters select { flex: 1 1 calc(50% - 8px); max-width: none; } }
 .users-shown { font-size: 13px; }
 
+/* Відділи */
+.dept-table select { width: auto; max-width: 220px; }
+.dept-table .dept-threshold { width: 110px; text-align: right; }
+.dept-route { font-size: 12px; margin-top: 2px; }
+
 /* Співробітники з 1С */
 .btn-danger { border-color: var(--danger); color: var(--danger); }
 .btn-danger:hover { background: #fdecea; }

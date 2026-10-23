@@ -5,10 +5,12 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, current_app, flash, g, redirect, render_template, request, url_for
 
 import app_settings
+import cfo_rules
 import counterparties
 import currencies
 import db_sql
 import departments
+import dept_settings
 import employees
 import expense_items
 import google_login
@@ -21,6 +23,7 @@ import organizations
 import payment_types
 import rates
 import secret_box
+import settings_log
 import settings_schema as schema
 import storage as db
 import telegram_notify
@@ -220,6 +223,48 @@ def admin_users(*, context):
         budget_summary=user_budget.summary,
         google_domain=(google_login.allowed_domains() or [None])[0],
     )
+
+
+@bp.route("/admin/departments", methods=["GET", "POST"])
+@login_required
+@requires("admin")
+def admin_departments(*, context):
+    """Відділи: як погоджуються заявки кожного відділу (керівник, поріг керівника, заступник, фіндиректор)."""
+    deps = departments.get_departments()
+    if request.method == "POST":
+        f, who, changes, errors = request.form, g.user["email"], {}, []
+        for d in deps:
+            code = d["code"]
+            head_mode, cfo = f.get(f"head_mode-{code}"), f.get(f"cfo-{code}")
+            if head_mode not in dept_settings.HEAD_MODES or cfo not in dept_settings.CFO_MODES:
+                continue  # відділу не було у формі
+            raw = (f.get(f"head_threshold-{code}") or "").replace(" ", "").replace(" ", "")
+            try:
+                limit = int(raw.split(",")[0].split(".")[0]) if raw else 0
+            except ValueError:
+                limit = -1
+            if limit < 0:
+                errors.append(f"«{d['name']}»: поріг керівника — ціле число, 0 або порожньо (усі заявки)")
+                continue
+            changes[code] = {"head_mode": head_mode, "head_threshold": limit, "cfo": cfo,
+                             "deputy_approve": f.get(f"deputy_approve-{code}") == "1"}
+        for message in errors:
+            flash(message, "error")
+        if not errors:
+            log = dept_settings.set_many(changes, who)
+            for code, field, old, new in log:
+                settings_log.record(dept_settings.log_key(code, field), old, new, who)
+            changed = sorted({code for code, *_ in log}, key=lambda c: departments.get_name(c).lower())
+            flash("Збережено: " + ", ".join(departments.get_name(c) for c in changed) + ". Діє для нових і повторно "
+                  "відправлених заявок." if changed else "Змін немає", "success")
+        return redirect(url_for("admin.admin_departments"))
+    rows = [{"code": d["code"], "name": d["name"], "members": len(org_structure.members_of(d["code"])),
+             "profit_center": departments.is_profit_center(d["code"]), "head": org_structure.head_of(d["code"]),
+             "viewers": org_structure.staff(d["code"])["viewers"], "settings": dept_settings.get(d["code"]),
+             "route": dept_settings.route_text(d["code"])} for d in deps]
+    return render_template("admin_departments.html", user_name=g.user["name"], rows=rows,
+                           HEAD_MODES=dept_settings.HEAD_MODES, CFO_MODES=dept_settings.CFO_MODES,
+                           global_head=app_settings.get("dept_head_mode"), currency=cfo_rules.get()["currency"])
 
 
 @bp.route("/admin/users/onec", methods=["GET", "POST"])

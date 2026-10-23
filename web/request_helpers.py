@@ -13,6 +13,8 @@ import cfo_rules
 import clock
 import counterparties
 import currencies
+import departments
+import dept_settings
 import expense_items
 import filestore
 import org_structure
@@ -195,11 +197,18 @@ def payer_label(req):
 
 
 def _route_settings(req):
-    """Налаштування маршруту для відправки заявки: режим, роль керівника, керівники відділу автора."""
+    """Налаштування маршруту для відправки заявки: режим, чи погоджує керівник відділу заявки (налаштування відділу,
+    поріг керівника), керівник і заступники, фіндиректор."""
+    dept = req.get("department")
+    head, head_note = dept_settings.head_approves(dept), ""
+    if head:
+        head, head_note = dept_settings.threshold_ok(dept, req)
     return {
         "mode": app_settings.get("approval_mode"),
-        "head_mode": app_settings.get("dept_head_mode"),
-        "heads": [h["email"] for h in org_structure.heads_of(req.get("department")) if h["email"]],
+        "head_mode": "approve" if head else "view",
+        "head_note": head_note,
+        "heads": [h["email"] for h in org_structure.heads_of(dept) if h["email"]],
+        "deputies": [d["email"] for d in dept_settings.deputies(dept) if d["email"]],
         **_cfo_route(req),
     }
 
@@ -207,6 +216,9 @@ def _route_settings(req):
 def _cfo_route(req):
     """Чи погоджує фіндиректор цю заявку: режим з адмінки, для «за правилами» — cfo_rules.decide
     (тип бухгалтера, поріг у вибраній валюті за курсом 1С, новий контрагент, статті)."""
+    dept = req.get("department")
+    if dept and dept_settings.get(dept)["cfo"] == "always":
+        return {"cfo_step": True, "cfo_note": f"Потрібне погодження фіндиректора: відділ «{departments.get_name(dept)}» — завжди"}
     mode = app_settings.get("cfo_mode")
     if mode == "observe":
         return {"cfo_step": False, "cfo_note": ""}

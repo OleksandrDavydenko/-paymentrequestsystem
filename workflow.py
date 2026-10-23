@@ -312,8 +312,8 @@ def acting_role(req, roles, user_email, ignore_self=False):
     actor = stage_actor(req)
     if actor == "author":
         return "initiator" if "initiator" in roles and is_author(req, user_email) else None
-    if actor == "dept_head":  # лише керівник відділу автора
-        return actor if heads_department(req, roles) else None
+    if actor == "dept_head":  # керівник відділу заявки (або заступник); заступник-автор свою заявку не погоджує
+        return actor if heads_department(req, roles) and not is_author(req, user_email) else None
     return actor if actor in roles else None
 
 
@@ -751,12 +751,13 @@ def history_role(req, roles, user_email):
 
 
 def apply_action(req, action, roles, user, comment="", mode="sequential", head_mode="view", heads=(), guard=None,
-                 cfo_step=True, cfo_note=""):
+                 cfo_step=True, cfo_note="", head_note="", deputies=()):
     """Виконати дію процесу над заявкою (змінює req). Кидає WorkflowError.
 
     mode / head_mode — режим погодження і роль керівника відділу з налаштувань; враховуються
     лише при відправці (submit) і запам'ятовуються в заявці, щоб зміна налаштувань не ламала
-    заявки в процесі. heads — пошта керівників відділу заявки (для submit).
+    заявки в процесі. heads — пошта керівника відділу заявки, deputies — заступників, що можуть погодити замість
+    нього (для submit); head_note — чому крок керівника пропущено (поріг керівника відділу).
     guard — {"cp_pending": контрагента ще немає в 1С, "block_pending": тоді не можна оплатити,
              "account_required": чи обов'язковий «Вид оплати» (є рахунки / каси організації в довіднику),
              "handover": чи ввімкнено підтвердження передачі готівки підряднику (для pay)}.
@@ -782,7 +783,7 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
     old = req["status"]
     new = WORKFLOW[old][1][action]
     if action == "submit":
-        _submit(req, user, comment, mode, head_mode, heads, cfo_step)
+        _submit(req, user, comment, mode, head_mode, heads, cfo_step, head_note, deputies)
         if cfo_note:  # чому фіндиректор погоджує / не погоджує (поріг у USD)
             add_history(req, "cfo_threshold", SYSTEM_USER, "cfo", cfo_note, req["status"], req["status"])
         return
@@ -807,7 +808,7 @@ def _after_head(req):
     return "approval" if req.get("route_mode") == "parallel" else "accountant"
 
 
-def _submit(req, user, comment, mode, head_mode, heads, cfo_step=True):
+def _submit(req, user, comment, mode, head_mode, heads, cfo_step=True, head_note="", deputies=()):
     old = req["status"]
     req["cfo_step"] = bool(cfo_step)
     # без фіндиректора погоджувач один — паралельний режим не має сенсу
@@ -818,16 +819,16 @@ def _submit(req, user, comment, mode, head_mode, heads, cfo_step=True):
     if head_mode == "approve":
         if not req.get("department"):
             skip_reason = "у автора не вказано відділ"
-        elif not heads:
-            skip_reason = "у відділу автора немає керівника"
+        elif not heads and not deputies:
+            skip_reason = "у відділу немає керівника"
         else:
             req["head_step"] = True
     if not req["head_step"]:
         req["status"] = after
         add_history(req, "submit", user, "initiator", comment, old, after)
-        if skip_reason:
+        if skip_reason or head_note:
             add_history(req, "auto_skip", SYSTEM_USER, "dept_head",
-                        f"Погодження керівника відділу пропущено: {skip_reason}", None, after)
+                        f"Погодження керівника відділу пропущено: {skip_reason}" if skip_reason else head_note, None, after)
         return
     req["status"] = "dept_head"
     add_history(req, "submit", user, "initiator", comment, old, "dept_head")

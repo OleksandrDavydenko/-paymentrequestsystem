@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Адміністрування — відділи{% endblock %}
+
+{% block content %}
+{% include "_admin_tabs.html" %}
+<form method="post" class="card" id="departments"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="toolbar">
+    <h1 style="margin:0">Відділи</h1>
+    <span class="sec-summary muted">{{ rows | length }} відділів</span>
+    <span class="spacer"></span>
+    <button type="submit" class="btn btn-primary">Зберегти</button>
+  </div>
+  <p class="muted" style="margin-top:0">Як погоджуються заявки кожного відділу. «Як у загальних налаштуваннях» — за
+    «Налаштування → Погодження» (зараз керівник відділу <strong>{{ 'погоджує' if global_head == 'approve' else 'лише бачить' }}</strong>).
+    Поріг керівника — у {{ currency }} за курсом 1С: дрібніші заявки йдуть одразу до бухгалтера. Керівника й тих, хто бачить
+    заявки відділу, призначають у картці користувача (пункт 3). Нові правила діють для нових і повторно відправлених заявок.</p>
+  <div class="table-wrap">
+  <table class="stack dept-table">
+    <thead><tr><th>Відділ</th><th>Керівник / бачать заявки</th><th>Керівник відділу</th><th class="num">Поріг керівника, {{ currency }}</th>
+      <th class="c">Заступник погоджує</th><th>Фіндиректор</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      {% set s = r.settings %}
+      <tr>
+        <td data-label="Відділ"><strong>{{ r.name }}</strong>
+          <div class="muted">{{ r.members }} співроб.{% if r.profit_center %} · <span class="bchip bchip-direct" title="Profitcenter у 1С">профітцентр</span>{% endif %}</div>
+          <div class="dept-route muted" title="Маршрут заявок відділу">{{ r.route }}</div></td>
+        <td data-label="Керівник / бачать заявки">
+          {% if r.head %}<a href="{{ url_for('admin.admin_user_card', user_id=r.head.id) }}">{{ r.head.name or r.head.email }}</a>{% else %}<span class="muted">керівника не призначено</span>{% endif %}
+          {% if r.viewers %}<div class="muted">бачать: {% for v in r.viewers %}<a href="{{ url_for('admin.admin_user_card', user_id=v.id) }}">{{ v.name or v.email }}</a>{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</td>
+        <td data-label="Керівник відділу">
+          <select name="head_mode-{{ r.code }}" aria-label="Керівник відділу: {{ r.name }}">
+            {% for code, label in HEAD_MODES.items() %}<option value="{{ code }}" {{ 'selected' if code == s.head_mode }}>{{ label }}</option>{% endfor %}
+          </select></td>
+        <td class="num" data-label="Поріг керівника, {{ currency }}">
+          <input type="text" inputmode="numeric" name="head_threshold-{{ r.code }}" value="{{ s.head_threshold or '' }}" placeholder="усі"
+                 class="dept-threshold" aria-label="Поріг керівника: {{ r.name }}"></td>
+        <td class="c" data-label="Заступник погоджує">
+          <input type="checkbox" name="deputy_approve-{{ r.code }}" value="1" {{ 'checked' if s.deputy_approve }}
+                 title="Ті, хто бачить заявки відділу, можуть погодити замість керівника" aria-label="Заступник погоджує: {{ r.name }}"></td>
+        <td data-label="Фіндиректор">
+          <select name="cfo-{{ r.code }}" aria-label="Фіндиректор: {{ r.name }}">
+            {% for code, label in CFO_MODES.items() %}<option value="{{ code }}" {{ 'selected' if code == s.cfo }}>{{ label }}</option>{% endfor %}
+          </select></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <div class="form-actions" style="justify-content:flex-start"><button type="submit" class="btn btn-primary">Зберегти</button></div>
+</form>
+{% endblock %}
