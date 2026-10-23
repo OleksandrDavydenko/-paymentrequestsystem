@@ -4,12 +4,12 @@
 і організації мають власні форми (admin_routes.py) й лише показуються на своїх вкладках.
 """
 import json
-from datetime import date
 
 from flask import Response, flash, g, redirect, render_template, request, session, url_for
 
 import app_settings
 import cfo_rules
+import clock
 import counterparties
 import currencies
 import db_sql
@@ -240,12 +240,12 @@ def admin_settings(*, context):
 @login_required
 @requires("admin")
 def admin_settings_export(*, context):
-    data = {"system": "Система заявок на оплату", "exported_at": date.today().isoformat(),
+    data = {"system": "Система заявок на оплату", "exported_at": clock.today().isoformat(),
             "exported_by": g.user["email"],
             "settings": {s.key: app_settings.get(s.key) for s in schema.exportable()}}
     body = json.dumps(data, ensure_ascii=False, indent=1, default=str)
     return Response(body, mimetype="application/json", headers={
-        "Content-Disposition": f"attachment; filename=payreq-settings-{date.today().isoformat()}.json"})
+        "Content-Disposition": f"attachment; filename=payreq-settings-{clock.today().isoformat()}.json"})
 
 
 def _import_preview():

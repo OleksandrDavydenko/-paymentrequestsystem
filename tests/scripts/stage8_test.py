@@ -31,7 +31,8 @@ check("paid requests now in Оплачені", rows("/to-pay?view=paid") == exp 
 check("paid tab has no checkboxes", 'name="ids"' not in t and "План платежів" not in t)
 check("paid view hides overdue chip", ">Прострочені<" not in t)
 check("accountant can open paid card", c.get("/requests/3").status_code == 200)
-today = m.date.today().isoformat()
+import clock
+today = clock.today().isoformat()  # дата системи (Київ), а не сервера тестів (UTC)
 check("paid filtered by actual pay date (today)", rows(f"/to-pay?view=paid&from={today}&to={today}") == 2)
 
 login("cash@ftpua.com", ["g-c"])

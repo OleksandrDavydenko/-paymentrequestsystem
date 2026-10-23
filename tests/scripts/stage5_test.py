@@ -21,7 +21,8 @@ def login(email, groups):
 m.auth._auth.get_user = lambda: dict(claims)
 c = m.app.test_client()
 rows = lambda t: t.count('<tr class="clickable')
-today = date.today()
+import clock
+today = clock.today()  # дата системи (Київ), а не сервера тестів (UTC)
 
 def expected(pred):
     return [r for r in db.list_to_pay({"cfo"}) if pred(r["pay_date"])]
