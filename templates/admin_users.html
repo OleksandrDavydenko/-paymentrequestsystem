@@ -33,7 +33,37 @@
   {% endif %}
 
   {% if users | length > 5 %}
-  <input type="search" id="users-filter" class="users-filter" placeholder="Пошук: ім'я, пошта, роль або відділ" autocomplete="off">
+  <div class="users-filters" id="users-filters">
+    <input type="search" id="users-filter" class="users-filter" placeholder="Пошук: ім'я, пошта, роль або відділ" autocomplete="off" aria-label="Пошук користувачів">
+    <select id="f-role" data-param="role" aria-label="Роль">
+      <option value="">Усі ролі</option>
+      {% for r in role_order %}<option value="{{ r }}">{{ ROLES[r] }}</option>{% endfor %}
+      <option value="dept_head">Керівник відділу</option>
+      <option value="none">Без ролі</option>
+    </select>
+    <select id="f-dept" data-param="dept" aria-label="Відділ">
+      <option value="">Усі відділи</option>
+      {% for code, name in filter_depts %}<option value="{{ code }}">{{ name }}</option>{% endfor %}
+      <option value="-">Не вказано</option>
+    </select>
+    <select id="f-budget" data-param="budget" aria-label="Статті бюджету">
+      <option value="">Статті: будь-які</option>
+      <option value="none">Не налаштовано</option>
+      <option value="direct">Прямі</option>
+      <option value="all">Усі відділи</option>
+      <option value="selected">Вибрані відділи</option>
+    </select>
+    <select id="f-flag" data-param="flag" aria-label="Інше">
+      <option value="">Інше: усі</option>
+      <option value="external">Зовнішні</option>
+      <option value="noemail">Без пошти</option>
+      <option value="not1c">Немає в 1С</option>
+      <option value="acc-no1c">Бухгалтер без користувача 1С</option>
+      {% if tg_on %}<option value="notg">Без Telegram</option>{% endif %}
+    </select>
+    <span class="muted users-shown" id="users-shown"></span>
+    <button type="button" class="btn btn-sm" id="users-reset" hidden>Скинути</button>
+  </div>
   {% endif %}
   <div class="table-wrap">
   <table class="admin-users stack sortable" id="admin-users">
@@ -50,7 +80,9 @@
       {% for u in users %}
       {% set card = url_for('admin.admin_user_card', user_id=u.id) %}
       {% set dep = user_departments[u.id] %}
-      <tr class="clickable" onclick="location.href='{{ card }}'">
+      {% set fl = filters[u.id] %}
+      <tr class="clickable" onclick="location.href='{{ card }}'" data-roles="{{ fl.roles }}" data-depts="{{ fl.depts }}"
+          data-budget="{{ fl.budget }}" data-flags="{{ fl.flags }}">
         <td data-label="Користувач">
           <a href="{{ card }}"><strong>{{ u.name }}</strong></a>{% if u.id == me_oid %} <span class="muted">(ви)</span>{% endif %}
           <div class="muted">{{ u.email }}{% if u.email and external(u.email) %} <span class="bchip bchip-none" title="Пошта не з домену компанії — входить своїм акаунтом Google">Зовнішній</span>{% endif %}</div>
@@ -124,12 +156,40 @@
     }, 300);
   });
 
-  // Пошук у списку користувачів
+  // Пошук і відбори в списку користувачів; вибір — в адресі сторінки (?role=…&dept=…), щоб можна було поділитися
   const filter = document.getElementById('users-filter');
-  if (filter) filter.addEventListener('input', () => {
+  const selects = [...document.querySelectorAll('#users-filters select')];
+  const rows = [...document.querySelectorAll('#admin-users tbody tr[data-roles]')];
+  const shown = document.getElementById('users-shown');
+  const reset = document.getElementById('users-reset');
+  const ATTR = {role: 'roles', dept: 'depts', budget: 'budget', flag: 'flags'};
+  function apply() {
     const q = filter.value.trim().toLowerCase();
-    document.querySelectorAll('#admin-users tbody tr').forEach(tr => { tr.hidden = q && !tr.textContent.toLowerCase().includes(q); });
-  });
+    const want = selects.filter(s => s.value).map(s => [ATTR[s.dataset.param], s.value]);
+    let n = 0;
+    rows.forEach(tr => {
+      const ok = (!q || tr.textContent.toLowerCase().includes(q))
+        && want.every(([attr, v]) => (tr.dataset[attr] || '').split(' ').includes(v));
+      tr.hidden = !ok;
+      n += ok;
+    });
+    const active = q || want.length;
+    shown.textContent = active ? `Показано ${n} з ${rows.length}` : '';
+    reset.hidden = !active;
+    const params = new URLSearchParams();
+    selects.forEach(s => { if (s.value) params.set(s.dataset.param, s.value); });
+    if (q) params.set('q', filter.value.trim());
+    history.replaceState(null, '', location.pathname + (params.toString() ? '?' + params : ''));
+  }
+  if (filter) {
+    const params = new URLSearchParams(location.search);
+    selects.forEach(s => { if (params.get(s.dataset.param)) s.value = params.get(s.dataset.param); });
+    if (params.get('q')) filter.value = params.get('q');
+    filter.addEventListener('input', apply);
+    selects.forEach(s => s.addEventListener('change', apply));
+    reset.addEventListener('click', () => { filter.value = ''; selects.forEach(s => { s.value = ''; }); apply(); });
+    if (location.search) apply();
+  }
 })();
 </script>
 {% endblock %}

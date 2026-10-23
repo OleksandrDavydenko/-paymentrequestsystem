@@ -1,7 +1,7 @@
 """Співробітники з 1С: додати за правилом (ролі, відділ, керівник відділу, статті свого відділу, прямі —
 профітцентрам, користувач 1С бухгалтеру), розбіжності з 1С, звільнені; відділи для заявок у картці й поле
 «Відділ» у заявці (керівник вибраного відділу погоджує)."""
-import os, sys, tempfile
+import os, re, sys, tempfile
 sys.path.insert(0, os.getcwd())
 tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, ADMIN_EMAILS="admin@ftpua.com")
@@ -136,6 +136,20 @@ check("LOG head sees and can approve", req["number"] in page("/department") and 
 login("m.koval@ftpua.com")
 html = page("/requests/new")
 check("one department: no select", 'name="department"' not in html and 'value="Відділ продажу" readonly' in html)
+
+# ---------- відбори в списку користувачів
+login("admin@ftpua.com", "Адмін")
+user_roles.set_roles("ext@partner.com", "ext@partner.com", "Партнер", ["initiator"], "t")
+os.environ["GOOGLE_ALLOWED_DOMAINS"] = "ftpua.com"
+html = page("/admin/users")
+check("users list: filter controls", all(f'id="{i}"' in html for i in ("f-role", "f-dept", "f-budget", "f-flag"))
+      and '<option value="SAL">Відділ продажу</option>' in html)
+row = lambda uid: re.search(r"<tr[^>]*/admin/users/" + re.escape(uid) + r"'[^>]*>", html).group(0)
+koval_row = row(user_roles.find_by_email("m.koval@ftpua.com")["id"])
+check("row data: roles incl. head, departments, budget", 'data-roles="initiator dept_head"' in koval_row
+      and 'data-depts="SAL"' in koval_row and 'data-budget="direct selected"' in koval_row)
+ext_row = row("ext@partner.com")
+check("row data: external and not in 1C", 'data-flags="external not1c"' in ext_row)
 
 # ---------- автоматична синхронізація
 import alerts

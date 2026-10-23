@@ -169,12 +169,36 @@ def _migrate_legacy_departments():
               + ", ".join(departments.get_name(v) for v in mapping.values()), "success")
 
 
+def _user_filters(users, tg_on):
+    """Відбори списку користувачів: {id: {"roles", "depts", "budget", "flags"}} (рядки для data-атрибутів) і
+    відділи для вибору [(код, назва)]."""
+    out, deps, links = {}, set(), user_onec.all_links()
+    for uid, u in users.items():
+        b = user_budget.get(uid) or {}
+        req_deps = org_structure.request_departments_of(uid)
+        deps.update(req_deps)
+        flags = [name for name, on in (
+            ("external", bool(u["email"]) and google_login.is_external(u["email"])),
+            ("noemail", not u["email"]),
+            ("not1c", not (u["email"] and employees.by_email(u["email"]))),
+            ("acc-no1c", bool(u["roles"] & wf.ACCOUNTANT_ROLES) and uid not in links),
+            ("notg", tg_on and not telegram_notify.is_linked(user_prefs.telegram_lookup(u["email"])))) if on]
+        out[uid] = {"roles": " ".join(sorted(u["roles"]) + (["dept_head"] if org_structure.head_departments(uid) else []))
+                    or "none",
+                    "depts": " ".join(req_deps) or "-",
+                    "budget": " ".join(k for k, on in (("direct", b.get("direct")), ("all", b.get("all_departments")),
+                                                       ("selected", b.get("departments"))) if on) or "none",
+                    "flags": " ".join(flags)}
+    return out, sorted(((d, departments.get_name(d)) for d in deps), key=lambda x: x[1].lower())
+
+
 @bp.route("/admin/users")
 @login_required
 @requires("admin")
 def admin_users(*, context):
     _migrate_legacy_departments()
     users = _users()
+    filters, filter_depts = _user_filters(users, telegram_notify.enabled())
     return render_template(
         "admin_users.html",
         user_name=g.user["name"],
@@ -184,6 +208,8 @@ def admin_users(*, context):
         me_oid=g.user["oid"],
         user_departments={uid: org_structure.department_of(uid) for uid in users},
         request_departments={uid: org_structure.request_departments_of(uid) for uid in users},
+        filters=filters,
+        filter_depts=filter_depts,
         onec_links=user_onec.all_links(),
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
         alt_addresses=user_prefs.confirmed_addresses() if app_settings.get("allow_custom_email") else {},

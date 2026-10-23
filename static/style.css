@@ -872,6 +872,13 @@ a.badge { text-decoration: none; }
 .card.is-disabled .org-fieldset { opacity: .55; }
 .uc-section.is-disabled .uc-onec-fields { opacity: .55; }
 .uc-onec-off { margin: 0 0 12px; }
+/* Відбори в списку користувачів */
+.users-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 10px; }
+.users-filters .users-filter { flex: 1 1 240px; margin: 0; }
+.users-filters select { width: auto; flex: 0 1 auto; max-width: 240px; }
+@media (max-width: 640px) { .users-filters select { flex: 1 1 calc(50% - 8px); max-width: none; } }
+.users-shown { font-size: 13px; }
+
 /* Співробітники з 1С */
 .btn-danger { border-color: var(--danger); color: var(--danger); }
 .btn-danger:hover { background: #fdecea; }
