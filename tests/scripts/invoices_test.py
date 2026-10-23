@@ -29,11 +29,6 @@ org_structure.set_request_departments("a@ftpua.com", "a@ftpua.com", "A", ["SAL"]
 
 # ---------- запит до Power BI
 q = invoices.query("CP-GUID", "DEP-GUID")
-check("1C ref (32 hex) -> invoice GUID format", invoices.uuid_1c("80DF00155D3B6E0311E6FAA781AEB0E6")
-      == "11e6faa7-81ae-b0e6-80df-00155d3b6e03" and invoices.uuid_1c("811F00155DCD460C11E92B046B815D53")
-      == "11e92b04-6b81-5d53-811f-00155dcd460c" and invoices.uuid_1c("11E6FAA7-81AE-B0E6-80DF-00155D3B6E03")
-      == "11e6faa7-81ae-b0e6-80df-00155d3b6e03" and invoices.uuid_1c("DEP-LOG") == "DEP-LOG")
-check("DAX uses invoice GUID format", "\"11e6faa7-81ae-b0e6-80df-00155d3b6e03\"" in invoices.query("1", "80DF00155D3B6E0311E6FAA781AEB0E6"))
 check("DAX: counterparty, department, unpaid only", "'InvoiceForPay'[CounterpartyGUID] = \"CP-GUID\"" in q
       and "[DepartmentGUID] = \"DEP-GUID\"" in q and "[UnpaidAmountInCurrency] > 0" in q)
 

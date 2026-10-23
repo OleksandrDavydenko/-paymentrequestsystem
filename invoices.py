@@ -8,7 +8,6 @@ UnpaidAmountInCurrency, AmountUSD, PaidAmountUSD, UnpaidAmountUSD, PaymentStatus
 """
 import logging
 import os
-import re
 import threading
 import time
 from decimal import Decimal, InvalidOperation
@@ -55,25 +54,11 @@ def _record(r):
             "status": str(r.get("PaymentStatus") or "").strip()}
 
 
-_HEX32 = re.compile(r"^[0-9A-Fa-f]{32}$")
-
-
-def uuid_1c(value):
-    """GUID у форматі таблиці рахунків (xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx, малими літерами).
-    Довідники (Departments, Counterparties) дають посилання 1С як 32 hex-знаки, де половини переставлені:
-    80DF00155D3B6E03 11E6FAA781AEB0E6 -> 11e6faa7-81ae-b0e6-80df-00155d3b6e03. Інші значення — як є."""
-    value = (value or "").strip()
-    if _HEX32.match(value):
-        a, b = value[:16].lower(), value[16:].lower()
-        return f"{b[:8]}-{b[8:12]}-{b[12:16]}-{a[:4]}-{a[4:]}"
-    return value.lower() if re.fullmatch(r"[0-9A-Fa-f]{8}(-[0-9A-Fa-f]{4}){3}-[0-9A-Fa-f]{12}", value) else value
-
-
 def query(counterparty_id, department_guid):
     """Текст DAX-запиту: рахунки контрагента лише цього відділу й лише з залишком до оплати."""
     t, q = table(), expense_items.dax_string
-    return (f"EVALUATE FILTER('{t}', '{t}'[CounterpartyGUID] = {q(uuid_1c(counterparty_id))} && "
-            f"'{t}'[DepartmentGUID] = {q(uuid_1c(department_guid))} && '{t}'[UnpaidAmountInCurrency] > 0)")
+    return (f"EVALUATE FILTER('{t}', '{t}'[CounterpartyGUID] = {q(counterparty_id)} && "
+            f"'{t}'[DepartmentGUID] = {q(department_guid)} && '{t}'[UnpaidAmountInCurrency] > 0)")
 
 
 def _mock(counterparty_id, department_guid):
