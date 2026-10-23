@@ -55,7 +55,7 @@ check("admin hint", "Ініціатор, який знає, до кого зве
 login(AUTHOR, INIT)
 page = c.get("/requests/new").get_data(as_text=True)
 check("form: accountant choice, no org / payer", 'name="accountant_type"' in page and 'id="organization_id"' not in page
-      and 'name="payer"' not in page and "Бухгалтер нерезидентів" in page)
+      and 'name="payer"' not in page and "Іноземна компанія" in page and "бухгалтер нерезидентів" in page)
 r = c.post("/requests/new", data={**BASE, "action": "submit"})
 check("choice required", "Оберіть, який бухгалтер перевірить заявку" in r.get_data(as_text=True))
 

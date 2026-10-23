@@ -321,6 +321,8 @@ def request_card(request_id=None, *, context):
         PAYMENT_KINDS=wf.PAYMENT_KINDS,
         PAYMENT_KIND_HINTS=wf.PAYMENT_KIND_HINTS,
         PAYMENT_KIND_CHOSEN=wf.PAYMENT_KIND_CHOSEN,
+        ACCOUNTANT_TILES=wf.ACCOUNTANT_TILES,
+        PAYER_TILES=wf.PAYER_TILES,
         kind_forced=use_invoices and not dept_settings.direct_allowed(req.get("department")),
         expense_lists={"budget": budget_items, "contractor": contractor_lists, "current": req.get("department") or "",
                        "direct": {d: dept_settings.direct_allowed(d or None) for d in contractor_lists},

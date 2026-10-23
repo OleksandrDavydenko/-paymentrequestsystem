@@ -11,6 +11,14 @@
   </select>
 {%- endmacro %}
 
+{% macro choice_tiles(name, tiles, checked, label) -%}
+  <div class="segmented segmented-tall {{ 'invalid' if errors[name] }}" role="radiogroup" aria-label="{{ label }}">
+    {% for code, (title, sub) in tiles.items() %}
+    <label><input type="radio" name="{{ name }}" value="{{ code }}" {{ 'checked' if code == checked }}><span><b>{{ title }}</b><small>{{ sub }}</small></span></label>
+    {% endfor %}
+  </div>
+{%- endmacro %}
+
 {% macro err(name) -%}
   {% if errors[name] %}<span class="err">{{ errors[name] }}</span>{% endif %}
 {%- endmacro %}
@@ -202,13 +210,9 @@
     <h2 class="req-step"><span class="uc-num">3</span>Хто платить</h2>
     <div class="req-fields">
     {% if org_mode == 'accountant' %}
-    <div class="field">
-      <label class="req">Бухгалтер</label>
-      <div class="radio-group radio-col {{ 'invalid' if errors.accountant_type }}">
-        {% for code, label in ACCOUNTANT_CHOICES.items() %}
-        <label><input type="radio" name="accountant_type" value="{{ code }}" {{ 'checked' if code == req.accountant_type }}> {{ label }}</label>
-        {% endfor %}
-      </div>
+    <div class="field full">
+      <label class="req">Хто перевірить і оплатить</label>
+      {{ choice_tiles('accountant_type', ACCOUNTANT_TILES, req.accountant_type, 'Бухгалтер') }}
       {{ err('accountant_type') }}
       {% if req.accountant_hint and not errors %}<span class="route-hint">{{ req.accountant_hint | capitalize }} — можна змінити</span>{% endif %}
       {% if req.organization_id %}<span class="route-hint">Організація: {{ org_name(req.organization_id) }}</span>{% endif %}
@@ -216,11 +220,7 @@
     {% elif org_mode == 'payer' %}
     <div class="field">
       <label class="req">Платник</label>
-      <div class="segmented {{ 'invalid' if errors.payer }}" role="radiogroup" aria-label="Платник">
-        {% for code, label in PAYERS.items() %}
-        <label><input type="radio" name="payer" value="{{ code }}" {{ 'checked' if code == payer_value }}><span>{{ label }}</span></label>
-        {% endfor %}
-      </div>
+      {{ choice_tiles('payer', PAYER_TILES, payer_value, 'Платник') }}
       {{ err('payer') }}
       {% if req.organization_id %}<span class="route-hint">Організація: {{ org_name(req.organization_id) }}</span>{% endif %}
     </div>
