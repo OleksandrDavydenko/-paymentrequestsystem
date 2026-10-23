@@ -883,6 +883,25 @@ a.badge { text-decoration: none; }
 .dept-table select { width: auto; max-width: 220px; }
 .dept-table .dept-threshold { width: 110px; text-align: right; }
 .dept-route { font-size: 12px; margin-top: 2px; }
+.dept-default { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; margin: 0 0 12px; }
+.codes-dialog { width: min(640px, calc(100vw - 32px)); }
+.codes-dialog .cfo-codes-list { max-height: 50vh; overflow: auto; margin-top: 8px; }
+.codes-count { font-size: 12px; margin-top: 6px; }
+
+/* Тип оплати й підбір рахунків */
+.kind-field { margin-bottom: 14px; }
+.exp-note { color: #9a6700; }
+.invoice-dialog { width: min(900px, calc(100vw - 32px)); }
+.inv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
+.inv-tools input { flex: 1 1 260px; }
+.inv-tools select { width: auto; flex: 0 0 auto; }
+.inv-other { text-align: center; font-size: 13px; }
+.inv-other .btn-link { color: var(--primary); }
+.inv-msg { background: #fff4e5; border-left: 4px solid #d97706; padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; }
+.inv-table td, .inv-table th { vertical-align: top; }
+.inv-table th.c, .inv-table td.c { width: 32px; text-align: center; }
+.inv-used { background: #fff8e6; }
+.inv-warn { color: #9a6700; font-size: 12px; }
 
 /* Співробітники з 1С */
 .btn-danger { border-color: var(--danger); color: var(--danger); }

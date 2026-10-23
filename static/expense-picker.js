@@ -2,8 +2,8 @@
 // 1) Поле з підказками: пишемо код або частину назви — до 10 збігів, ↑↓/Enter/Esc.
 // 2) «☰ Довідник» — модальне вікно з повним списком, пошуком і «Нещодавніми».
 (function () {
-  const ITEMS = JSON.parse(document.getElementById('expense-items-data').textContent || '[]');
-  const BY_CODE = new Map(ITEMS.map(i => [i.code, i]));
+  let ITEMS = JSON.parse(document.getElementById('expense-items-data').textContent || '[]');
+  let BY_CODE = new Map(ITEMS.map(i => [i.code, i]));
   const RECENT_KEY = 'expense-recent';
   const MAX_SUGGEST = 10;
   const MAX_LIST = 500;
@@ -27,7 +27,8 @@
   // ---------- пошук ----------
   const norm = s => (s || '').toLowerCase().replace(/[ʼ’`]/g, "'").replace(/\s+/g, ' ').trim();
   const collator = new Intl.Collator('uk', { numeric: true });
-  ITEMS.forEach(i => { i._code = norm(i.code); i._name = norm(i.name); });
+  const prepare = list => list.forEach(i => { i._code = norm(i.code); i._name = norm(i.name); });
+  prepare(ITEMS);
 
   function search(query, limit) {
     const q = norm(query);
@@ -251,6 +252,25 @@
       renderSuggest();
     }
   });
+
+  // Інший список статей (тип оплати «підряднику / непрямі» чи відділ заявки змінилися): стаття, якої в ньому немає,
+  // очищується з поясненням
+  const note = document.getElementById('exp-note');
+  window.expensePicker = {
+    setItems(list, emptyText) {
+      ITEMS = list || [];
+      prepare(ITEMS);
+      BY_CODE = new Map(ITEMS.map(i => [i.code, i]));
+      const cleared = hidden.value && !BY_CODE.has(hidden.value);
+      if (cleared) select(null);
+      input.disabled = !ITEMS.length;
+      input.placeholder = ITEMS.length ? 'Код або назва статті…' : (emptyText || 'Немає статей');
+      if (note) {
+        note.textContent = !ITEMS.length ? (emptyText || '') : cleared ? 'Попередню статтю прибрано: її немає в цьому списку — оберіть іншу' : '';
+        note.hidden = !note.textContent;
+      }
+    },
+  };
 
   // Початковий стан
   const initial = BY_CODE.get(hidden.value);

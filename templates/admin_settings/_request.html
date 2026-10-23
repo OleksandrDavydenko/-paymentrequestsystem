@@ -13,6 +13,18 @@
   </label>
   {% endfor %}
 
+  <div class="budget-section-title">Рахунки в заявці</div>
+  {% for code, label in INVOICES_MODES.items() %}
+  <label class="mode-option">
+    <input type="radio" name="invoices_mode" value="{{ code }}" {{ 'checked' if invoices_mode == code }}>
+    <span><strong>{{ label.split(':')[0] }}</strong>{% if invoices_mode == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      <span class="mode-hint">{% if code == 'on' %}Ініціатор вибирає, що оплачує: «Оплата підряднику» (рахунки з 1С за контрагентом
+        і відділом заявки, статті — зі списку відділу) або «Непрямі витрати» (статті з його бюджету). Статті підрядника й
+        обов'язковість рахунків для кожного відділу — «Адміністрування → Відділи».{% else %}Блоку рахунків і вибору типу оплати
+        немає, статті — з бюджету людини; рахунки, збережені раніше, лише показуються.{% endif %}</span></span>
+  </label>
+  {% endfor %}
+
   <div class="budget-section-title">Вимоги перед відправкою на погодження</div>
   <p class="muted" style="margin-top:0">Перевіряються лише при «Відправити на погодження»: зберегти чернетку можна й без них.</p>
   {% for code, label in REQ_DOCUMENT_MODES.items() %}
@@ -34,7 +46,8 @@
   </label>
   <label class="mode-option">
     <input type="checkbox" name="req_lines_required" value="1" {{ 'checked' if req_lines_required }}>
-    <span><strong>Рядки рахунків обов'язкові</strong><span class="muted"> — хоча б один: номер рахунку й сума</span></span>
+    <span><strong>Рядки рахунків обов'язкові</strong><span class="muted"> — для «Оплата підряднику» в усіх відділах, хоча б один:
+      номер рахунку й сума (окремо по відділах — «Адміністрування → Відділи»)</span></span>
   </label>
 
   <div class="budget-section-title">Дії автора</div>

@@ -2,7 +2,7 @@
    Очікує req, errors, editable, expense_items (список {code, name}). #}
 <div class="field">
   <label for="expense-input" class="req">Стаття витрат</label>
-  {% if editable and not expense_items and not req.expense_code %}
+  {% if editable and not (any_expense_items if any_expense_items is defined else expense_items) and not req.expense_code %}
   <div class="exp-no-budget">
     Вам ще не призначено статті бюджету. Зверніться до адміністратора системи.
     <input type="hidden" name="expense_code" value="">
@@ -24,6 +24,7 @@
     </div>
     <ul class="exp-suggest" id="exp-suggest" role="listbox" hidden></ul>
   </div>
+  <span class="field-hint exp-note" id="exp-note" hidden></span>
   {% else %}
   {% set exp_title = expense_title(req.expense_code) %}
   <div class="exp-readonly {{ 'exp-missing' if req.expense_code and not exp_title }}"
@@ -37,7 +38,7 @@
   {% if errors.expense_code %}<span class="err">{{ errors.expense_code }}</span>{% endif %}
 </div>
 
-{% if editable and (expense_items or req.expense_code) %}
+{% if editable and ((any_expense_items if any_expense_items is defined else expense_items) or req.expense_code) %}
 <dialog id="exp-dialog" class="exp-dialog" aria-labelledby="exp-dialog-title">
   <div class="dlg-head">
     <span id="exp-dialog-title">Статті витрат</span>

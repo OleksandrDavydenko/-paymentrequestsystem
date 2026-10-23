@@ -13,6 +13,31 @@
   const lineRows = () => [...document.querySelectorAll('#lines-body tr')].filter(tr => tr.id !== 'no-lines');
   const steps = $('sum-steps');
 
+  // Тип оплати: «Оплата підряднику» — статті відділу заявки й рахунки; «Непрямі витрати» — бюджет, без рахунків
+  const listsEl = $('expense-lists');
+  const LISTS = listsEl ? JSON.parse(listsEl.textContent) : null;
+  let lastList = null;
+  function applyKind() {
+    if (!LISTS) return;
+    const kind = radio('payment_kind'), dept = val('department') || LISTS.current || '';
+    const contractor = kind === 'contractor';
+    const key = kind + '|' + dept;
+    if (key !== lastList && window.expensePicker && kind) {
+      lastList = key;
+      window.expensePicker.setItems(contractor ? (LISTS.contractor[dept] || []) : LISTS.budget,
+        contractor ? 'Для цього відділу ще не задано статей оплати підряднику — зверніться до адміністратора'
+                   : 'Вам ще не призначено статті бюджету — зверніться до адміністратора');
+    }
+    const block = $('block-lines');
+    if (block) block.hidden = !contractor && !lineRows().length;
+    const mark = block && block.querySelector('.req-mark');
+    if (block && LISTS.required) {
+      const need = contractor && LISTS.required[dept];
+      if (need && !mark) block.querySelector('.req-step').insertAdjacentHTML('beforeend', ' <span class="req-mark" title="Обов’язково">*</span>');
+      if (!need && mark) mark.remove();
+    }
+  }
+
   // Швидкий вибір дати оплати
   document.querySelectorAll('#date-chips .chip').forEach(b => b.addEventListener('click', () => {
     $('pay_date').value = b.dataset.date;
@@ -50,6 +75,7 @@
     if ($('organization_id') && !val('organization_id') && radio('payment_form') === 'bank') todo.push('Організація');
     if (form.querySelector('input[name=payer]') && !radio('payer')) todo.push('Платник');
     if (form.querySelector('input[name=accountant_type]') && !radio('accountant_type')) todo.push('Бухгалтер');
+    if (form.querySelector('input[name=payment_kind]') && !radio('payment_kind')) todo.unshift('Що оплачуємо');
     return todo;
   }
 
@@ -81,6 +107,10 @@
     if ($('cp-input')) $('sum-cp').textContent = val('cp-input') || '—';
     if ($('expense-input')) $('sum-exp').textContent = val('expense-input') || '—';
     if ($('department')) $('sum-dept').textContent = selectedText('department') || '—';
+    if ($('sum-kind') && form.querySelector('input[name=payment_kind]')) {
+      $('sum-kind').textContent = (form.querySelector('input[name=payment_kind]:checked + span') || {}).textContent || '—';
+    }
+    applyKind();
     const formLabel = (form.querySelector('input[name=payment_form]:checked + span') || {}).textContent || '';
     $('sum-pay').textContent = `${fmtDate(val('pay_date'))} · ${formLabel}`;
     linesDiff(amount, currency);
@@ -88,6 +118,7 @@
     if (!steps) return;
     const params = new URLSearchParams({
       amount: val('amount'), currency, department: val('department'), payment_form: radio('payment_form'),
+      payment_kind: radio('payment_kind'),
       organization_id: val('organization_id'), payer: radio('payer'), accountant_type: radio('accountant_type'),
       counterparty_id: val('counterparty_id'), expense_code: val('expense_code'), pay_date: val('pay_date'),
       lines: String(lineRows().length)});

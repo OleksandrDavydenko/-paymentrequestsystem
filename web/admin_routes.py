@@ -225,6 +225,11 @@ def admin_users(*, context):
     )
 
 
+def _codes(raw):
+    """Коди статей зі списку «a,b,c» (без порожніх і повторів, за порядком)."""
+    return sorted({c.strip() for c in (raw or "").split(",") if c.strip()})
+
+
 @bp.route("/admin/departments", methods=["GET", "POST"])
 @login_required
 @requires("admin")
@@ -248,8 +253,17 @@ def admin_departments(*, context):
                 continue
             changes[code] = {"head_mode": head_mode, "head_threshold": limit, "cfo": cfo,
                              "deputy_approve": f.get(f"deputy_approve-{code}") == "1"}
+            if f"contractor_codes-{code}" in f:  # блок рахунків увімкнено — є і статті підрядника
+                raw_codes = f.get(f"contractor_codes-{code}") or ""
+                changes[code]["contractor_codes"] = None if raw_codes == "*" else _codes(raw_codes)
+                changes[code]["invoices_required"] = f.get(f"invoices_required-{code}") == "1"
         for message in errors:
             flash(message, "error")
+        if "contractor_default" in f and not errors:
+            default = _codes(f.get("contractor_default"))
+            if default != app_settings.get("contractor_expense_codes"):
+                app_settings.set("contractor_expense_codes", default, who)
+                flash("Статті оплати підряднику за замовчуванням: " + (", ".join(default) or "жодної"), "success")
         if not errors:
             log = dept_settings.set_many(changes, who)
             for code, field, old, new in log:
@@ -262,7 +276,10 @@ def admin_departments(*, context):
              "profit_center": departments.is_profit_center(d["code"]), "head": org_structure.head_of(d["code"]),
              "viewers": org_structure.staff(d["code"])["viewers"], "settings": dept_settings.get(d["code"]),
              "route": dept_settings.route_text(d["code"])} for d in deps]
-    return render_template("admin_departments.html", user_name=g.user["name"], rows=rows,
+    items = [{"code": i["code"], "name": i["name"]} for i in expense_items.get_items()]
+    return render_template("admin_departments.html", user_name=g.user["name"], rows=rows, items=items,
+                           invoices_on=app_settings.get("invoices_mode") != "off",
+                           contractor_default=app_settings.get("contractor_expense_codes") or [],
                            HEAD_MODES=dept_settings.HEAD_MODES, CFO_MODES=dept_settings.CFO_MODES,
                            global_head=app_settings.get("dept_head_mode"), currency=cfo_rules.get()["currency"])
 

@@ -82,5 +82,17 @@ def first_request_with_counterparty(cp_id):
     return rows[0]["id"] if rows else None
 
 
+def invoice_usage(cp_id, numbers, exclude_id=None):
+    """{номер рахунку: [номери заявок]} — у яких заявках (крім exclude_id і закритих без оплати) вже є ці рахунки."""
+    wanted, out = set(numbers), {}
+    for r in sorted(_REQUESTS.values(), key=lambda r: r["id"]):
+        if r["id"] == exclude_id or r.get("counterparty_id") != cp_id or r["status"] in ("rejected", "cancelled"):
+            continue
+        for ln in r.get("lines") or []:
+            if ln.get("invoice") in wanted and r["number"] not in out.get(ln["invoice"], []):
+                out.setdefault(ln["invoice"], []).append(r["number"])
+    return out
+
+
 def reindex():
     return 0  # похідні поля в пам'яті обчислюються щоразу

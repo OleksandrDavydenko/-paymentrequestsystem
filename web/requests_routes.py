@@ -14,6 +14,7 @@ import departments
 import dept_settings
 import expense_items
 import filestore
+import invoices
 import notifications
 import org_structure
 import organizations
@@ -25,7 +26,7 @@ import workflow as wf
 
 from web.auth import _home, _load_visible, login_required, requires
 from web.listing import _filtered, _page, _parse_date, _ref_keys
-from web.request_helpers import INLINE_EXT, _parse_amount, add_workdays, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
+from web.request_helpers import INLINE_EXT, _parse_amount, add_workdays, contractor_items, invoices_on, lines_required, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
 
 
 bp = Blueprint("requests", __name__)
@@ -88,6 +89,29 @@ def _pay_date_presets():
     return {"earliest_pay": earliest, "pay_presets": presets}
 
 
+@bp.route("/requests/invoices")
+@login_required
+@requires("initiator")
+def invoices_for_request(*, context):
+    """«Підбір рахунків»: неоплачені рахунки контрагента з 1С лише відділу заявки (один з відділів автора) і в яких
+    заявках у роботі вони вже є (щоб не оплатити двічі)."""
+    a, oid = request.args, g.user["oid"]
+    cp = (a.get("counterparty_id") or "").strip()
+    dept = a.get("department") if a.get("department") in org_structure.request_departments_of(oid)         else org_structure.department_of(oid)
+    rid = int(a["request_id"]) if (a.get("request_id") or "").isdigit() else None
+    if not cp:
+        return {"invoices": [], "error": "Спочатку оберіть контрагента"}
+    if not dept:
+        return {"invoices": [], "error": "У заявці не вказано відділ — рахунки підбираються за відділом"}
+    try:
+        found = invoices.for_request(cp, dept)
+    except invoices.InvoicesError as e:
+        return {"invoices": [], "error": str(e) + ". Рахунок можна вписати вручну («+ Додати рядок»)."}
+    usage = db.invoice_usage(cp, [i["number"] for i in found], rid)
+    return {"invoices": [{**i, "used_in": usage.get(i["number"], [])} for i in found],
+            "department": departments.get_name(dept)}
+
+
 @bp.route("/requests/route-preview")
 @bp.route("/requests/<int:request_id>/route-preview")
 @login_required
@@ -103,6 +127,7 @@ def route_preview(request_id=None, *, context):
            "organization_id": a.get("organization_id") or existing.get("organization_id"),
            "accountant_type": a.get("accountant_type") or None, "payer": a.get("payer") or None,
            "counterparty_id": a.get("counterparty_id") or None, "expense_code": a.get("expense_code") or None,
+           "payment_kind": a.get("payment_kind") if a.get("payment_kind") in wf.PAYMENT_KINDS else None,
            "pay_date": _parse_date(a.get("pay_date")),
            "lines": [None] * min(int(a.get("lines")) if (a.get("lines") or "").isdigit() else 0, 200)}
     rs = _route_settings(req)
@@ -159,8 +184,13 @@ def request_card(request_id=None, *, context):
     else:
         existing = _load_visible(request_id)
 
-    # Статті, які може вибрати автор (редагує заявку лише автор, тож беремо поточного користувача)
+    # Статті, які може вибрати автор (редагує заявку лише автор, тож беремо поточного користувача): непрямі витрати —
+    # з його бюджету, оплата підряднику — статті відділу заявки («Адміністрування → Відділи»)
     budget_items = user_budget.allowed_items(user_budget.get(user["oid"]), expense_items.get_items())
+    dept_list = org_structure.request_departments_of(user["oid"])
+    contractor_lists = {d: contractor_items(d) for d in set(dept_list) | {existing.get("department")} if d}
+    contractor_lists[""] = contractor_items(None)  # заявка без відділу — статті за замовчуванням
+    use_invoices = invoices_on()
 
     errors = {}
     req = existing
@@ -168,12 +198,30 @@ def request_card(request_id=None, *, context):
         if not wf.can_edit(existing, roles, user["email"]):
             flash("Заявку в цьому статусі редагувати не можна", "error")
             return redirect(url_for("requests.request_card", request_id=request_id))
-        data, errors = parse_request_form(request.form, existing, {i["code"] for i in budget_items})
-        req = {**existing, **data}
         # Відділ заявки — один з відділів автора для заявок (картка користувача); інший із форми не приймаємо
+        dept = existing.get("department")
         chosen = request.form.get("department")
-        if chosen and chosen != existing.get("department") and chosen in org_structure.request_departments_of(user["oid"]):
-            req["department"] = chosen
+        if chosen and chosen != dept and chosen in dept_list:
+            dept = chosen
+        kind = request.form.get("payment_kind") if request.form.get("payment_kind") in wf.PAYMENT_KINDS else None
+        legacy = "payment_kind_sent" not in request.form  # форма без перемикача (старі сторінки, API) — як раніше
+        if legacy:
+            kind = existing.get("payment_kind")
+        contractor = use_invoices and kind == "contractor"
+        allowed = contractor_lists.get(dept or "", contractor_lists[""]) if contractor else budget_items
+        # Змінили тип або (для підрядника) відділ — стара стаття мусить бути в новому списку
+        same_list = kind == existing.get("payment_kind") and (not contractor or dept == existing.get("department"))
+        data, errors = parse_request_form(request.form, existing if same_list else {**existing, "expense_code": None},
+                                          {i["code"] for i in allowed}, contractor=contractor)
+        req = {**existing, **data, "department": dept}
+        if use_invoices and not legacy:
+            req["payment_kind"] = kind
+            if not kind:
+                errors["payment_kind"] = "Виберіть, що оплачуємо: оплата підряднику чи непрямі витрати"
+            elif kind == "indirect":
+                req["lines"] = []  # рахунки — лише для оплати підряднику
+        elif not use_invoices:
+            req["lines"] = existing.get("lines") or []  # блоку рахунків немає — збережене лишається як є
         if not errors and request.form.get("action") == "submit":
             errors = submit_requirements(req)  # вимоги з налаштувань — лише при відправці; зберегти можна й без них
         if (existing.get("organization_id") and not data["organization_id"] and not errors
@@ -197,6 +245,10 @@ def request_card(request_id=None, *, context):
             added_participants = []
             if "participants_sent" in request.form and wf.can_manage_participants(req, roles, user["email"]):
                 added_participants = _apply_participants(req, request.form.getlist("participants"), user, roles)
+            if req["id"] is not None and use_invoices and req.get("payment_kind") != existing.get("payment_kind"):
+                wf.add_history(req, "payment_kind", user, "initiator",
+                               f"{wf.PAYMENT_KINDS.get(existing.get('payment_kind'), '—')} → {wf.PAYMENT_KINDS[req['payment_kind']]}",
+                               req["status"], req["status"])
             if req["id"] is not None and existing.get("department") and req.get("department") != existing["department"]:
                 wf.add_history(req, "department", user, "initiator", f"{departments.get_name(existing['department'])} → "
                                f"{departments.get_name(req['department'])}", req["status"], req["status"])
@@ -224,8 +276,9 @@ def request_card(request_id=None, *, context):
         user_name=user["name"],
         req=req,
         errors=errors,
-        invoices=db.INVOICES,
-        expense_items=budget_items,
+        expense_items=(contractor_lists.get(req.get("department") or "", []) if use_invoices
+                       and req.get("payment_kind") == "contractor" else budget_items),
+        any_expense_items=bool(budget_items or any(contractor_lists.values())),
         KIND_LABELS=expense_items.KIND_LABELS,
         nonresident_orgs=organizations.nonresident_codes(),
         org_options={**organizations.options(), **({req["organization_id"]: organizations.name(req["organization_id"])}
@@ -257,7 +310,12 @@ def request_card(request_id=None, *, context):
         head_names=", ".join(h["name"] or h["email"] for h in dept_settings.approvers(req.get("department"))),
         dept_options=org_structure.request_departments_of(user["oid"]),
         head_approves=dept_settings.head_approves(req.get("department")),
-        lines_required=bool(app_settings.get("req_lines_required")),
+        lines_required=lines_required(req),
+        invoices_on=use_invoices,
+        PAYMENT_KINDS=wf.PAYMENT_KINDS,
+        expense_lists={"budget": budget_items, "contractor": contractor_lists, "current": req.get("department") or "",
+                       "required": {d: dept_settings.invoices_required(d) or bool(app_settings.get("req_lines_required"))
+                                    for d in contractor_lists}},
         **_pay_date_presets(),
         participants=req.get("participants") or [],
         # Учасники, як їх бачить форма: збережені або (після помилки в полях) ті, що користувач уже набрав

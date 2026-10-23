@@ -73,6 +73,10 @@ def _new_user_roles():
     return {r: workflow.ROLES[r] for r in ("initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo")}
 
 
+def _invoices_modes():
+    return {"on": "Увімкнено: тип оплати й підбір рахунків з 1С", "off": "Вимкнено: без рахунків у заявці"}
+
+
 def _data_modes():
     return {"work": "Робоча база", "test": "Тестові дані"}
 
@@ -151,6 +155,10 @@ _LIST = [
     Setting("doc_extensions", "Дозволені формати документів", "request", "multi",
             ["pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx"], _doc_formats),
     Setting("doc_max_mb", "Максимальний розмір файлу, МБ", "request", "int", 10, min=1, max=25),
+    Setting("invoices_mode", "Рахунки в заявці", "request", "choice", "on", _invoices_modes),
+    # Статті для «Оплата підряднику» у відділах без власного списку («Адміністрування → Відділи»)
+    Setting("contractor_expense_codes", "Статті оплати підряднику за замовчуванням", "request", "json", ["CR000065"],
+            managed=True, fmt=_fmt_codes),
     # ---- Оплата й готівка
     Setting("require_payment_account", "Бухгалтер обов'язково вибирає «Вид оплати»", "payment", "bool", True,
             marker="require_payment_account_sent"),

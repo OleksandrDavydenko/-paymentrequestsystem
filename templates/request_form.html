@@ -113,6 +113,19 @@
 
   <section class="req-block" id="block-who">
     <h2 class="req-step"><span class="uc-num">1</span>Кому і за що</h2>
+    {% if invoices_on %}
+    <div class="field kind-field">
+      <label class="req">Що оплачуємо</label>
+      <input type="hidden" name="payment_kind_sent" value="1">
+      <div class="segmented {{ 'invalid' if errors.payment_kind }}" role="radiogroup" aria-label="Що оплачуємо">
+        {% for code, label in PAYMENT_KINDS.items() %}
+        <label><input type="radio" name="payment_kind" value="{{ code }}" {{ 'checked' if code == req.payment_kind }}><span>{{ label }}</span></label>
+        {% endfor %}
+      </div>
+      {{ err('payment_kind') }}
+      {% if editable %}<span class="field-hint" id="kind-hint">Оплата підряднику — рахунки з 1С і статті вашого відділу; непрямі витрати — статті з вашого бюджету</span>{% endif %}
+    </div>
+    {% endif %}
     <div class="req-fields">
       {% include "_counterparty_picker.html" %}
       {% include "_expense_picker.html" %}
@@ -211,7 +224,9 @@
     </div>
   </section>
 
-  <section class="req-block section" id="block-lines">
+  {% set show_lines = req.lines or (invoices_on and editable) %}
+  {% if show_lines %}
+  <section class="req-block section" id="block-lines" {{ 'hidden' if invoices_on and req.payment_kind != 'contractor' and not req.lines }}>
     <div class="section-head">
       <h2 class="req-step"><span class="uc-num">4</span>Рахунки{% if lines_required %} <span class="req-mark" title="Обов'язково">*</span>{% endif %}</h2>
       {% if editable %}
@@ -248,6 +263,7 @@
     </div>
     {% if errors.lines %}<div class="lines-err">{{ errors.lines }}</div>{% endif %}
   </section>
+  {% endif %}
 
   <section class="req-block" id="block-note">
     <h2 class="req-step"><span class="uc-num">5</span>Примітка</h2>
@@ -263,6 +279,7 @@
     <div class="sum-title">Підсумок</div>
     <div class="sum-amount" id="sum-amount">{{ ((req.amount | money) ~ ' ' ~ req.currency) if req.amount else '—' }}</div>
     <dl class="sum-list">
+      {% if invoices_on %}<dt>Тип</dt><dd id="sum-kind">{{ PAYMENT_KINDS.get(req.payment_kind, '—') }}</dd>{% endif %}
       <dt>Контрагент</dt><dd id="sum-cp">{{ cp.name if cp else '—' }}</dd>
       <dt>Стаття</dt><dd id="sum-exp">{{ (req.expense_code ~ ' · ' ~ (expense_title(req.expense_code) or '')) if req.expense_code else '—' }}</dd>
       <dt>Відділ</dt><dd id="sum-dept">{{ dept_name(req.department) if req.department else '—' }}</dd>
@@ -579,17 +596,28 @@
 </div>
 {% endif %}
 
-<dialog id="invoice-dialog">
-  <div class="dlg-head">Підбір рахунків <span id="dlg-cp" style="font-weight:400;color:var(--muted)"></span></div>
+<dialog id="invoice-dialog" class="invoice-dialog" data-url="{{ url_for('requests.invoices_for_request') }}" data-request="{{ req.id or '' }}">
+  <div class="dlg-head">Підбір рахунків <span id="dlg-cp" class="muted"></span></div>
   <div class="dlg-body">
-    <table>
-      <thead><tr><th></th><th>Рахунок</th><th>Дата</th><th class="num">Сума</th><th>Валюта</th><th>Угода</th></tr></thead>
+    <div class="inv-tools">
+      <input type="search" id="inv-search" placeholder="Пошук: номер рахунку або угода" autocomplete="off" aria-label="Пошук рахунку">
+      <select id="inv-currency" aria-label="Валюта рахунків"></select>
+      <span class="muted" id="inv-dept"></span>
+    </div>
+    <div class="inv-msg" id="inv-msg" hidden></div>
+    <div class="table-wrap">
+    <table class="inv-table">
+      <thead><tr><th class="c"><input type="checkbox" id="inv-all" aria-label="Вибрати всі"></th><th>Рахунок</th><th>Дата</th>
+        <th>Угода</th><th class="num">Сума</th><th class="num">До оплати</th></tr></thead>
       <tbody id="dlg-rows"></tbody>
     </table>
+    </div>
   </div>
   <div class="dlg-foot">
-    <button type="button" class="btn btn-primary" id="dlg-add">Додати вибрані</button>
+    <span class="muted" id="inv-selected"></span>
+    <span class="spacer"></span>
     <button type="button" class="btn" id="dlg-close">Скасувати</button>
+    <button type="button" class="btn btn-primary" id="dlg-add" disabled>Додати вибрані</button>
   </div>
 </dialog>
 
@@ -605,7 +633,6 @@
 </template>
 
 <script>
-const INVOICES = {{ invoices | tojson }};
 const NONRESIDENT_ORGS = new Set({{ nonresident_orgs | tojson }});
 const CHANNEL_ROLES = {{ channel_roles | tojson }};
 const ORG_ACCOUNTANTS = {{ org_accountants | tojson }};  // призначення бухгалтерів організаціям в адмінці
@@ -639,9 +666,10 @@ let nextIndex = {{ req.lines | length }};
 
 function num(v) { return parseFloat(String(v).replace(/\s/g, '').replace(',', '.')) || 0; }
 function fmt(v) { return v.toLocaleString('uk-UA', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
-function rows() { return [...body.querySelectorAll('tr:not(#no-lines)')]; }
+function rows() { return body ? [...body.querySelectorAll('tr:not(#no-lines)')] : []; }  // блоку рахунків може не бути
 
 function refresh() {
+  if (!body) return;
   const r = rows();
   r.forEach((tr, i) => tr.querySelector('.n').textContent = i + 1);
   noLines.hidden = r.length > 0;
@@ -668,45 +696,114 @@ function addLine(data = {}) {
   return tr;
 }
 
-body.addEventListener('click', e => {
-  if (e.target.classList.contains('remove-line')) { e.target.closest('tr').remove(); refresh(); }
-});
-body.addEventListener('input', refresh);
-body.addEventListener('change', refresh);
+if (body) {
+  body.addEventListener('click', e => {
+    if (e.target.classList.contains('remove-line')) { e.target.closest('tr').remove(); refresh(); }
+  });
+  body.addEventListener('input', refresh);
+  body.addEventListener('change', refresh);
+}
 
-// Підбір рахунків (мокові дані; пізніше — з 1С)
+// Підбір рахунків з 1С: неоплачені рахунки контрагента лише відділу заявки
 const dlg = document.getElementById('invoice-dialog');
 if (document.getElementById('add-line')) {
-  document.getElementById('add-line').onclick = () => addLine().querySelector('input').focus();
-  document.getElementById('pick-invoices').onclick = () => {
-    const cpHidden = document.getElementById('counterparty_id');
-    const cp = cpHidden.value;
-    if (!cp) { alert('Спочатку оберіть контрагента'); document.getElementById('cp-input').focus(); return; }
+  const rowsBox = document.getElementById('dlg-rows'), msg = document.getElementById('inv-msg');
+  const search = document.getElementById('inv-search'), allBox = document.getElementById('inv-all');
+  const curSel = document.getElementById('inv-currency');
+  const addBtn = document.getElementById('dlg-add'), selInfo = document.getElementById('inv-selected');
+  let found = [];
+  const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+  function selected() { return [...rowsBox.querySelectorAll('input[type=checkbox]:checked:not(:disabled)')].map(cb => found[cb.value]); }
+  function info() {
+    const sel = selected(), totals = {};
+    sel.forEach(i => { totals[i.currency] = (totals[i.currency] || 0) + num(i.unpaid); });
+    selInfo.textContent = sel.length ? `Вибрано: ${sel.length} на ${Object.entries(totals).map(([c, v]) => fmt(v) + ' ' + c).join(' + ')}` : '';
+    addBtn.disabled = !sel.length;
+  }
+  // Валюта: за замовчуванням — як у заявці; «Усі валюти» або інша — з тих, що є в рахунках контрагента
+  function fillCurrencies() {
+    const mine = document.getElementById('currency').value;
+    const all = [...new Set(found.map(i => i.currency))].sort();
+    curSel.innerHTML = '';
+    [[mine, `${mine} — як у заявці`], ...all.filter(c => c !== mine).map(c => [c, c]), ['', 'Усі валюти']].forEach(([v, t]) => {
+      const o = document.createElement('option'); o.value = v; o.textContent = t; curSel.appendChild(o);
+    });
+    curSel.value = mine;
+  }
+  function render() {
+    const q = search.value.trim().toLowerCase(), cur = curSel.value;
     const added = new Set(rows().map(tr => tr.querySelector('[name$="-invoice"]').value));
-    const list = INVOICES.filter(inv => inv.counterparty_id === cp);
-    document.getElementById('dlg-cp').textContent = '— ' + document.getElementById('cp-input').value;
-    const tbody = document.getElementById('dlg-rows');
-    tbody.innerHTML = '';
-    if (!list.length) tbody.innerHTML = '<tr><td colspan="6" class="empty">Рахунків цього контрагента в 1С немає — додайте рядок вручну</td></tr>';
-    list.forEach(inv => {
+    const otherCur = cur ? found.filter(i => i.currency !== cur).length : 0;
+    rowsBox.innerHTML = '';
+    found.forEach((inv, idx) => {
+      if (cur && inv.currency !== cur) return;
+      if (q && !(inv.number + ' ' + inv.deal + ' ' + inv.deal_type).toLowerCase().includes(q)) return;
+      const dis = added.has(inv.number), used = inv.used_in.length;
       const tr = document.createElement('tr');
-      const dis = added.has(inv.number);
-      tr.innerHTML = `<td><input type="checkbox" value="${inv.id}" ${dis ? 'disabled checked' : ''}></td>
-        <td></td><td>${inv.date.split('-').reverse().join('.')}</td>
-        <td class="num">${fmt(num(inv.amount))}</td><td>${inv.currency}</td><td></td>`;
-      tr.children[1].textContent = inv.number;
-      tr.children[5].textContent = inv.deal;
-      if (dis) tr.title = 'Вже додано';
-      tbody.appendChild(tr);
+      tr.className = used ? 'inv-used' : '';
+      tr.innerHTML = `<td class="c"><input type="checkbox" value="${idx}" ${dis ? 'disabled checked' : ''} aria-label="Вибрати рахунок ${esc(inv.number)}"></td>
+        <td><strong>${esc(inv.number)}</strong>${used ? `<div class="inv-warn">вже в заявці № ${inv.used_in.map(esc).join(', ')}</div>` : ''}${dis ? '<div class="muted">уже додано</div>' : ''}</td>
+        <td>${esc((inv.date || '').split('-').reverse().join('.'))}</td>
+        <td>${esc(inv.deal)}${inv.deal_type ? `<div class="muted">${esc(inv.deal_type)}</div>` : ''}</td>
+        <td class="num">${fmt(num(inv.amount))} ${esc(inv.currency)}</td>
+        <td class="num"><strong>${fmt(num(inv.unpaid))}</strong> ${esc(inv.currency)}${inv.status ? `<div class="muted">${esc(inv.status)}</div>` : ''}</td>`;
+      tr.querySelector('input').addEventListener('change', info);
+      rowsBox.appendChild(tr);
     });
+    if (!rowsBox.children.length) rowsBox.innerHTML = `<tr><td colspan="6" class="empty">${found.length ? (q ? 'Нічого не знайдено' : `Рахунків у ${cur} немає`) : 'Неоплачених рахунків цього контрагента для відділу заявки в 1С немає — додайте рядок вручну'}</td></tr>`;
+    if (otherCur) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td colspan="6" class="muted inv-other">Ще ${otherCur} рахунк. в інших валютах — <button type="button" class="btn-link inv-show-all">показати всі</button></td>`;
+      tr.querySelector('button').addEventListener('click', () => { curSel.value = ''; render(); });
+      rowsBox.appendChild(tr);
+    }
+    allBox.checked = false;
+    info();
+  }
+  document.getElementById('pick-invoices').onclick = async () => {
+    const cp = document.getElementById('counterparty_id').value;
+    if (!cp) { alert('Спочатку оберіть контрагента'); document.getElementById('cp-input').focus(); return; }
+    const dept = (document.getElementById('department') || {}).value || '';
+    document.getElementById('dlg-cp').textContent = '— ' + document.getElementById('cp-input').value;
+    found = []; rowsBox.innerHTML = '<tr><td colspan="6" class="empty">Завантаження рахунків з 1С…</td></tr>';
+    msg.hidden = true; search.value = ''; info();
     dlg.showModal();
+    try {
+      const params = new URLSearchParams({counterparty_id: cp, department: dept, request_id: dlg.dataset.request});
+      const data = await (await fetch(dlg.dataset.url + '?' + params, {headers: {Accept: 'application/json'}})).json();
+      found = data.invoices || [];
+      fillCurrencies();
+      document.getElementById('inv-dept').textContent = data.department ? 'Відділ: ' + data.department : '';
+      if (data.error) { msg.textContent = data.error; msg.hidden = false; }
+      render();
+      search.focus();
+    } catch (e) {
+      msg.textContent = 'Не вдалося завантажити рахунки. Спробуйте ще раз або додайте рядок вручну.'; msg.hidden = false;
+      rowsBox.innerHTML = '';
+    }
   };
+  search.addEventListener('input', render);
+  curSel.addEventListener('change', render);
+  allBox.addEventListener('change', () => {
+    rowsBox.querySelectorAll('input[type=checkbox]:not(:disabled)').forEach(cb => { cb.checked = allBox.checked; });
+    info();
+  });
   document.getElementById('dlg-close').onclick = () => dlg.close();
-  document.getElementById('dlg-add').onclick = () => {
-    dlg.querySelectorAll('input[type=checkbox]:checked:not(:disabled)').forEach(cb => {
-      const inv = INVOICES.find(i => i.id === Number(cb.value));
-      addLine({invoice: inv.number, amount: inv.amount, currency: inv.currency, deal: inv.deal});
-    });
+  addBtn.onclick = () => {
+    const sel = selected();
+    if (sel.some(i => i.used_in.length) &&
+        !confirm('Деякі рахунки вже є в інших заявках у роботі. Точно додати їх і сюди?')) return;
+    sel.forEach(inv => addLine({invoice: inv.number, amount: inv.unpaid, currency: inv.currency,
+                                deal: [inv.deal, inv.deal_type].filter(Boolean).join(' · ')}));
+    // Сума заявки ще порожня — підставити суму вибраних рахунків (якщо валюта одна)
+    const amount = document.getElementById('amount');
+    const currencies = new Set(sel.map(i => i.currency));
+    if (!num(amount.value) && currencies.size === 1) {
+      const cur = [...currencies][0], cs = document.getElementById('currency');
+      if ([...cs.options].some(o => o.value === cur)) cs.value = cur;
+      amount.value = fmt(sel.reduce((s, i) => s + num(i.unpaid), 0));
+      amount.dispatchEvent(new Event('input', {bubbles: true}));
+    }
     dlg.close();
   };
 }
@@ -756,5 +853,6 @@ document.querySelectorAll('.cp-copy').forEach(b => b.addEventListener('click', a
 {% if can_manage_participants %}<script src="{{ url_for('static', filename='participants.js') }}"></script>{% endif %}
 <script>window.DOC_LIMITS = {{ {"ext": doc.ext, "max_mb": doc.max_mb} | tojson }};</script>
 <script src="{{ url_for('static', filename='documents.js') }}"></script>
+{% if editable and invoices_on %}<script type="application/json" id="expense-lists">{{ expense_lists | tojson }}</script>{% endif %}
 <script src="{{ url_for('static', filename='request-summary.js') }}"></script>
 {% endblock %}

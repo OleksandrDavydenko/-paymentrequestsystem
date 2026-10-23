@@ -34,7 +34,7 @@ FILE_ENV = {
     "EXPENSE_ITEMS_CACHE": "expense_items.json", "ORG_STRUCTURE_FILE": "org_structure.json",
     "TELEGRAM_LINKED_FILE": "telegram_linked.json", "USER_BUDGET_FILE": "user_budget.json",
     "USER_DIRECTORY_FILE": "user_directory.json", "USER_ONEC_FILE": "user_onec.json",
-    "USER_PREFS_FILE": "user_prefs.json", "USER_ROLES_FILE": "user_roles.json",
+    "USER_PREFS_FILE": "user_prefs.json", "USER_ROLES_FILE": "user_roles.json", "DEPT_SETTINGS_FILE": "dept_settings.json",
 }
 
 

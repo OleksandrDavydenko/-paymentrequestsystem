@@ -73,6 +73,11 @@ def code_by_guid(guid):
     return _by_guid["map"].get(guid)
 
 
+def guid_of(code):
+    """DepartmentGUID відділу з 1С (для рахунків InvoiceForPay) або None."""
+    return next((d.get("guid") for d in _table.items() if d["code"] == code), None) if code else None
+
+
 def is_profit_center(code):
     """Відділ — профітцентр (поле Profitcenter у 1С): його співробітникам за замовчуванням даються прямі статті."""
     return bool(code) and any(d["code"] == code and d.get("profit_center") for d in _table.items())

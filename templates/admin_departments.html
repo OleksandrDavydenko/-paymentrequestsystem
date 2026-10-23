@@ -15,10 +15,21 @@
     «Налаштування → Погодження» (зараз керівник відділу <strong>{{ 'погоджує' if global_head == 'approve' else 'лише бачить' }}</strong>).
     Поріг керівника — у {{ currency }} за курсом 1С: дрібніші заявки йдуть одразу до бухгалтера. Керівника й тих, хто бачить
     заявки відділу, призначають у картці користувача (пункт 3). Нові правила діють для нових і повторно відправлених заявок.</p>
+  {% if invoices_on %}
+  <div class="dept-default">
+    <strong>Статті оплати підряднику за замовчуванням</strong>
+    <span class="muted">— для відділів без власного списку:</span>
+    <span class="budget-chips" data-chips="contractor_default">{% for c in contractor_default %}<span class="bchip bchip-dep" title="{{ expense_title(c) or 'немає в довіднику' }}">{{ c }}</span>{% else %}<span class="bchip bchip-none">не задано</span>{% endfor %}</span>
+    <input type="hidden" name="contractor_default" value="{{ contractor_default | join(',') }}">
+    <button type="button" class="btn btn-sm codes-edit" data-target="contractor_default" data-title="Статті оплати підряднику за замовчуванням">Змінити</button>
+  </div>
+  {% else %}
+  <p class="muted">Рахунки в заявці вимкнено («Налаштування → Заявка»), тож статті оплати підряднику й обов'язковість рахунків не діють.</p>
+  {% endif %}
   <div class="table-wrap">
   <table class="stack dept-table">
     <thead><tr><th>Відділ</th><th>Керівник / бачать заявки</th><th>Керівник відділу</th><th class="num">Поріг керівника, {{ currency }}</th>
-      <th class="c">Заступник погоджує</th><th>Фіндиректор</th></tr></thead>
+      <th class="c">Заступник погоджує</th><th>Фіндиректор</th>{% if invoices_on %}<th>Статті оплати підряднику</th><th class="c">Рахунки обов'язкові</th>{% endif %}</tr></thead>
     <tbody>
     {% for r in rows %}
       {% set s = r.settings %}
@@ -43,6 +54,16 @@
           <select name="cfo-{{ r.code }}" aria-label="Фіндиректор: {{ r.name }}">
             {% for code, label in CFO_MODES.items() %}<option value="{{ code }}" {{ 'selected' if code == s.cfo }}>{{ label }}</option>{% endfor %}
           </select></td>
+        {% if invoices_on %}
+        <td data-label="Статті оплати підряднику">
+          {% set key = 'contractor_codes-' ~ r.code %}
+          <span class="budget-chips" data-chips="{{ key }}">{% if s.contractor_codes is none %}<span class="muted">як за замовчуванням</span>{% else %}{% for c in s.contractor_codes %}<span class="bchip bchip-dep" title="{{ expense_title(c) or 'немає в довіднику' }}">{{ c }}</span>{% else %}<span class="bchip bchip-none">жодної</span>{% endfor %}{% endif %}</span>
+          <input type="hidden" name="{{ key }}" value="{{ '*' if s.contractor_codes is none else s.contractor_codes | join(',') }}">
+          <button type="button" class="btn btn-sm codes-edit" data-target="{{ key }}" data-title="Статті оплати підряднику: {{ r.name }}" data-default="1">Змінити</button></td>
+        <td class="c" data-label="Рахунки обов'язкові">
+          <input type="checkbox" name="invoices_required-{{ r.code }}" value="1" {{ 'checked' if s.invoices_required }}
+                 title="Для «Оплата підряднику» без жодного рахунку заявку не відправити" aria-label="Рахунки обов'язкові: {{ r.name }}"></td>
+        {% endif %}
       </tr>
     {% endfor %}
     </tbody>
@@ -50,4 +71,78 @@
   </div>
   <div class="form-actions" style="justify-content:flex-start"><button type="submit" class="btn btn-primary">Зберегти</button></div>
 </form>
+
+{% if invoices_on %}
+<dialog id="codes-dialog" class="codes-dialog">
+  <div class="dlg-head" id="codes-title">Статті</div>
+  <div class="dlg-body">
+    <input type="search" id="codes-search" placeholder="Пошук: код або назва статті" autocomplete="off" aria-label="Пошук статті">
+    <div class="muted codes-count" id="codes-count"></div>
+    <div class="cfo-codes-list" id="codes-list"></div>
+  </div>
+  <div class="dlg-foot">
+    <button type="button" class="btn" id="codes-default" hidden>Як за замовчуванням</button>
+    <span class="spacer"></span>
+    <button type="button" class="btn" id="codes-cancel">Скасувати</button>
+    <button type="button" class="btn btn-primary" id="codes-ok">Готово</button>
+  </div>
+</dialog>
+<script type="application/json" id="codes-items">{{ items | tojson }}</script>
+<script>
+(function () {
+  // Вибір статей для поля (прихований input зі списком кодів через кому; «*» — як за замовчуванням)
+  const ITEMS = JSON.parse(document.getElementById('codes-items').textContent);
+  const NAMES = new Map(ITEMS.map(i => [i.code, i.name]));
+  const dlg = document.getElementById('codes-dialog'), list = document.getElementById('codes-list');
+  const search = document.getElementById('codes-search'), count = document.getElementById('codes-count');
+  let target = null, chosen = new Set();
+  function render() {
+    const q = search.value.trim().toLowerCase();
+    const extra = [...chosen].filter(c => !NAMES.has(c)).map(c => ({code: c, name: '(немає в довіднику)'}));
+    const rows = extra.concat(ITEMS).filter(i => !q || (i.code + ' ' + i.name).toLowerCase().includes(q));
+    list.innerHTML = '';
+    rows.slice(0, 400).forEach(i => {
+      const label = document.createElement('label');
+      label.className = 'cfo-code';
+      label.innerHTML = '<input type="checkbox"> <span></span>';
+      label.querySelector('span').textContent = `${i.code} — ${i.name}`;
+      const box = label.querySelector('input');
+      box.checked = chosen.has(i.code);
+      box.addEventListener('change', () => { box.checked ? chosen.add(i.code) : chosen.delete(i.code); show(); });
+      list.appendChild(label);
+    });
+    show();
+  }
+  function show() { count.textContent = `Вибрано: ${chosen.size}`; }
+  function chips(key, codes) {
+    const box = document.querySelector(`[data-chips="${key}"]`);
+    box.innerHTML = '';
+    if (codes === null) { box.innerHTML = '<span class="muted">як за замовчуванням</span>'; return; }
+    if (!codes.length) { box.innerHTML = '<span class="bchip bchip-none">жодної</span>'; return; }
+    codes.forEach(c => { const s = document.createElement('span'); s.className = 'bchip bchip-dep'; s.textContent = c; s.title = NAMES.get(c) || ''; box.appendChild(s); });
+  }
+  document.querySelectorAll('.codes-edit').forEach(b => b.addEventListener('click', () => {
+    target = document.querySelector(`input[name="${b.dataset.target}"]`);
+    const v = target.value;
+    chosen = new Set(v === '*' ? (document.querySelector('input[name="contractor_default"]').value || '').split(',').filter(Boolean)
+                               : v.split(',').filter(Boolean));
+    document.getElementById('codes-title').textContent = b.dataset.title;
+    document.getElementById('codes-default').hidden = !b.dataset.default;
+    search.value = '';
+    render();
+    dlg.showModal();
+    search.focus();
+  }));
+  search.addEventListener('input', render);
+  document.getElementById('codes-cancel').addEventListener('click', () => dlg.close());
+  document.getElementById('codes-default').addEventListener('click', () => {
+    target.value = '*'; chips(target.name, null); dlg.close();
+  });
+  document.getElementById('codes-ok').addEventListener('click', () => {
+    const codes = [...chosen].sort();
+    target.value = codes.join(','); chips(target.name, codes); dlg.close();
+  });
+})();
+</script>
+{% endif %}
 {% endblock %}

@@ -356,6 +356,24 @@ def last_accountant_type(email):
         return c.execute(stmt).scalar()
 
 
+def invoice_usage(cp_id, numbers, exclude_id=None):
+    """{номер рахунку: [номери заявок]} — у яких заявках (крім exclude_id і закритих без оплати) вже є ці рахунки."""
+    numbers = sorted({n for n in numbers if n})
+    if not numbers:
+        return {}
+    stmt = (sa.select(L.c.invoice, R.c.number).select_from(L.join(R, R.c.id == L.c.request_id))
+            .where(R.c.counterparty_id == cp_id, L.c.invoice.in_(numbers), R.c.status.notin_(["rejected", "cancelled"]))
+            .order_by(R.c.id))
+    if exclude_id:
+        stmt = stmt.where(R.c.id != exclude_id)
+    out = {}
+    with _engine().connect() as c:
+        for invoice, number in c.execute(stmt):
+            if number not in out.get(invoice, []):
+                out.setdefault(invoice, []).append(number)
+    return out
+
+
 def first_request_with_counterparty(cp_id):
     stmt = sa.select(R.c.id).where(R.c.counterparty_id == cp_id).order_by(R.c.created_at.desc(), R.c.id).limit(1)
     with _engine().connect() as c:

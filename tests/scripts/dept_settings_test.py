@@ -61,7 +61,7 @@ check("bad threshold -> nothing saved", dept_settings.get("LOG")["head_mode"] ==
 r_ = c.post("/admin/departments", data={"head_mode-LOG": "approve", "head_threshold-LOG": "1 000", "cfo-LOG": "always",
                                         "head_mode-SAL": "default", "cfo-SAL": "default"}, follow_redirects=True)
 s = dept_settings.get("LOG")
-check("saved LOG only", s == {"head_mode": "approve", "head_threshold": 1000, "deputy_approve": False, "cfo": "always"}
+check("saved LOG only", s == {**dept_settings.DEFAULT, "head_mode": "approve", "head_threshold": 1000, "cfo": "always"}
       and dept_settings.get("SAL") == dept_settings.DEFAULT and "Збережено: Логістика" in r_.get_data(as_text=True))
 labels = [e["label"] for e in settings_log.query(50)]
 check("journal: department settings", "Відділ «Логістика»: поріг керівника" in labels

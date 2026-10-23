@@ -29,7 +29,7 @@ from web.formatting import fmt_datetime
 
 
 def _parse_amount(raw):
-    raw = (raw or "").replace(" ", "").replace(" ", "").replace(",", ".")
+    raw = re.sub(r"[\s\u00a0\u202f]", "", raw or "").replace(",", ".")  # пробіли розрядів (і нерозривні) — геть
     try:
         value = Decimal(raw)
     except InvalidOperation:
@@ -55,8 +55,9 @@ def _parse_currency(raw, current=None):
     return raw if raw and (currencies.is_valid(raw) or raw == current) else None
 
 
-def parse_request_form(form, current=None, allowed_codes=None):
-    """Повертає (дані заявки, словник помилок). Автор/дата/номер не з форми."""
+def parse_request_form(form, current=None, allowed_codes=None, contractor=False):
+    """Повертає (дані заявки, словник помилок). Автор/дата/номер не з форми.
+    allowed_codes — статті, які можна вибрати; contractor — це статті оплати підряднику відділу (а не бюджет)."""
     errors = {}
     data = {
         "counterparty_id": _parse_counterparty(form.get("counterparty_id"), (current or {}).get("counterparty_id")),
@@ -110,9 +111,11 @@ def parse_request_form(form, current=None, allowed_codes=None):
         if expense_items.get_name(data["expense_code"]) is None:
             errors["expense_code"] = "Такої статті немає в довіднику — оберіть зі списку"
         elif allowed_codes is not None and data["expense_code"] not in allowed_codes:
-            errors["expense_code"] = "Ця стаття не входить у ваш бюджет — оберіть зі списку"
+            errors["expense_code"] = ("Ця стаття не входить у статті оплати підряднику для відділу заявки — оберіть зі списку"
+                                      if contractor else "Ця стаття не входить у ваш бюджет — оберіть зі списку")
     if allowed_codes is not None and not allowed_codes and not data["expense_code"]:
-        errors["expense_code"] = "Вам ще не призначено статті бюджету. Зверніться до адміністратора"
+        errors["expense_code"] = ("Для відділу заявки ще не задано статей оплати підряднику. Зверніться до адміністратора"
+                                  if contractor else "Вам ще не призначено статті бюджету. Зверніться до адміністратора")
     if data["amount"] is None or data["amount"] <= 0:
         errors["amount"] = "Сума має бути більшою за 0"
         data["amount_raw"] = form.get("amount", "")
@@ -194,6 +197,23 @@ def payer_label(req):
         return organizations.name(req["organization_id"])
     payer = wf.payer_of(req)
     return wf.PAYERS[payer] if payer else ""
+
+
+def invoices_on():
+    """Рахунки в заявці ввімкнено («Налаштування → Заявка»): тип оплати й підбір рахунків з 1С."""
+    return app_settings.get("invoices_mode") != "off"
+
+
+def contractor_items(department):
+    """Статті «Оплата підряднику» для відділу (ті, що є в довіднику)."""
+    by_code = expense_items.get_map()
+    return [by_code[c] for c in dept_settings.contractor_codes(department) if c in by_code]
+
+
+def lines_required(req):
+    """Рахунки обов'язкові: оплата підряднику й (загальне налаштування або налаштування відділу заявки)."""
+    return invoices_on() and req.get("payment_kind") == "contractor" and (
+        bool(app_settings.get("req_lines_required")) or dept_settings.invoices_required(req.get("department")))
 
 
 def _route_settings(req):
@@ -330,8 +350,8 @@ def submit_requirements(req):
         if req["pay_date"] < earliest:
             errors["pay_date"] = (f"Дата оплати — не раніше {earliest:%d.%m.%Y} "
                                   f"(через {days} робоч. дн.: стільки потрібно на погодження й оплату)")
-    if app_settings.get("req_lines_required") and not req.get("lines"):
-        errors["lines"] = "Додайте рахунок: номер і суму хоча б в одному рядку"
+    if lines_required(req) and not req.get("lines"):
+        errors["lines"] = "Для оплати підряднику додайте рахунок: підберіть з 1С або впишіть номер і суму"
     mode = app_settings.get("req_document")
     if mode in ("always", "amount") and not req.get("attachments"):
         need, tail = True, ""

@@ -66,11 +66,14 @@ check("'always' -> small request refused too", r.status_code == 200 and "Пер�
 settings(req_min_pay_days="3", req_lines_required="1")
 login("author@ftpua.com", ["g-i"])
 soon = add_workdays(clock.today(), 1).isoformat()
-r = c.post("/requests/new", data={**FORM, "amount": "100", "pay_date": soon, "action": "submit"})
+import app_settings as _as
+_as.set("contractor_expense_codes", ["01.001"], "t")  # рахунки обов'язкові — для «Оплата підряднику»
+r = c.post("/requests/new", data={**FORM, "amount": "100", "pay_date": soon, "action": "submit",
+                                  "payment_kind_sent": "1", "payment_kind": "contractor"})
 html = r.get_data(as_text=True)
 earliest = add_workdays(clock.today(), 3)
 check("pay date too early -> error with earliest date", f"не раніше {earliest:%d.%m.%Y}" in html)
-check("lines required -> error", "Додайте рахунок" in html)
+check("lines required -> error", "додайте рахунок" in html)
 r = c.post("/requests/new", data={**FORM, "amount": "100", "pay_date": earliest.isoformat(), "action": "submit",
                                   "lines-0-invoice": "INV-1", "lines-0-amount": "100", "lines-0-currency": "UAH"})
 check("valid date + line -> submitted", r.status_code == 302 and db.get_request(db.last_id())["status"] != "draft")

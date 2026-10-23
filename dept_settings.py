@@ -5,7 +5,9 @@
   head_threshold  — керівник погоджує лише заявки від цієї суми (валюта — як у порога фіндиректора,
                     перерахунок за курсом 1С); 0 — усі;
   deputy_approve  — ті, хто «бачить заявки відділу», можуть погодити замість керівника;
-  cfo             — default (загальні правила фіндиректора) або always (фіндиректор погоджує завжди).
+  cfo             — default (загальні правила фіндиректора) або always (фіндиректор погоджує завжди);
+  contractor_codes — статті для «Оплата підряднику» (None — як за замовчуванням, contractor_expense_codes);
+  invoices_required — для «Оплата підряднику» обов'язковий хоча б один рахунок.
 Маршрут визначається під час відправки й запам'ятовується в заявці, тож зміна налаштувань не ламає заявки в роботі.
 У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure). Окремо від org_structure: там записи
 відділів (керівник, хто бачить) перезаписуються цілком.
@@ -26,9 +28,10 @@ import workflow as wf
 
 HEAD_MODES = {"default": "Як у загальних налаштуваннях", "approve": "Погоджує", "view": "Лише бачить"}
 CFO_MODES = {"default": "За загальними правилами", "always": "Погоджує завжди"}
-DEFAULT = {"head_mode": "default", "head_threshold": 0, "deputy_approve": False, "cfo": "default"}
+DEFAULT = {"head_mode": "default", "head_threshold": 0, "deputy_approve": False, "cfo": "default",
+           "contractor_codes": None, "invoices_required": False}
 LABELS = {"head_mode": "керівник відділу", "head_threshold": "поріг керівника", "deputy_approve": "заступник погоджує",
-          "cfo": "фіндиректор"}
+          "cfo": "фіндиректор", "contractor_codes": "статті оплати підряднику", "invoices_required": "рахунки обов'язкові"}
 
 _lock = threading.Lock()
 _data = None
@@ -81,6 +84,16 @@ def deputies(code):
 def approvers(code):
     """Хто погоджує на кроці керівника: керівник і (за налаштуванням) заступники — для листів і нагадувань."""
     return org_structure.heads_of(code) + deputies(code)
+
+
+def contractor_codes(code):
+    """Статті, з яких вибирають для «Оплата підряднику» у цьому відділі (свої або за замовчуванням)."""
+    own = get(code)["contractor_codes"] if code else None
+    return list(own) if own is not None else list(app_settings.get("contractor_expense_codes") or [])
+
+
+def invoices_required(code):
+    return bool(code) and get(code)["invoices_required"]
 
 
 def threshold_ok(code, req):
@@ -136,8 +149,10 @@ def log_value(key, value):
         return HEAD_MODES.get(value, value)
     if field == "cfo":
         return CFO_MODES.get(value, value)
-    if field == "deputy_approve":
+    if field in ("deputy_approve", "invoices_required"):
         return "так" if value else "ні"
+    if field == "contractor_codes":
+        return "як за замовчуванням" if value is None else (", ".join(value) or "—")
     return f"{wf.fmt_usd(value)} {cfo_rules.get()['currency']}" if value else "усі заявки"
 
 

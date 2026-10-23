@@ -68,6 +68,11 @@ def first_request_with_counterparty(cp_id):
     return _store().first_request_with_counterparty(cp_id)
 
 
+def invoice_usage(cp_id, numbers, exclude_id=None):
+    """У яких заявках у роботі (не відхилених і не скасованих) уже є рахунки цього контрагента: {рахунок: [№ заявок]}."""
+    return _store().invoice_usage(cp_id, list(numbers), exclude_id)
+
+
 def reindex():
     """Перерахувати похідні колонки в базі (після зміни налаштувань організацій / довідників)."""
     return sql.reindex() if work_mode() else 0

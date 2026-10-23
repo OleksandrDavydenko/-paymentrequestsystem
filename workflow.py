@@ -80,6 +80,9 @@ def heads_department(req, roles):
     """Чи очолює користувач відділ автора заявки."""
     return "dept_head" in roles and bool(req.get("department")) and req["department"] in head_deps(roles)
 
+# Що оплачуємо (коли рахунки в заявці ввімкнено): від цього залежать статті й рахунки
+PAYMENT_KINDS = {"contractor": "Оплата підряднику", "indirect": "Непрямі витрати"}
+
 # Форму оплати вибирає ініціатор
 PAYMENT_FORMS = {
     "cash": "Готівка",
@@ -195,6 +198,7 @@ ACTIONS = {
     "pay_account": (None, "Вид оплати", "grey", False),  # бачать лише бухгалтери й фіндиректор
     "organization": (None, "Організація", "grey", False),
     "department": (None, "Відділ заявки", "grey", False),
+    "payment_kind": (None, "Тип оплати", "grey", False),
     "handover": (None, "Готівку передано підряднику", "green", False),
     "handover_undo": (None, "Підтвердження передачі скасовано", "purple", True),
     "cfo_threshold": (None, "Поріг фіндиректора", "grey", False),

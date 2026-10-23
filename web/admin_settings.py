@@ -125,6 +125,8 @@ def _context(tab):
                    REQ_DOCUMENT_MODES=schema.SETTINGS["req_document"].choices(),
                    WITHDRAW_MODES=schema.SETTINGS["withdraw_mode"].choices(),
                    CANCEL_MODES=schema.SETTINGS["cancel_mode"].choices(), DOC_FORMATS=schema.DOC_FORMATS,
+                   invoices_mode=app_settings.get("invoices_mode"),
+                   INVOICES_MODES=schema.SETTINGS["invoices_mode"].choices(),
                    threshold_currency=cfo_rules.get()["currency"])
     elif tab == "payment":
         pending = counterparties.pending_items()
