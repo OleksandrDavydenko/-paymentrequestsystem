@@ -106,7 +106,7 @@ def invoices_for_request(*, context):
     try:
         found = invoices.for_request(cp, dept)
     except invoices.InvoicesError as e:
-        return {"invoices": [], "error": str(e) + ". Рахунок можна вписати вручну («+ Додати рядок»)."}
+        return {"invoices": [], "error": str(e) + ". Спробуйте ще раз трохи згодом."}
     usage = db.invoice_usage(cp, [i["number"] for i in found], rid)
     return {"invoices": [{**i, "used_in": usage.get(i["number"], [])} for i in found],
             "department": departments.get_name(dept)}

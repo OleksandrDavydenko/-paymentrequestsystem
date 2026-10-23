@@ -230,7 +230,6 @@
     <div class="section-head">
       <h2 class="req-step"><span class="uc-num">4</span>Рахунки{% if lines_required %} <span class="req-mark" title="Обов'язково">*</span>{% endif %}</h2>
       {% if editable %}
-      <button type="button" class="btn btn-sm" id="add-line">+ Додати рядок</button>
       <button type="button" class="btn btn-sm" id="pick-invoices">Підбір рахунків</button>
       {% endif %}
     </div>
@@ -706,7 +705,7 @@ if (body) {
 
 // Підбір рахунків з 1С: неоплачені рахунки контрагента лише відділу заявки
 const dlg = document.getElementById('invoice-dialog');
-if (document.getElementById('add-line')) {
+if (document.getElementById('pick-invoices')) {
   const rowsBox = document.getElementById('dlg-rows'), msg = document.getElementById('inv-msg');
   const search = document.getElementById('inv-search'), allBox = document.getElementById('inv-all');
   const curSel = document.getElementById('inv-currency');
@@ -750,7 +749,7 @@ if (document.getElementById('add-line')) {
       tr.querySelector('input').addEventListener('change', info);
       rowsBox.appendChild(tr);
     });
-    if (!rowsBox.children.length) rowsBox.innerHTML = `<tr><td colspan="6" class="empty">${found.length ? (q ? 'Нічого не знайдено' : `Рахунків у ${cur} немає`) : 'Неоплачених рахунків цього контрагента для відділу заявки в 1С немає — додайте рядок вручну'}</td></tr>`;
+    if (!rowsBox.children.length) rowsBox.innerHTML = `<tr><td colspan="6" class="empty">${found.length ? (q ? 'Нічого не знайдено' : `Рахунків у ${cur} немає`) : 'Неоплачених рахунків цього контрагента для відділу заявки в 1С немає'}</td></tr>`;
     if (otherCur) {
       const tr = document.createElement('tr');
       tr.innerHTML = `<td colspan="6" class="muted inv-other">Ще ${otherCur} рахунк. в інших валютах — <button type="button" class="btn-link inv-show-all">показати всі</button></td>`;
@@ -778,7 +777,7 @@ if (document.getElementById('add-line')) {
       render();
       search.focus();
     } catch (e) {
-      msg.textContent = 'Не вдалося завантажити рахунки. Спробуйте ще раз або додайте рядок вручну.'; msg.hidden = false;
+      msg.textContent = 'Не вдалося завантажити рахунки. Спробуйте ще раз трохи згодом.'; msg.hidden = false;
       rowsBox.innerHTML = '';
     }
   };

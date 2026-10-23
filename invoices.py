@@ -78,7 +78,8 @@ def _mock(counterparty_id, department_guid):
 
 def for_request(counterparty_id, department):
     """Неоплачені рахунки контрагента для відділу заявки (код відділу): [{number, date, currency, amount, unpaid,
-    deal, deal_type, status}], новіші першими. Кидає InvoicesError, якщо Power BI недоступний."""
+    deal, deal_type, status}], від найстаріших до найновіших (оплата по FIFO). Кидає InvoicesError, якщо Power BI
+    недоступний."""
     guid = (departments.guid_of(department) or "") if department else ""
     if not counterparty_id or not guid:
         return []
@@ -95,7 +96,7 @@ def for_request(counterparty_id, department):
         except Exception as e:
             logger.exception("Не вдалося отримати рахунки з Power BI")
             raise InvoicesError(f"Не вдалося отримати рахунки з 1С: {e}")
-    found = sorted((x for x in (_record(r) for r in rows) if x), key=lambda x: (x["date"], x["number"]), reverse=True)
+    found = sorted((x for x in (_record(r) for r in rows) if x), key=lambda x: (x["date"], x["number"]))
     with _lock:
         _cache[key] = (time.time(), found)
     return found

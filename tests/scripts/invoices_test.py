@@ -36,7 +36,7 @@ check("DAX: counterparty, department, unpaid only", "'InvoiceForPay'[Counterpart
 login("a@ftpua.com")
 r = get("/requests/invoices?counterparty_id=1&department=LOG")
 nums = [i["number"] for i in r["invoices"]]
-check("LOG invoices of counterparty, newest first", nums == ["НП-104788", "НП-104512"] and r["department"] == "Логістика")
+check("LOG invoices of counterparty, oldest first (FIFO)", nums == ["НП-104512", "НП-104788"] and r["department"] == "Логістика")
 check("unpaid amount (partially paid)", next(i for i in r["invoices"] if i["number"] == "НП-104788")["unpaid"] == "5300.00")
 check("only own department: SAL", [i["number"] for i in get("/requests/invoices?counterparty_id=4&department=SAL")["invoices"]] == ["UC-0920"])
 check("foreign department ignored -> main (LOG)", [i["number"] for i in get("/requests/invoices?counterparty_id=4&department=FIN")["invoices"]] == ["UC-0915"])
@@ -50,7 +50,7 @@ BASE = {"pay_date": "2026-12-20", "organization_id": "1", "counterparty_id": "1"
         "payment_form": "bank", "payment_kind_sent": "1"}
 html = page("/requests/new")
 check("form: kind switch, lists for picker, lines block hidden", 'name="payment_kind"' in html and 'id="expense-lists"' in html
-      and 'id="block-lines" hidden' in html)
+      and 'id="block-lines" hidden' in html and 'id="add-line"' not in html and 'id="pick-invoices"' in html)
 r_ = c.post("/requests/new", data={**BASE, "expense_code": "01.001", "action": "save"})
 check("kind required", "Виберіть, що оплачуємо" in r_.get_data(as_text=True))
 r_ = c.post("/requests/new", data={**BASE, "payment_kind": "contractor", "expense_code": "01.001", "action": "save"})

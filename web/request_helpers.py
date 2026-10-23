@@ -351,7 +351,7 @@ def submit_requirements(req):
             errors["pay_date"] = (f"Дата оплати — не раніше {earliest:%d.%m.%Y} "
                                   f"(через {days} робоч. дн.: стільки потрібно на погодження й оплату)")
     if lines_required(req) and not req.get("lines"):
-        errors["lines"] = "Для оплати підряднику додайте рахунок: підберіть з 1С або впишіть номер і суму"
+        errors["lines"] = "Для оплати підряднику додайте рахунок — кнопка «Підбір рахунків» (рахунки з 1С)"
     mode = app_settings.get("req_document")
     if mode in ("always", "amount") and not req.get("attachments"):
         need, tail = True, ""
