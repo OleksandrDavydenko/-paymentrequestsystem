@@ -43,14 +43,22 @@ def reload():
         _load()
 
 
+def display_name(email, fallback=""):
+    """Ім'я людини для показу: з 1С (співробітник з цією поштою, «Прізвище Ім'я»), інакше fallback."""
+    import employees  # довідник з 1С; тут, а не вгорі — щоб модуль ролей не тягнув Power BI під час імпорту
+    e = employees.by_email(email) if email else None
+    return (e or {}).get("name") or fallback
+
+
 def _person(uid, u):
-    """Запис для показу: пошта й ім'я, яких немає в записі (перенесені з Azure лише з ID), — з довідника
-    користувачів (хто вже входив у систему)."""
+    """Запис для показу. Ім'я — з 1С, якщо людину там знайдено за поштою; пошта й ім'я, яких немає в записі
+    (перенесені з Azure лише з ID), — з довідника користувачів (хто вже входив у систему)."""
     email, name = (u.get("email") or "").strip(), u.get("name") or ""
     if not email or not name:  # колись перенесені з Azure лише за ID
         known = user_directory.lookup(uid) or {}
         email, name = email or known.get("email") or "", name or known.get("name") or ""
-    return {"id": uid, "email": email, "name": name or email or uid, "roles": set(u.get("roles") or [])}
+    return {"id": uid, "email": email, "name": display_name(email, name) or email or uid,
+            "roles": set(u.get("roles") or [])}
 
 
 def all_users():

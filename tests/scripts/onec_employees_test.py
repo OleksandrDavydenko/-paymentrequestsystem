@@ -150,6 +150,12 @@ check("row data: roles incl. head, departments, budget", 'data-roles="initiator 
       and 'data-depts="SAL"' in koval_row and 'data-budget="direct selected"' in koval_row)
 ext_row = row("ext@partner.com")
 check("row data: external and not in 1C", 'data-flags="external not1c"' in ext_row)
+user_roles.set_roles("oid-ip", "i.petrenko@ftpua.com", "Iryna P (з Google)", ["initiator"], "t")
+check("name from 1C preferred", user_roles.get("oid-ip")["name"] == "Петренко Ірина"
+      and user_roles.get("ext@partner.com")["name"] == "Партнер")
+login("i.petrenko@ftpua.com", "Iryna P (з Google)")
+check("header shows 1C name", "Петренко Ірина" in page("/requests"))
+login("admin@ftpua.com", "Адмін")
 
 # ---------- автоматична синхронізація
 import alerts

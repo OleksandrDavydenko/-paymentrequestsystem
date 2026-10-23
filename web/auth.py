@@ -99,7 +99,9 @@ def requires(*needed):
             uid, roles = _app_user(claims, email)
             if email.lower() in ADMIN_EMAILS:
                 roles.add("admin")
-            g.user = {"email": email, "name": claims.get("name") or email, "oid": uid, "login": claims.get("login")}
+            # Ім'я — з 1С («Прізвище Ім'я»), якщо людину там знайдено за поштою, інакше з акаунта входу
+            name = user_roles.display_name(email, claims.get("name") or email)
+            g.user = {"email": email, "name": name, "oid": uid, "login": claims.get("login")}
             # Керівник відділу / «бачить заявки відділу» — з картки користувача
             heads = org_structure.head_departments(g.user["oid"])
             views = org_structure.viewer_departments(g.user["oid"])
