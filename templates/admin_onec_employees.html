@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+
+{% block title %}Співробітники з 1С{% endblock %}
+
+{% block content %}
+{% include "_admin_tabs.html" %}
+<a class="back-link" href="{{ url_for('admin.admin_users') }}">← Користувачі та ролі</a>
+
+{% set es = employees_status %}
+<div class="card">
+  <div class="toolbar">
+    <h1 style="margin:0">Співробітники з 1С</h1>
+    <span class="sec-summary muted">{{ es.active }} працюють{% if es.updated %} · оновлено {{ es.updated.replace('T', ' ')[:16] }}{% endif %}</span>
+  </div>
+  <p class="muted" style="margin-top:0">Довідник співробітників із 1С (таблиця «{{ es.table }}»): пошта, основний відділ, а для
+    бухгалтерів — користувач 1С. Звідси можна додати в систему тих, кого ще немає, і звірити тих, хто вже є.
+    Усе, що задано тут, потім можна змінити в картці людини.</p>
+  {% if es.error %}<div class="flash error">Остання помилка оновлення: {{ es.error }}</div>{% endif %}
+
+  <form method="post" class="onec-rule" id="rule"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="rule">
+    <div class="budget-section-title">Правило для нових співробітників</div>
+    <div class="onec-rule-row">
+      <span class="muted">Ролі:</span>
+      {% for code, label in RULE_ROLES.items() %}
+      <label class="onec-check"><input type="checkbox" name="new_user_roles" value="{{ code }}" {{ 'checked' if code in rule.roles }}> {{ label }}</label>
+      {% endfor %}
+    </div>
+    <label class="onec-check"><input type="checkbox" name="new_user_budget_own" value="1" {{ 'checked' if rule.budget_own }}>
+      Статті з розподілом свого відділу</label>
+    <p class="muted onec-hint">Прямі статті (без відділу) отримують співробітники профітцентрів — відділів з позначкою Profitcenter у 1С{% if profit_centers %}:
+      {% for d in profit_centers %}<strong>{{ dept_name(d) }}</strong>{{ ', ' if not loop.last }}{% endfor %}{% else %} (зараз таких відділів немає){% endif %}.
+      Відділ — основний відділ із 1С; з позначкою DepartmentHead людина стає й керівником свого відділу
+      (якщо у відділу вже є інший керівник — його буде замінено).</p>
+    <button type="submit" class="btn btn-sm">Зберегти правило</button>
+  </form>
+</div>
+
+<form method="post" class="card" id="add"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="add">
+  <div class="toolbar">
+    <h2 style="margin:0">Ще не в системі</h2>
+    <span class="sec-summary muted">{{ data.new | length }}</span>
+    <span class="spacer"></span>
+    {% if data.new %}<button type="submit" class="btn btn-primary btn-sm">Додати вибраних</button>{% endif %}
+  </div>
+  {% if data.new %}
+  <div class="table-wrap">
+  <table class="stack onec-table">
+    <thead><tr><th class="c"><input type="checkbox" class="onec-all" aria-label="Вибрати всіх"></th><th>Співробітник</th><th>Відділ</th>
+      <th>Статті за правилом</th><th>Користувач 1С</th></tr></thead>
+    <tbody>
+    {% for e in data.new %}
+      <tr>
+        <td class="c"><input type="checkbox" name="emails" value="{{ e.email }}" aria-label="Вибрати {{ e.name }}"></td>
+        <td data-label="Співробітник"><strong>{{ e.name }}</strong><div class="muted">{{ e.email }}</div></td>
+        <td data-label="Відділ">{{ dept_name(e.department) if e.department else '' }}{% if not e.department %}<span class="muted">не вказано в 1С</span>{% endif %}
+          {% if e.head and e.department %}<div class="budget-chips"><span class="bchip bchip-head">Керівник відділу</span></div>{% endif %}</td>
+        <td data-label="Статті за правилом">
+          <div class="budget-chips">
+            {% if e.budget.direct %}<span class="bchip bchip-direct">Прямі</span>{% endif %}
+            {% for d in e.budget.departments %}<span class="bchip bchip-dep">{{ d }}</span>{% endfor %}
+            {% if not e.budget.direct and not e.budget.departments %}<span class="bchip bchip-none">Без статей</span>{% endif %}
+          </div>
+        </td>
+        <td data-label="Користувач 1С">{{ e.onec.name if e.onec else '' }}{% if not e.onec %}<span class="muted">—</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted onec-hint">Користувач 1С зв'язується, лише якщо правило дає роль бухгалтера.</p>
+  {% else %}
+  <p class="muted">Усі працюючі співробітники з поштою вже є в системі.</p>
+  {% endif %}
+</form>
+
+<form method="post" class="card" id="fix"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% set issues = data.existing | selectattr('issues') | list %}
+  <div class="toolbar">
+    <h2 style="margin:0">Уже в системі</h2>
+    <span class="sec-summary muted">{{ data.existing | length }}{% if issues %} · розбіжностей з 1С: {{ issues | length }}{% endif %}{% if data.not_in_onec %} · ще {{ data.not_in_onec }} немає в 1С (зовнішні тощо){% endif %}</span>
+    <span class="spacer"></span>
+    {% if data.existing %}
+    <button type="submit" name="action" value="fix" class="btn btn-sm">Взяти з 1С: відділ, керівника, користувача 1С</button>
+    <button type="submit" name="action" value="apply_rule" class="btn btn-sm">Застосувати правило</button>
+    {% endif %}
+  </div>
+  {% if data.existing %}
+  <p class="muted" style="margin-top:0">«Застосувати правило» лише додає ролі й статті з правила — нічого не знімає.</p>
+  <div class="table-wrap">
+  <table class="stack onec-table">
+    <thead><tr><th class="c"><input type="checkbox" class="onec-all" aria-label="Вибрати всіх"></th><th>Користувач</th><th>Відділ у системі / у 1С</th><th>Користувач 1С</th></tr></thead>
+    <tbody>
+    {% for p in data.existing %}
+      <tr class="{{ 'onec-issue' if p.issues }}">
+        <td class="c"><input type="checkbox" name="ids" value="{{ p.id }}" aria-label="Вибрати {{ p.user_name }}"></td>
+        <td data-label="Користувач"><a href="{{ url_for('admin.admin_user_card', user_id=p.id) }}"><strong>{{ p.user_name }}</strong></a>
+          <div class="muted">{{ p.email }}</div></td>
+        <td data-label="Відділ у системі / у 1С">
+          {{ dept_name(p.dept_now) if p.dept_now else '—' }}
+          {% if 'dept' in p.issues %}<span class="onec-diff">у 1С: {{ dept_name(p.department) }}</span>{% endif %}
+          {% if 'head' in p.issues %}<span class="onec-diff">у 1С — керівник відділу «{{ dept_name(p.department) }}»{% set cur = dept_head(p.department) %}{% if cur %} (зараз: {{ cur.name }}){% endif %}</span>{% endif %}</td>
+        <td data-label="Користувач 1С">
+          {% if p.link %}{{ p.link.name }}{% elif p.is_accountant %}<span class="muted">не зв'язано</span>{% else %}<span class="muted">—</span>{% endif %}
+          {% if 'onec' in p.issues %}<span class="onec-diff">у 1С: {{ p.onec.name }}</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% else %}
+  <p class="muted">Поки немає користувачів, яких знайдено серед співробітників 1С.</p>
+  {% endif %}
+</form>
+
+{% if data.dismissed %}
+<form method="post" class="card" id="close"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="action" value="close">
+  <div class="toolbar">
+    <h2 style="margin:0">Звільнені в 1С, але з доступом</h2>
+    <span class="sec-summary muted">{{ data.dismissed | length }}</span>
+    <span class="spacer"></span>
+    <button type="submit" class="btn btn-sm btn-danger">Закрити доступ вибраним</button>
+  </div>
+  <p class="muted" style="margin-top:0">Знімаються всі ролі — людина більше не зможе увійти. Її заявки й історія лишаються.</p>
+  <div class="table-wrap">
+  <table class="stack onec-table">
+    <thead><tr><th class="c"><input type="checkbox" class="onec-all" aria-label="Вибрати всіх"></th><th>Користувач</th><th>Ролі</th></tr></thead>
+    <tbody>
+    {% for p in data.dismissed %}
+      <tr>
+        <td class="c"><input type="checkbox" name="ids" value="{{ p.id }}" aria-label="Вибрати {{ p.user_name }}"></td>
+        <td data-label="Користувач"><a href="{{ url_for('admin.admin_user_card', user_id=p.id) }}"><strong>{{ p.user_name }}</strong></a>
+          <div class="muted">{{ p.email }}</div></td>
+        <td data-label="Ролі"><div class="budget-chips">{% for r in p.roles | sort %}<span class="bchip bchip-dep">{{ ROLE_SHORT[r] }}</span>{% endfor %}</div></td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</form>
+{% endif %}
+
+<script>
+  // «Вибрати всіх» у кожній таблиці
+  document.querySelectorAll('.onec-all').forEach(all => all.addEventListener('change', () => {
+    all.closest('table').querySelectorAll('tbody input[type=checkbox]').forEach(b => { b.checked = all.checked; });
+  }));
+</script>
+{% endblock %}

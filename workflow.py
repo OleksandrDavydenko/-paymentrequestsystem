@@ -194,6 +194,7 @@ ACTIONS = {
     "cp_link": (None, "Контрагента прив'язано до 1С", "grey", False),
     "pay_account": (None, "Вид оплати", "grey", False),  # бачать лише бухгалтери й фіндиректор
     "organization": (None, "Організація", "grey", False),
+    "department": (None, "Відділ заявки", "grey", False),
     "handover": (None, "Готівку передано підряднику", "green", False),
     "handover_undo": (None, "Підтвердження передачі скасовано", "purple", True),
     "cfo_threshold": (None, "Поріг фіндиректора", "grey", False),

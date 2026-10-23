@@ -77,7 +77,8 @@
                                ('Організації', organizations_status, 'резидент — країна Україна; порожня чи інша країна — нерезидент'),
                                ('Валюти', currencies_status, 'буквений код (Name) — у заявках; UAH, USD, EUR — першими'),
                                ('Курси валют', rates_status, 'останній відомий курс кожної валюти (за 31 день) — для порогу фіндиректора в USD'),
-                               ('Відділи співробітників', departments_status, "окремий довідник оргструктури, не пов'язаний з відділами статей")] %}
+                               ('Відділи співробітників', departments_status, 'оргструктура; відділи статей — за DepartmentGUID; профітцентри (Profitcenter): ' ~ (profit_center_names | join(', ') or 'немає')),
+                               ('Співробітники', employees_status, 'пошта, основний відділ, керівник відділу; додати в систему — «Користувачі й ролі → Співробітники з 1С»')] %}
     <dt>{{ title }}</dt>
     <dd>{{ SRC.get(st.source, st.source) }} · {{ st.active }}{% if st.count != st.active %} <span class="muted">(+{{ st.count - st.active }} помічених на видалення)</span>{% endif %}
       {% if st.updated %}<span class="muted">· оновлено {{ st.updated.replace('T', ' ')[:16] }}</span>{% endif %}

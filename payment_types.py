@@ -2,10 +2,11 @@
 
 Таблиці семантичної моделі Power BI:
 - PaymentTypes: GUID, Code, Name, IsDeleted — довідник «Види оплати» (НАЛ, КАРТА, КАСА, NLB LITBIA…);
-- UserPaymentTypes: UserGUID, UserName, PaymentTypeGUID, IsDeleted — вкладка «Виды оплаты»
-  в картці користувача 1С (до яких видів оплати в нього є доступ).
-Користувача системи зв'язує з користувачем 1С адмін у картці користувача (user_onec.py),
-бо пошта не збігається з логіном 1С. Без Power BI — мокові дані в тому ж форматі.
+- UserPaymentTypes: UserGUID, UserName, PaymentTypeGUID, IsDeleted, EmployeeGUID — вкладка «Виды оплаты»
+  в картці користувача 1С (до яких видів оплати в нього є доступ) і хто це зі співробітників (Employees).
+Користувача системи зв'язує з користувачем 1С адмін у картці користувача (user_onec.py): пошта не збігається з
+логіном 1С, тож точний збіг — через співробітника (пошта → Employees → EmployeeGUID), інакше — підбір за
+схожістю імені. Без Power BI — мокові дані в тому ж форматі.
 """
 import difflib
 import re
@@ -24,8 +25,10 @@ MOCK_ACCESS = [
     {"UserGUID": "U-IRINA", "UserName": "Irina.Chagan", "PaymentTypeGUID": "PT-NAL", "IsDeleted": False},
     {"UserGUID": "U-IRINA", "UserName": "Irina.Chagan", "PaymentTypeGUID": "PT-CARD", "IsDeleted": False},
     {"UserGUID": "U-IRINA", "UserName": "Irina.Chagan", "PaymentTypeGUID": "PT-PUMB", "IsDeleted": False},
-    {"UserGUID": "U-OLENA", "UserName": "Olena.Bondar", "PaymentTypeGUID": "PT-KASA", "IsDeleted": False},
-    {"UserGUID": "U-OLENA", "UserName": "Olena.Bondar", "PaymentTypeGUID": "PT-NLB", "IsDeleted": False},
+    {"UserGUID": "U-OLENA", "UserName": "Olena.Bondar", "PaymentTypeGUID": "PT-KASA", "IsDeleted": False,
+     "EmployeeGUID": "EMP-OLENA"},
+    {"UserGUID": "U-OLENA", "UserName": "Olena.Bondar", "PaymentTypeGUID": "PT-NLB", "IsDeleted": False,
+     "EmployeeGUID": "EMP-OLENA"},
 ]
 
 
@@ -48,7 +51,8 @@ def _parse_access(rows):
         user, ptype = str(r.get("UserGUID") or "").strip(), str(r.get("PaymentTypeGUID") or "").strip()
         if user and ptype:
             out.append({"user": user, "user_name": str(r.get("UserName") or "").strip(), "type": ptype,
-                        "deleted": pbi_cache.truthy(r.get("IsDeleted"))})
+                        "deleted": pbi_cache.truthy(r.get("IsDeleted")),
+                        "employee": str(r.get("EmployeeGUID") or "").strip().upper() or None})
     return out
 
 
@@ -90,6 +94,22 @@ def onec_users():
 
 def onec_user_name(guid):
     return next((u["name"] for u in onec_users() if u["guid"] == guid), guid or "")
+
+
+def onec_user_for_employee(employee_guid):
+    """Користувач 1С співробітника (UserPaymentTypes.EmployeeGUID): {"guid", "name"} або None."""
+    employee_guid = (employee_guid or "").strip().upper()
+    if not employee_guid:
+        return None
+    a = next((a for a in _access.items() if a.get("employee") == employee_guid and not a["deleted"]), None)
+    return {"guid": a["user"], "name": a["user_name"] or a["user"]} if a else None
+
+
+def onec_user_for_email(email):
+    """Користувач 1С за поштою співробітника (Employees → EmployeeGUID) або None."""
+    import employees
+    e = employees.by_email(email)
+    return onec_user_for_employee(e["guid"]) if e and not e["deleted"] else None
 
 
 def types_for_user(onec_guid):

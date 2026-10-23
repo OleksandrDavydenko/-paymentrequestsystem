@@ -83,6 +83,10 @@
       {% endif %}
     </select>
     <div class="uc-note" id="uc-dept-note"></div>
+    {% if onec_employee and onec_employee.department and onec_employee.department != user_department %}
+    <div class="uc-note uc-suggest">У 1С: <strong>{{ dept_name(onec_employee.department) }}</strong>
+      {% if onec_employee.deleted %}(звільнений){% endif %} — виберіть його й натисніть «Зберегти», якщо в системі вказано неправильно.</div>
+    {% endif %}
 
     <label for="uc-acc-default" class="uc-sublabel">Бухгалтер за замовчуванням</label>
     <select name="accountant_default" id="uc-acc-default" class="uc-select">
@@ -98,20 +102,25 @@
   </section>
 
   <section class="card uc-section" id="uc-org">
-    <div class="uc-title"><span class="uc-num">3</span><h2>Керівництво й перегляд відділів</h2></div>
+    <div class="uc-title"><span class="uc-num">3</span><h2>Відділи: заявки, керівництво й перегляд</h2></div>
+    <p class="uc-explain"><strong>Подає заявки</strong> — для яких відділів людина може подавати заявки (поле «Відділ» у
+      заявці); основний відділ (пункт 2) — завжди. Керівник відділу, вибраного в заявці, бачить її{{ ' і погоджує' if head_mode == 'approve' }}.
+      Якщо відділ один — у заявці його не потрібно вибирати.</p>
     <p class="uc-explain">Чиї заявки людина бачить, окрім своїх.
       <strong>Очолює</strong> — людина стає керівником відділу: бачить усі заявки його співробітників{{ ' і погоджує їх першим кроком' if head_mode == 'approve' else ' (погодження керівником зараз вимкнено в «Налаштуваннях процесу»)' }}.
       У відділу один керівник — якщо він уже є, його буде замінено.
       <strong>Бачить заявки</strong> — заступник чи менеджер: перегляд і коментарі, без погодження.</p>
     <div class="table-wrap">
+    <input type="hidden" name="dept_sent" value="1">
     <table class="uc-deps stack">
-      <thead><tr><th>Відділ</th><th class="c">Очолює</th><th class="c">Бачить заявки</th><th>Зараз керівник</th></tr></thead>
+      <thead><tr><th>Відділ</th><th class="c">Подає заявки</th><th class="c">Очолює</th><th class="c">Бачить заявки</th><th>Зараз керівник</th></tr></thead>
       <tbody>
       {% for d in departments_list %}
       {% set st = dept_staff[d.code] %}
       {% set cur = st.head %}
       <tr>
         <td data-label="Відділ"><strong>{{ d.name }}</strong></td>
+        <td class="c" data-label="Подає заявки">{% if d.code == user_department %}<input type="checkbox" checked disabled title="Основний відділ — завжди" aria-label="Подає заявки: {{ d.name }} (основний)">{% else %}<input type="checkbox" name="request_deps" value="{{ d.code }}" {{ 'checked' if d.code in request_deps }} aria-label="Подає заявки: {{ d.name }}">{% endif %}</td>
         <td class="c" data-label="Очолює"><input type="checkbox" name="head_deps" value="{{ d.code }}" class="uc-head-box" {{ 'checked' if d.code in head_deps }}
                              data-current="{{ cur.name if cur and cur.id != person.id else '' }}" aria-label="Очолює: {{ d.name }}"></td>
         <td class="c" data-label="Бачить заявки"><input type="checkbox" name="view_deps" value="{{ d.code }}" class="uc-view-box" {{ 'checked' if d.code in view_deps }}
@@ -170,7 +179,8 @@
     <div class="callout orange uc-onec-off" id="uc-onec-off" {{ 'hidden' if is_accountant }}>Потрібно лише бухгалтерам —
       відмітьте роль бухгалтера в пункті 1, і поле стане активним (фіндиректор бачить усі види оплати).</div>
     <fieldset class="uc-onec-fields" id="uc-onec-fields" {{ 'disabled' if not is_accountant }}>
-    {% set selected = onec_link.guid if onec_link else (onec_suggested.guid if onec_suggested else '') %}
+    {% set guess = onec_exact or onec_suggested %}
+    {% set selected = onec_link.guid if onec_link else (guess.guid if guess else '') %}
     <select name="onec_user" id="uc-onec" class="uc-select">
       <option value="">— не зв'язано —</option>
       {% for u in onec_users %}
@@ -180,7 +190,9 @@
       <option value="{{ onec_link.guid }}" selected>{{ onec_link.name or onec_link.guid }} (немає в 1С)</option>
       {% endif %}
     </select>
-    {% if onec_suggested and not onec_link %}
+    {% if onec_exact and not onec_link %}
+    <div class="uc-note uc-suggest">Знайдено в 1С за співробітником: <strong>{{ onec_exact.name }}</strong> — натисніть «Зберегти».</div>
+    {% elif onec_suggested and not onec_link %}
     <div class="uc-note uc-suggest">Підібрано за схожістю імені: <strong>{{ onec_suggested.name }}</strong> — перевірте й натисніть «Зберегти».</div>
     {% endif %}
     <div class="uc-note" id="uc-onec-types"></div>

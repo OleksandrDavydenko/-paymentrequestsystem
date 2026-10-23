@@ -9,16 +9,19 @@ import counterparties
 import currencies
 import db_sql
 import departments
+import employees
 import expense_items
 import google_login
 import mailer
 import notifications
 import notify_log
+import onec_sync
 import org_structure
 import organizations
 import payment_types
 import rates
 import secret_box
+import settings_schema as schema
 import storage as db
 import telegram_notify
 import user_budget
@@ -180,6 +183,7 @@ def admin_users(*, context):
         external=google_login.is_external,
         me_oid=g.user["oid"],
         user_departments={uid: org_structure.department_of(uid) for uid in users},
+        request_departments={uid: org_structure.request_departments_of(uid) for uid in users},
         onec_links=user_onec.all_links(),
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
         alt_addresses=user_prefs.confirmed_addresses() if app_settings.get("allow_custom_email") else {},
@@ -189,6 +193,51 @@ def admin_users(*, context):
         budgets={uid: user_budget.get(uid) for uid in users},
         budget_summary=user_budget.summary,
         google_domain=(google_login.allowed_domains() or [None])[0],
+    )
+
+
+@bp.route("/admin/users/onec", methods=["GET", "POST"])
+@login_required
+@requires("admin")
+def admin_onec_employees(*, context):
+    """Співробітники з 1С: додати тих, кого ще немає (за правилом), виправити розбіжності, закрити доступ звільненим."""
+    who = g.user["email"]
+    if request.method == "POST":
+        f, action = request.form, request.form.get("action")
+        if action == "rule":
+            roles, error = schema._parse_value(schema.SETTINGS["new_user_roles"], f.getlist("new_user_roles"))
+            if error:
+                flash(error, "error")
+            else:
+                own = f.get("new_user_budget_own") == "1"
+                if roles != app_settings.get("new_user_roles"):
+                    app_settings.set("new_user_roles", roles, who)
+                if own != bool(app_settings.get("new_user_budget_own")):
+                    app_settings.set("new_user_budget_own", own, who)
+                flash("Правило для нових співробітників збережено", "success")
+        elif action == "add":
+            n = onec_sync.add(f.getlist("emails"), who)
+            flash(f"Додано співробітників: {n}" if n else "Нікого не вибрано", "success")
+        elif action == "fix":
+            n = onec_sync.fix_from_onec(f.getlist("ids"), who)
+            flash(f"Узято з 1С (відділ, керівник відділу, користувач 1С): {n}" if n else "Розбіжностей у вибраних немає",
+                  "success")
+        elif action == "apply_rule":
+            n = onec_sync.apply_rule(f.getlist("ids"), who)
+            flash(f"Правило застосовано (додано ролі або статті): {n}" if n else "У вибраних уже все є", "success")
+        elif action == "close":
+            n = onec_sync.close_access(f.getlist("ids"), who)
+            flash(f"Доступ закрито: {n}" if n else "Нікого не вибрано", "success")
+        return redirect(url_for("admin.admin_onec_employees") + (f"#{action}" if action else ""))
+    return render_template(
+        "admin_onec_employees.html",
+        user_name=g.user["name"],
+        data=onec_sync.overview(),
+        rule=onec_sync.rule(),
+        RULE_ROLES=schema.SETTINGS["new_user_roles"].choices(),
+        profit_centers=departments.profit_centers(),
+        employees_status=employees.status(),
+        dept_head=org_structure.head_of,
     )
 
 
@@ -204,8 +253,8 @@ def admin_expense_refresh(*, context):
         _, _, count = _link_counterparty(pending["id"], target["id"], wf.SYSTEM_USER, "admin")
         flash(f"Контрагента «{pending['name']}» автоматично прив'язано до «{target['name']}» з 1С (заявок: {count})",
               "success")
-    for name, ref in (("організацій", organizations), ("відділів", departments), ("валют", currencies),
-                      ("курсів валют", rates)):
+    for name, ref in (("організацій", organizations), ("відділів", departments), ("співробітників", employees),
+                      ("валют", currencies), ("курсів валют", rates)):
         if not ref.refresh():
             flash(f"Не вдалося оновити довідник {name}: " + (ref.status()["error"] or "невідома помилка"), "error")
     if expense_items.refresh():
@@ -290,7 +339,11 @@ def admin_user_card(user_id, *, context):
         tg_channel=telegram_notify.CHANNELS.get(user_prefs.channel(person["email"])),
         onec_link=user_onec.get(user_id),
         onec_users=payment_types.onec_users(),
-        onec_suggested=None if user_onec.get(user_id) else payment_types.suggest_user(person["name"], person["email"]),
+        onec_exact=None if user_onec.get(user_id) else payment_types.onec_user_for_email(person["email"]),
+        onec_suggested=None if user_onec.get(user_id) or payment_types.onec_user_for_email(person["email"])
+        else payment_types.suggest_user(person["name"], person["email"]),
+        onec_employee=employees.by_email(person["email"]) if person["email"] else None,
+        request_deps=org_structure.request_departments_of(user_id),
         onec_types={u["guid"]: [t["name"] for t in payment_types.types_for_user(u["guid"])]
                     for u in payment_types.onec_users()},
         is_accountant=bool(set(person["roles"]) & wf.ACCOUNTANT_ROLES),
@@ -336,6 +389,16 @@ def _save_user_card(person):
     if dep != org_structure.department_of(uid) and (dep is None or dep in known):
         org_structure.set_department(uid, email, name, dep, who)
         changes.append(f"відділ — {departments.get_name(dep) if dep else 'не вказано'}")
+
+    # На які ще відділи подає заявки (основний — завжди; відділи, яких уже немає в довіднику, не чіпаємо)
+    if "dept_sent" in f:
+        main = org_structure.department_of(uid)
+        old_req = [d for d in org_structure.request_departments_of(uid) if d != main]
+        new_req = sorted({d for d in f.getlist("request_deps") if d in known and d != main}
+                         | {d for d in old_req if d not in known})
+        if new_req != sorted(old_req):
+            org_structure.set_request_departments(uid, email, name, new_req, who)
+            changes.append("подає заявки також на: " + (", ".join(departments.get_name(d) for d in new_req) or "—"))
 
     # Бухгалтер за замовчуванням (режим «Бухгалтер» у заявці)
     if "accountant_default" in f:

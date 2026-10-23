@@ -14,6 +14,7 @@ import counterparties
 import currencies
 import db_sql
 import departments
+import employees
 import expense_items
 import google_login
 import mailer
@@ -159,6 +160,8 @@ def _context(tab):
                    expense_status=expense_items.status(), rates_status=rates.status(),
                    departments_status=departments.status(), organizations_status=organizations.status(),
                    currencies_status=currencies.status(), counterparties_status=counterparties.status(),
+                   employees_status=employees.status(),
+                   profit_center_names=[departments.get_name(c) for c in departments.profit_centers()],
                    payment_types_status=payment_types.status(), import_preview=_import_preview())
     elif tab == "log":
         key = request.args.get("key") or None

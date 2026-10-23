@@ -120,8 +120,18 @@
 
     <div class="field">
       <label>Автор</label>
-      <input type="text" value="{{ req.author_name }}{% if req.department %} · {{ dept_name(req.department) }}{% endif %}"
-             title="{{ req.author_email }}{% if req.department %} — відділ {{ dept_name(req.department) }}{% endif %}" readonly>
+      <input type="text" value="{{ req.author_name }}" title="{{ req.author_email }}" readonly>
+    </div>
+    <div class="field">
+      <label for="department">Відділ</label>
+      {% if editable and dept_options | length > 1 %}
+      <select id="department" name="department" title="Для якого відділу заявка: його керівник бачить і погоджує її">
+        {% for d in dept_options %}<option value="{{ d }}" {{ 'selected' if d == req.department }}>{{ dept_name(d) }}</option>{% endfor %}
+        {% if req.department and req.department not in dept_options %}<option value="{{ req.department }}" selected>{{ dept_name(req.department) }}</option>{% endif %}
+      </select>
+      {% else %}
+      <input type="text" value="{{ dept_name(req.department) if req.department else '—' }}" readonly>
+      {% endif %}
     </div>
     <div class="field">
       <label for="pay_date">Дата оплати</label>

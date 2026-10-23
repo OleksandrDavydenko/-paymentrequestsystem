@@ -83,6 +83,9 @@ MOCK_DEPARTMENTS = {
     "07": ["Адміністрація"],
     "10": ["Продажі"],
 }
+# DepartmentGUID відділів мокових статей (як у departments.MOCK_DEPARTMENTS)
+MOCK_DEPARTMENT_GUIDS = {"Логістика": "DEP-LOG", "БАА": "DEP-BA", "ІТ": "DEP-IT", "Адміністрація": "DEP-ADM",
+                         "Продажі": "DEP-SAL"}
 
 
 def _cache_file():
@@ -172,7 +175,8 @@ def extract_items(rows):
     """Лише елементи: без груп (за Тип_вузла або за наявністю дочірніх рядків).
 
     Один код може трапитись у кількох рядках з різними відділами (стаття з розподілом) —
-    відділи об'єднуються. Стаття без жодного відділу — «пряма».
+    відділи об'єднуються. Стаття без жодного відділу — «пряма». DepartmentGUID рядка зв'язує відділ статті
+    з довідником відділів (dept_guids: {відділ статті: GUID}) — для «статей свого відділу».
     """
     parents = {str(r.get("Батько")).strip() for r in rows if r.get("Батько") not in (None, "")}
     by_code = {}
@@ -184,10 +188,19 @@ def extract_items(rows):
             continue
         if any(h in node_type for h in GROUP_HINTS) or code in parents or name in parents:
             continue
-        item = by_code.setdefault(code, {"code": code, "name": name, "departments": []})
+        item = by_code.setdefault(code, {"code": code, "name": name, "departments": [], "dept_guids": {}})
         dep = _department(r.get("Відділ"))
+        guid = _department(r.get("DepartmentGUID")).upper() or None
+        if guid and not guid.strip("0"):
+            guid = None  # порожнє посилання 1С
+        if not dep and guid:  # колонки «Відділ» немає — назва з довідника відділів
+            import departments
+            code_ = departments.code_by_guid(guid)
+            dep = departments.get_map().get(code_) if code_ else guid
         if dep and dep not in item["departments"]:
             item["departments"].append(dep)
+        if dep and guid:
+            item["dept_guids"][dep] = guid
     items = sorted(by_code.values(), key=lambda i: _natural_key(i["code"]))
     for i in items:
         i["departments"].sort(key=str.lower)
@@ -203,7 +216,8 @@ def _mock_items():
     for code, name in MOCK_ITEMS:
         deps = MOCK_DEPARTMENTS.get(code) or MOCK_DEPARTMENTS.get(code.split(".")[0], [])
         for dep in deps or [None]:
-            rows.append({"Код": code, "Назва": name, "Відділ": dep, "Тип_вузла": "Елемент", "Батько": None})
+            rows.append({"Код": code, "Назва": name, "Відділ": dep, "DepartmentGUID": MOCK_DEPARTMENT_GUIDS.get(dep),
+                         "Тип_вузла": "Елемент", "Батько": None})
     return extract_items(rows)
 
 
@@ -242,6 +256,7 @@ def _load_copy():
         items = data.get("items") or None
         for i in items or []:  # копії старого формату (без відділів)
             i.setdefault("departments", [])
+            i.setdefault("dept_guids", {})
             i.setdefault("kind", "allocated" if i["departments"] else "direct")
         return items, data.get("updated")
     except (OSError, ValueError):
@@ -319,6 +334,23 @@ def get_departments():
         for d in i["departments"]:
             counts[d] = counts.get(d, 0) + 1
     return sorted(counts.items(), key=lambda kv: kv[0].lower())
+
+
+def departments_for(code):
+    """Відділи статей витрат, що відповідають відділу довідника (код): за DepartmentGUID рядків статей,
+    а для рядків без GUID — за однаковою назвою. Для правила «статті свого відділу»."""
+    import departments
+    if not code:
+        return []
+    name = (departments.get_map().get(code) or "").strip().lower()
+    found = set()
+    for i in get_items():
+        guids = i.get("dept_guids") or {}
+        for dep in i["departments"]:
+            guid = guids.get(dep)
+            if (guid and departments.code_by_guid(guid) == code) or (not guid and name and dep.strip().lower() == name):
+                found.add(dep)
+    return sorted(found, key=str.lower)
 
 
 def status():

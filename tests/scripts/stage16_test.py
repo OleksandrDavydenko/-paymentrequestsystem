@@ -38,7 +38,7 @@ lst = admin_page()
 check("list links to cards", "/admin/users/ira" in lst and "Відкрити" in lst and 'name="roles"' not in lst)
 page = c.get("/admin/users/ira").get_data(as_text=True)
 check("card: 4 numbered sections with explanations", all(t in page for t in
-      ["Ролі в системі", "Відділ співробітника", "Керівництво й перегляд відділів", "Статті бюджету", "Сповіщення"])
+      ["Ролі в системі", "Відділ співробітника", "Відділи: заявки, керівництво й перегляд", "Статті бюджету", "Сповіщення"])
       and "Перевіряє й оплачує" in page and "Це не те саме, що відділи в статтях бюджету" in page)
 check("card: current role checked", 'value="initiator" checked' in page)
 page = c.get("/admin/users/new").get_data(as_text=True)

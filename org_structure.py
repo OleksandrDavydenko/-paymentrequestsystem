@@ -1,6 +1,7 @@
 """Оргструктура: відділ кожного співробітника; керівник відділу і хто ще бачить заявки відділу.
 
-- users: {oid: {"email", "name", "department"}} — до якого відділу належить співробітник;
+- users: {oid: {"email", "name", "department", "request_departments"}} — до якого відділу належить
+  співробітник і на які ще відділи може подавати заявки (поле «Відділ» у заявці);
 - departments: {код: {"head": {"id","email","name"} | None, "viewers": [{"id","email","name"}]}}
   — у відділу ОДИН керівник (одна людина може очолювати кілька відділів) і будь-скільки людей,
   що лише бачать заявки відділу (заступники, менеджери).
@@ -85,7 +86,7 @@ def _set_user_field(oid, email, name, field, value, updated_by):
             entry[field] = value
         else:
             entry.pop(field, None)
-        if entry.get("department") or entry.get("accountant_default"):
+        if entry.get("department") or entry.get("accountant_default") or entry.get("request_departments"):
             entry.update({"email": email, "name": name, "updated_by": updated_by,
                           "updated_at": clock.now().isoformat(timespec="seconds")})
             users[oid] = entry
@@ -96,6 +97,22 @@ def _set_user_field(oid, email, name, field, value, updated_by):
 
 def set_department(oid, email, name, department, updated_by):
     _set_user_field(oid, email, name, "department", department, updated_by)
+
+
+def request_departments_of(oid):
+    """Відділи, на які людина може подавати заявки: основний (першим) і додаткові з картки."""
+    with _lock:
+        entry = _load()["users"].get(oid or "") or {}
+    main = entry.get("department")
+    extra = [d for d in entry.get("request_departments") or [] if d != main]
+    return ([main] if main else []) + extra
+
+
+def set_request_departments(oid, email, name, codes, updated_by):
+    """Додаткові відділи для заявок (основний відділ у списку завжди, окремо не зберігається)."""
+    main = department_of(oid)
+    _set_user_field(oid, email, name, "request_departments",
+                    sorted({c for c in codes if c and c != main}), updated_by)
 
 
 def accountant_default_of(oid):

@@ -17,6 +17,7 @@
     <h1 style="margin:0">Користувачі та ролі</h1>
     <span class="sec-summary muted">{{ users | length }} користувачів</span>
     <span class="spacer"></span>
+    <a class="btn" href="{{ url_for('admin.admin_onec_employees') }}">Співробітники з 1С</a>
     <button type="button" class="btn btn-primary" onclick="document.getElementById('add-dialog').showModal()">+ Додати користувача</button>
   </div>
   <p class="muted" style="margin-top:0">Натисніть на людину, щоб відкрити її картку: там усі налаштування з поясненнями —
@@ -63,7 +64,9 @@
             {% for h in head_departments[u.id] %}<span class="bchip bchip-head">Керівник: {{ dept_name(h) }}</span>{% endfor %}
           </div>
         </td>
-        <td data-label="Відділ" data-sort="{{ dept_name(dep) if dep else 'яяя' }}">{{ dept_name(dep) if dep else '' }}{% if not dep %}<span class="muted">не вказано</span>{% endif %}</td>
+        <td data-label="Відділ" data-sort="{{ dept_name(dep) if dep else 'яяя' }}">{{ dept_name(dep) if dep else '' }}{% if not dep %}<span class="muted">не вказано</span>{% endif %}
+          {% set extra = request_departments[u.id] | reject('equalto', dep) | list %}
+          {% if extra %}<div class="muted" title="Також подає заявки на ці відділи">+ {% for d in extra %}{{ dept_name(d) }}{{ ', ' if not loop.last }}{% endfor %}</div>{% endif %}</td>
         <td data-label="Статті бюджету">
           <div class="budget-chips">
             {% for text, kind in budget_summary(budgets[u.id]) %}<span class="bchip bchip-{{ kind }}">{{ text }}</span>{% else %}<span class="bchip bchip-none">Не налаштовано</span>{% endfor %}

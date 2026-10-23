@@ -67,6 +67,12 @@ def _login_methods():
             "google": "Лише Google"}
 
 
+def _new_user_roles():
+    """Ролі, які можна давати новим співробітникам із 1С за правилом (без адміністратора)."""
+    import workflow
+    return {r: workflow.ROLES[r] for r in ("initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo")}
+
+
 def _data_modes():
     return {"work": "Робоча база", "test": "Тестові дані"}
 
@@ -176,6 +182,11 @@ _LIST = [
     # ---- Дані й система
     Setting("data_mode", "Дані", "data", "choice", "work", _data_modes, available=_db_on),
     Setting("login_methods", "Вхід у систему", "data", "choice", "both", _login_methods),
+    # Правило для співробітників, яких додають зі сторінки «Співробітники з 1С» (там і зберігається)
+    Setting("new_user_roles", "Нові співробітники з 1С: ролі", "data", "multi", ["initiator"], _new_user_roles,
+            managed=True),
+    Setting("new_user_budget_own", "Нові співробітники з 1С: статті з розподілом свого відділу", "data", "bool", True,
+            managed=True),
     # ---- службові
     Setting("mail_enabled_work", "Розсилка до тестового режиму", "data", "internal", None),
 ]

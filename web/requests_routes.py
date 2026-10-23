@@ -56,8 +56,10 @@ def requests_list(*, context):
         return redirect(_home())
     # «Створені мною» — заявки в роботі, без оплачених; оплачені — окремою вкладкою, найсвіжіша оплата першою
     scope = {"participant": "participant", "paid": "mine_paid"}.get(view, "mine")
+    # Колонка й фільтр «Відділ» — лише тим, хто подає заявки на кілька відділів
+    several = len(org_structure.request_departments_of(g.user["oid"])) > 1
     found, fbar = _filtered(db.scope_rows(scope, g.roles, email),
-                            _ref_keys(show_dep=False, extra_before=() if view == "paid" else ("status",)))
+                            _ref_keys(show_dep=several, extra_before=() if view == "paid" else ("status",)))
     rows, page = _page(found)
     return render_template(
         "requests_list.html",
@@ -111,6 +113,10 @@ def request_card(request_id=None, *, context):
             return redirect(url_for("requests.request_card", request_id=request_id))
         data, errors = parse_request_form(request.form, existing, {i["code"] for i in budget_items})
         req = {**existing, **data}
+        # Відділ заявки — один з відділів автора для заявок (картка користувача); інший із форми не приймаємо
+        chosen = request.form.get("department")
+        if chosen and chosen != existing.get("department") and chosen in org_structure.request_departments_of(user["oid"]):
+            req["department"] = chosen
         if not errors and request.form.get("action") == "submit":
             errors = submit_requirements(req)  # вимоги з налаштувань — лише при відправці; зберегти можна й без них
         if (existing.get("organization_id") and not data["organization_id"] and not errors
@@ -134,6 +140,9 @@ def request_card(request_id=None, *, context):
             added_participants = []
             if "participants_sent" in request.form and wf.can_manage_participants(req, roles, user["email"]):
                 added_participants = _apply_participants(req, request.form.getlist("participants"), user, roles)
+            if req["id"] is not None and existing.get("department") and req.get("department") != existing["department"]:
+                wf.add_history(req, "department", user, "initiator", f"{departments.get_name(existing['department'])} → "
+                               f"{departments.get_name(req['department'])}", req["status"], req["status"])
             if not req.get("department") or req["department"] not in departments.get_map():
                 # заявки, створені до появи відділів, або з відділом, якого вже немає в довіднику
                 req["department"] = org_structure.department_of(user["oid"])
@@ -189,6 +198,7 @@ def request_card(request_id=None, *, context):
         comment_draft=session.pop("comment_draft", ""),
         parallel=req.get("route_mode") == "parallel",
         head_names=", ".join(h["name"] or h["email"] for h in org_structure.heads_of(req.get("department"))),
+        dept_options=org_structure.request_departments_of(user["oid"]),
         participants=req.get("participants") or [],
         # Учасники, як їх бачить форма: збережені або (після помилки в полях) ті, що користувач уже набрав
         participants_state=_participants_state(req, existing, errors),

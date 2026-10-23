@@ -28,7 +28,7 @@ rows = [
 ]
 items = ei.extract_items(rows)
 check("only elements, natural order", [i["code"] for i in items] == ["01.001", "01.002", "01.010", "02.001"])
-check("item fields", set(items[0]) == {"code", "name", "departments", "kind"})
+check("item fields", set(items[0]) == {"code", "name", "departments", "dept_guids", "kind"})
 
 # ---------- 2. Power BI: кеш, помилка, збережена копія
 # Інші довідники (контрагенти, організації…) лишаються моковими: завантажуємо їх до «підключення» Power BI
