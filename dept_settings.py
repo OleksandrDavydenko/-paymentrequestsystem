@@ -7,7 +7,9 @@
   deputy_approve  — ті, хто «бачить заявки відділу», можуть погодити замість керівника;
   cfo             — default (загальні правила фіндиректора) або always (фіндиректор погоджує завжди);
   contractor_codes — статті для «Оплата підряднику» (None — як за замовчуванням, contractor_expense_codes);
-  invoices_required — для «Оплата підряднику» обов'язковий хоча б один рахунок.
+  invoices_required — для «Оплата підряднику» обов'язковий хоча б один рахунок;
+  direct_allowed  — чи робить відділ прямі витрати: None — за замовчуванням (профітцентр — так, інший — ні),
+                    True / False — задано адміністратором. Ні — у заявці кроку «Що оплачуємо» немає, вона непряма.
 Маршрут визначається під час відправки й запам'ятовується в заявці, тож зміна налаштувань не ламає заявки в роботі.
 У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure). Окремо від org_structure: там записи
 відділів (керівник, хто бачить) перезаписуються цілком.
@@ -29,9 +31,10 @@ import workflow as wf
 HEAD_MODES = {"default": "Як у загальних налаштуваннях", "approve": "Погоджує", "view": "Лише бачить"}
 CFO_MODES = {"default": "За загальними правилами", "always": "Погоджує завжди"}
 DEFAULT = {"head_mode": "default", "head_threshold": 0, "deputy_approve": False, "cfo": "default",
-           "contractor_codes": None, "invoices_required": False}
+           "contractor_codes": None, "invoices_required": False, "direct_allowed": None}
 LABELS = {"head_mode": "керівник відділу", "head_threshold": "поріг керівника", "deputy_approve": "заступник погоджує",
-          "cfo": "фіндиректор", "contractor_codes": "статті оплати підряднику", "invoices_required": "рахунки обов'язкові"}
+          "cfo": "фіндиректор", "contractor_codes": "статті прямих витрат", "invoices_required": "рахунки обов'язкові",
+          "direct_allowed": "прямі витрати"}
 
 _lock = threading.Lock()
 _data = None
@@ -92,6 +95,14 @@ def contractor_codes(code):
     return list(own) if own is not None else list(app_settings.get("contractor_expense_codes") or [])
 
 
+def direct_allowed(code):
+    """Чи може відділ робити прямі витрати (оплата рахунків підрядників за угодами). Без відділу — так."""
+    if not code:
+        return True
+    own = get(code)["direct_allowed"]
+    return departments.is_profit_center(code) if own is None else bool(own)
+
+
 def invoices_required(code):
     return bool(code) and get(code)["invoices_required"]
 
@@ -149,6 +160,8 @@ def log_value(key, value):
         return HEAD_MODES.get(value, value)
     if field == "cfo":
         return CFO_MODES.get(value, value)
+    if field == "direct_allowed":
+        return "за замовчуванням (профітцентр — так)" if value is None else ("дозволено" if value else "заборонено")
     if field in ("deputy_approve", "invoices_required"):
         return "так" if value else "ні"
     if field == "contractor_codes":

@@ -50,7 +50,9 @@ BASE = {"pay_date": "2026-12-20", "organization_id": "1", "counterparty_id": "1"
         "payment_form": "bank", "payment_kind_sent": "1"}
 html = page("/requests/new")
 check("form: kind switch, lists for picker, lines block hidden", 'name="payment_kind"' in html and 'id="expense-lists"' in html
-      and 'id="block-lines" hidden' in html and 'id="add-line"' not in html and 'id="pick-invoices"' in html)
+      and 'id="block-lines" hidden' in html and 'id="add-line"' not in html and 'id="pick-invoices"' in html
+      and "kind-pending" in html and ">Пряма витрата<" in html and "за угодою профітцентру" in html
+      and "Не впевнені?" in html and 'id="kind-forced" hidden' in html)
 r_ = c.post("/requests/new", data={**BASE, "expense_code": "01.001", "action": "save"})
 check("kind required", "Виберіть, що оплачуємо" in r_.get_data(as_text=True))
 r_ = c.post("/requests/new", data={**BASE, "payment_kind": "contractor", "expense_code": "01.001", "action": "save"})
@@ -61,6 +63,7 @@ c.post("/requests/new", data={**BASE, "payment_kind": "contractor", "expense_cod
                               "lines-0-deal": "Договір №15/2025"})
 rid = db.last_id()
 req = db.get_request(rid)
+check("kind chosen -> no first-step gate", "kind-pending" not in page(f"/requests/{db.last_id()}"))
 check("contractor saved with invoice line", rid != before and req["payment_kind"] == "contractor"
       and req["expense_code"] == "01.002" and req["lines"][0]["invoice"] == "НП-104512")
 used = lambda url: next(i for i in get(url)["invoices"] if i["number"] == "НП-104512")["used_in"]
@@ -91,7 +94,7 @@ c.post("/admin/departments", data={"head_mode-LOG": "default", "cfo-LOG": "defau
 check("saved: LOG own list + required, SAL default", dept_settings.get("LOG")["contractor_codes"] == ["01.003"]
       and dept_settings.invoices_required("LOG") and dept_settings.contractor_codes("SAL") == ["01.002", "01.004"])
 labels = [e["label"] for e in settings_log.query(50)]
-check("journal", "Відділ «Логістика»: статті оплати підряднику" in labels and "Відділ «Логістика»: рахунки обов'язкові" in labels)
+check("journal", "Відділ «Логістика»: статті прямих витрат" in labels and "Відділ «Логістика»: рахунки обов'язкові" in labels)
 login("a@ftpua.com")
 r_ = c.post("/requests/new", data={**BASE, "payment_kind": "contractor", "expense_code": "01.003", "action": "submit"})
 check("required invoices: submit without lines refused", "додайте рахунок" in r_.get_data(as_text=True))
@@ -104,6 +107,31 @@ req = db.get_request(db.last_id())
 check("SAL: default list, not required -> submitted", req["department"] == "SAL" and req["status"] != "draft")
 pv = get("/requests/route-preview?amount=100&currency=UAH&department=LOG&payment_kind=contractor&payment_form=bank&organization_id=1")
 check("summary: required invoices in todo", any("рахунок" in t for t in pv["todo"]))
+
+# ---------- відділи без прямих витрат (за замовчуванням — не профітцентри)
+user_roles.set_roles("b@ftpua.com", "b@ftpua.com", "B", ["initiator"], "t")
+user_budget.save_settings("b@ftpua.com", "b@ftpua.com", "B", True, True, [], updated_by="t")
+org_structure.set_department("b@ftpua.com", "b@ftpua.com", "B", "BA", "t")
+login("b@ftpua.com")
+html = page("/requests/new")
+check("not a profit center: no kind step, indirect", "kind-pending" not in html and 'id="kind-choice" hidden' in html
+      and 'value="indirect" checked' in html and "прямих витрат немає" in html)
+c.post("/requests/new", data={**BASE, "payment_kind": "contractor", "expense_code": "01.001", "action": "save",
+                              "lines-0-invoice": "НП-1", "lines-0-amount": "100", "lines-0-currency": "UAH"})
+req = db.get_request(db.last_id())
+check("contractor from the form forced to indirect", req["payment_kind"] == "indirect" and req["lines"] == []
+      and req["expense_code"] == "01.001")
+check("invoices not offered", "прямих витрат немає" in get("/requests/invoices?counterparty_id=1&department=BA")["error"])
+login("adm@ftpua.com")
+c.post("/admin/departments", data={"head_mode-BA": "default", "cfo-BA": "default", "contractor_codes-BA": "*",
+                                   "direct_allowed-BA": "1", "head_mode-LOG": "default", "cfo-LOG": "default",
+                                   "contractor_codes-LOG": "01.003", "invoices_required-LOG": "1", "direct_allowed-LOG": "0"})
+check("admin: BA allowed, LOG forbidden", dept_settings.direct_allowed("BA") and not dept_settings.direct_allowed("LOG")
+      and "Відділ «Відділ бізнес-аналізу»: прямі витрати" in [e["label"] for e in settings_log.query(50)])
+login("b@ftpua.com")
+check("BA now chooses", "kind-pending" in page("/requests/new"))
+login("a@ftpua.com")
+check("LOG now indirect only", "kind-pending" not in page("/requests/new"))
 
 # ---------- рахунки вимкнено
 app_settings.set("invoices_mode", "off", "t")

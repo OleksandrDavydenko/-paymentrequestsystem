@@ -17,8 +17,9 @@
     заявки відділу, призначають у картці користувача (пункт 3). Нові правила діють для нових і повторно відправлених заявок.</p>
   {% if invoices_on %}
   <div class="dept-default">
-    <strong>Статті оплати підряднику за замовчуванням</strong>
-    <span class="muted">— для відділів без власного списку:</span>
+    <strong>Статті прямих витрат за замовчуванням</strong>
+    <span class="muted">— для відділів без власного списку. Прямі витрати — оплата рахунків підрядників за угодами
+      профітцентрів; за замовчуванням їх дозволено профітцентрам (Profitcenter у 1С), іншим відділам — лише непрямі.</span>
     <span class="budget-chips" data-chips="contractor_default">{% for c in contractor_default %}<span class="bchip bchip-dep" title="{{ expense_title(c) or 'немає в довіднику' }}">{{ c }}</span>{% else %}<span class="bchip bchip-none">не задано</span>{% endfor %}</span>
     <input type="hidden" name="contractor_default" value="{{ contractor_default | join(',') }}">
     <button type="button" class="btn btn-sm codes-edit" data-target="contractor_default" data-title="Статті оплати підряднику за замовчуванням">Змінити</button>
@@ -29,7 +30,7 @@
   <div class="table-wrap">
   <table class="stack dept-table">
     <thead><tr><th>Відділ</th><th>Керівник / бачать заявки</th><th>Керівник відділу</th><th class="num">Поріг керівника, {{ currency }}</th>
-      <th class="c">Заступник погоджує</th><th>Фіндиректор</th>{% if invoices_on %}<th>Статті оплати підряднику</th><th class="c">Рахунки обов'язкові</th>{% endif %}</tr></thead>
+      <th class="c">Заступник погоджує</th><th>Фіндиректор</th>{% if invoices_on %}<th>Прямі витрати</th><th>Статті прямих витрат</th><th class="c">Рахунки обов'язкові</th>{% endif %}</tr></thead>
     <tbody>
     {% for r in rows %}
       {% set s = r.settings %}
@@ -55,12 +56,18 @@
             {% for code, label in CFO_MODES.items() %}<option value="{{ code }}" {{ 'selected' if code == s.cfo }}>{{ label }}</option>{% endfor %}
           </select></td>
         {% if invoices_on %}
-        <td data-label="Статті оплати підряднику">
+        <td data-label="Прямі витрати">
+          <select name="direct_allowed-{{ r.code }}" class="direct-select" aria-label="Прямі витрати: {{ r.name }}">
+            <option value="" {{ 'selected' if s.direct_allowed is none }}>За замовчуванням ({{ 'так' if r.profit_center else 'ні' }})</option>
+            <option value="1" {{ 'selected' if s.direct_allowed == true }}>Дозволено</option>
+            <option value="0" {{ 'selected' if s.direct_allowed == false }}>Заборонено</option>
+          </select></td>
+        <td data-label="Статті прямих витрат" class="direct-dep {{ 'is-off' if not r.direct }}">
           {% set key = 'contractor_codes-' ~ r.code %}
           <span class="budget-chips" data-chips="{{ key }}">{% if s.contractor_codes is none %}<span class="muted">як за замовчуванням</span>{% else %}{% for c in s.contractor_codes %}<span class="bchip bchip-dep" title="{{ expense_title(c) or 'немає в довіднику' }}">{{ c }}</span>{% else %}<span class="bchip bchip-none">жодної</span>{% endfor %}{% endif %}</span>
           <input type="hidden" name="{{ key }}" value="{{ '*' if s.contractor_codes is none else s.contractor_codes | join(',') }}">
           <button type="button" class="btn btn-sm codes-edit" data-target="{{ key }}" data-title="Статті оплати підряднику: {{ r.name }}" data-default="1">Змінити</button></td>
-        <td class="c" data-label="Рахунки обов'язкові">
+        <td class="c direct-dep {{ 'is-off' if not r.direct }}" data-label="Рахунки обов'язкові">
           <input type="checkbox" name="invoices_required-{{ r.code }}" value="1" {{ 'checked' if s.invoices_required }}
                  title="Для «Оплата підряднику» без жодного рахунку заявку не відправити" aria-label="Рахунки обов'язкові: {{ r.name }}"></td>
         {% endif %}
@@ -89,6 +96,12 @@
 </dialog>
 <script type="application/json" id="codes-items">{{ items | tojson }}</script>
 <script>
+// Прямі витрати заборонено — статті й обов'язковість рахунків для відділу не діють
+document.querySelectorAll('.direct-select').forEach(sel => sel.addEventListener('change', () => {
+  const pc = sel.options[0].textContent.includes('так');
+  const on = sel.value === '1' || (sel.value === '' && pc);
+  sel.closest('tr').querySelectorAll('.direct-dep').forEach(td => td.classList.toggle('is-off', !on));
+}));
 (function () {
   // Вибір статей для поля (прихований input зі списком кодів через кому; «*» — як за замовчуванням)
   const ITEMS = JSON.parse(document.getElementById('codes-items').textContent);

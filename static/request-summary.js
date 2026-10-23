@@ -19,7 +19,25 @@
   let lastList = null;
   function applyKind() {
     if (!LISTS) return;
-    const kind = radio('payment_kind'), dept = val('department') || LISTS.current || '';
+    const dept0 = val('department') || LISTS.current || '';
+    // Відділ без прямих витрат — кроку немає, заявка непряма
+    const forced = LISTS.direct && LISTS.direct[dept0] === false;
+    if ($('kind-choice')) {
+      $('kind-choice').hidden = forced;
+      $('kind-forced').hidden = !forced;
+      if (forced) {
+        const ind = form.querySelector('input[name=payment_kind][value=indirect]');
+        if (ind && !ind.checked) ind.checked = true;
+        form.classList.remove('kind-pending');
+      }
+    }
+    const kind = radio('payment_kind'), dept = dept0;
+    // Пояснення: вибраний тип підсвічено, «Ви обрали: …»
+    document.querySelectorAll('#kind-explain li').forEach(li => li.classList.toggle('is-chosen', li.dataset.kind === kind));
+    if ($('kind-chosen') && LISTS.kinds) {
+      $('kind-chosen').hidden = !kind;
+      if (kind) { $('kind-chosen-name').textContent = LISTS.kinds[kind].label; $('kind-chosen-text').textContent = LISTS.kinds[kind].chosen; }
+    }
     const contractor = kind === 'contractor';
     const key = kind + '|' + dept;
     if (key !== lastList && window.expensePicker && kind) {
@@ -128,6 +146,14 @@
     clearTimeout(timer);
     timer = setTimeout(() => loadRoute(key), 350);
   }
+
+  // «Що оплачуємо» — перший крок: доки не вибрано, решта форми прихована (і сервер заявку без нього не прийме)
+  form.querySelectorAll('input[name=payment_kind]').forEach(r => r.addEventListener('change', () => {
+    if (!form.classList.contains('kind-pending')) return;
+    form.classList.remove('kind-pending');
+    const next = $('cp-input');
+    if (next) next.focus();
+  }));
 
   form.addEventListener('input', update);
   form.addEventListener('change', update);

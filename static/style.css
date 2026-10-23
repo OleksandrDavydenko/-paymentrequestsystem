@@ -887,9 +887,24 @@ a.badge { text-decoration: none; }
 .codes-dialog { width: min(640px, calc(100vw - 32px)); }
 .codes-dialog .cfo-codes-list { max-height: 50vh; overflow: auto; margin-top: 8px; }
 .codes-count { font-size: 12px; margin-top: 6px; }
+.dept-table .direct-select { max-width: 200px; }
+.direct-dep.is-off { opacity: .45; pointer-events: none; }
 
 /* Тип оплати й підбір рахунків */
 .kind-field { margin-bottom: 14px; }
+#kind-choice > label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; }
+.kind-explain { margin: 8px 0 4px; padding-left: 18px; font-size: 13px; color: var(--muted); }
+.kind-explain li { margin: 3px 0; line-height: 1.45; }
+.kind-explain li strong { color: var(--text); }
+.kind-explain li.is-chosen { color: var(--text); }
+.kind-explain li.is-chosen strong { color: var(--primary); }
+.kind-unsure { font-size: 13px; color: var(--muted); }
+.kind-chosen, .kind-forced { margin-top: 8px; padding: 8px 12px; border-radius: 6px; background: #eef5fc; border-left: 4px solid var(--primary); font-size: 13px; }
+.kind-first { display: none; }
+/* Доки не вибрано «Що оплачуємо» — лише цей вибір і кнопка «Закрити» */
+.req-form.kind-pending .kind-first { display: block; color: var(--primary); font-weight: 600; }
+.req-form.kind-pending .req-block:not(#block-who), .req-form.kind-pending #block-who > .req-fields,
+.req-form.kind-pending .req-summary > :not(.sum-actions), .req-form.kind-pending .sum-actions button { display: none; }
 .exp-note { color: #9a6700; }
 .invoice-dialog { width: min(900px, calc(100vw - 32px)); }
 .inv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }

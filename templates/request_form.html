@@ -104,7 +104,7 @@
   {% endif %}
 </div>
 
-<form method="post" class="card req-form" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
+<form method="post" class="card req-form {{ 'kind-pending' if invoices_on and editable and not req.payment_kind and not kind_forced }}" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
   {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
   {% if errors.documents %}<div class="flash error">{{ errors.documents }}</div>{% endif %}
   <div class="req-layout">
@@ -114,16 +114,27 @@
   <section class="req-block" id="block-who">
     <h2 class="req-step"><span class="uc-num">1</span>Кому і за що</h2>
     {% if invoices_on %}
-    <div class="field kind-field">
-      <label class="req">Що оплачуємо</label>
+    <div class="field kind-field" id="kind-field">
       <input type="hidden" name="payment_kind_sent" value="1">
-      <div class="segmented {{ 'invalid' if errors.payment_kind }}" role="radiogroup" aria-label="Що оплачуємо">
-        {% for code, label in PAYMENT_KINDS.items() %}
-        <label><input type="radio" name="payment_kind" value="{{ code }}" {{ 'checked' if code == req.payment_kind }}><span>{{ label }}</span></label>
-        {% endfor %}
+      <div id="kind-choice" {{ 'hidden' if kind_forced }}>
+        <label class="req" id="kind-label">Що оплачуємо?</label>
+        <div class="segmented {{ 'invalid' if errors.payment_kind }}" role="radiogroup" aria-labelledby="kind-label">
+          {% for code, label in PAYMENT_KINDS.items() %}
+          <label><input type="radio" name="payment_kind" value="{{ code }}" {{ 'checked' if code == req.payment_kind }}><span>{{ label }}</span></label>
+          {% endfor %}
+        </div>
+        {{ err('payment_kind') }}
+        <ul class="kind-explain" id="kind-explain">
+          {% for code, label in PAYMENT_KINDS.items() %}
+          <li data-kind="{{ code }}" class="{{ 'is-chosen' if code == req.payment_kind }}"><strong>{{ label }}</strong> — {{ PAYMENT_KIND_HINTS[code] }}</li>
+          {% endfor %}
+        </ul>
+        <div class="kind-unsure">Не впевнені? Є рахунок підрядника за угодою з клієнтом — це <strong>пряма витрата</strong>; усе інше — <strong>непряма</strong>.</div>
+        <div class="kind-chosen" id="kind-chosen" {{ 'hidden' if not req.payment_kind }}>Ви обрали: <strong id="kind-chosen-name">{{ PAYMENT_KINDS.get(req.payment_kind, '') }}</strong> — <span id="kind-chosen-text">{{ PAYMENT_KIND_CHOSEN.get(req.payment_kind, '') }}</span>.</div>
+        {% if editable %}<span class="field-hint kind-first">Спершу виберіть, що оплачуєте, — далі з'являться інші поля заявки.</span>{% endif %}
       </div>
-      {{ err('payment_kind') }}
-      {% if editable %}<span class="field-hint" id="kind-hint">Оплата підряднику — рахунки з 1С і статті вашого відділу; непрямі витрати — статті з вашого бюджету</span>{% endif %}
+      <div class="kind-forced" id="kind-forced" {{ 'hidden' if not kind_forced }}><strong>Непряма витрата</strong> — у цьому відділі
+        прямих витрат немає: {{ PAYMENT_KIND_CHOSEN.indirect }}.</div>
     </div>
     {% endif %}
     <div class="req-fields">

@@ -103,6 +103,8 @@ def invoices_for_request(*, context):
         return {"invoices": [], "error": "Спочатку оберіть контрагента"}
     if not dept:
         return {"invoices": [], "error": "У заявці не вказано відділ — рахунки підбираються за відділом"}
+    if not dept_settings.direct_allowed(dept):
+        return {"invoices": [], "error": f"У відділі «{departments.get_name(dept)}» прямих витрат немає — рахунки не підбираються"}
     try:
         found = invoices.for_request(cp, dept)
     except invoices.InvoicesError as e:
@@ -181,6 +183,8 @@ def request_card(request_id=None, *, context):
             "history": [],
             "attachments": [],
         }
+        if invoices_on() and not dept_settings.direct_allowed(existing["department"]):
+            existing["payment_kind"] = "indirect"  # відділ без прямих витрат — кроку «Що оплачуємо» немає
     else:
         existing = _load_visible(request_id)
 
@@ -207,6 +211,8 @@ def request_card(request_id=None, *, context):
         legacy = "payment_kind_sent" not in request.form  # форма без перемикача (старі сторінки, API) — як раніше
         if legacy:
             kind = existing.get("payment_kind")
+        elif use_invoices and not dept_settings.direct_allowed(dept):
+            kind = "indirect"  # відділ без прямих витрат — лише непрямі, що б не прийшло з форми
         contractor = use_invoices and kind == "contractor"
         allowed = contractor_lists.get(dept or "", contractor_lists[""]) if contractor else budget_items
         # Змінили тип або (для підрядника) відділ — стара стаття мусить бути в новому списку
@@ -313,7 +319,12 @@ def request_card(request_id=None, *, context):
         lines_required=lines_required(req),
         invoices_on=use_invoices,
         PAYMENT_KINDS=wf.PAYMENT_KINDS,
+        PAYMENT_KIND_HINTS=wf.PAYMENT_KIND_HINTS,
+        PAYMENT_KIND_CHOSEN=wf.PAYMENT_KIND_CHOSEN,
+        kind_forced=use_invoices and not dept_settings.direct_allowed(req.get("department")),
         expense_lists={"budget": budget_items, "contractor": contractor_lists, "current": req.get("department") or "",
+                       "direct": {d: dept_settings.direct_allowed(d or None) for d in contractor_lists},
+                       "kinds": {k: {"label": v, "chosen": wf.PAYMENT_KIND_CHOSEN[k]} for k, v in wf.PAYMENT_KINDS.items()},
                        "required": {d: dept_settings.invoices_required(d) or bool(app_settings.get("req_lines_required"))
                                     for d in contractor_lists}},
         **_pay_date_presets(),

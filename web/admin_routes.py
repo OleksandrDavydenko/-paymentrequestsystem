@@ -257,6 +257,8 @@ def admin_departments(*, context):
                 raw_codes = f.get(f"contractor_codes-{code}") or ""
                 changes[code]["contractor_codes"] = None if raw_codes == "*" else _codes(raw_codes)
                 changes[code]["invoices_required"] = f.get(f"invoices_required-{code}") == "1"
+                raw_direct = f.get(f"direct_allowed-{code}")
+                changes[code]["direct_allowed"] = None if raw_direct not in ("0", "1") else raw_direct == "1"
         for message in errors:
             flash(message, "error")
         if "contractor_default" in f and not errors:
@@ -275,7 +277,8 @@ def admin_departments(*, context):
     rows = [{"code": d["code"], "name": d["name"], "members": len(org_structure.members_of(d["code"])),
              "profit_center": departments.is_profit_center(d["code"]), "head": org_structure.head_of(d["code"]),
              "viewers": org_structure.staff(d["code"])["viewers"], "settings": dept_settings.get(d["code"]),
-             "route": dept_settings.route_text(d["code"])} for d in deps]
+             "route": dept_settings.route_text(d["code"]), "direct": dept_settings.direct_allowed(d["code"])}
+            for d in deps]
     items = [{"code": i["code"], "name": i["name"]} for i in expense_items.get_items()]
     return render_template("admin_departments.html", user_name=g.user["name"], rows=rows, items=items,
                            invoices_on=app_settings.get("invoices_mode") != "off",
