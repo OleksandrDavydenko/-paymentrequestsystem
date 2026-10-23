@@ -22,6 +22,7 @@ import alerts
 import app_settings
 import clock
 import departments
+import docstore
 import employees
 import expense_items
 import google_login
@@ -109,6 +110,11 @@ def _uid_for(email):
 
 def add(emails, who):
     """Додати співробітників за правилом. Повертає кількість доданих."""
+    with docstore.batch():
+        return _add(emails, who)
+
+
+def _add(emails, who):
     people, staff, r = _people_by_email(), _employees_by_email(), rule()
     added = 0
     for email in emails:
@@ -139,6 +145,11 @@ def _existing(ids):
 
 def fix_from_onec(ids, who):
     """Відділ, керівника відділу і (бухгалтерам) користувача 1С — як у 1С. Повертає кількість змінених людей."""
+    with docstore.batch():
+        return _fix_from_onec(ids, who)
+
+
+def _fix_from_onec(ids, who):
     changed = 0
     for p in _existing(ids):
         if not p["issues"]:
@@ -155,6 +166,11 @@ def fix_from_onec(ids, who):
 
 def apply_rule(ids, who):
     """Правило до тих, хто вже є: лише додати ролі й статті (прямі — профітцентрам), нічого не знімаючи."""
+    with docstore.batch():
+        return _apply_rule(ids, who)
+
+
+def _apply_rule(ids, who):
     r, changed = rule(), 0
     for p in _existing(ids):
         department = org_structure.department_of(p["id"]) or p["department"]
@@ -177,6 +193,11 @@ def apply_rule(ids, who):
 
 def close_access(ids, who):
     """Звільненим у 1С — зняти всі ролі (історія заявок лишається). Повертає кількість."""
+    with docstore.batch():
+        return _close_access(ids, who)
+
+
+def _close_access(ids, who):
     by_id = {p["id"]: p for p in overview()["dismissed"]}
     closed = 0
     for i in ids:

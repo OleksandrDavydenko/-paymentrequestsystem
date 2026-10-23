@@ -59,10 +59,18 @@ def get_map():
     return {d["code"]: d["name"] for d in _table.items()}
 
 
+_by_guid = {"items": None, "map": {}}
+
+
 def code_by_guid(guid):
     """Код відділу за DepartmentGUID з 1С (співробітники, статті витрат) або None."""
     guid = _guid(guid)
-    return next((d["code"] for d in _table.items() if guid and d.get("guid") == guid), None) if guid else None
+    if not guid:
+        return None
+    items = _table.items()
+    if _by_guid["items"] is not items:  # довідник оновився — перебудувати покажчик
+        _by_guid.update(items=items, map={d["guid"]: d["code"] for d in items if d.get("guid")})
+    return _by_guid["map"].get(guid)
 
 
 def is_profit_center(code):

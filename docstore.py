@@ -15,6 +15,7 @@ import json
 import logging
 import os
 import threading
+from contextlib import contextmanager
 from copy import deepcopy
 
 import db_sql
@@ -25,6 +26,23 @@ _lock = threading.Lock()
 _known = {}      # назва -> {"version": версія в базі, "base": вміст на момент читання/запису}
 _reloaders = {}  # назва -> функція, що скидає копію модуля (наступне звернення перечитає документ)
 _MISSING = object()
+_batch = threading.local()  # відкладені записи масової дії в цьому потоці: {назва: (path, data)}
+
+
+@contextmanager
+def batch():
+    """Масова дія (напр. додати сотню співробітників): документи, змінені всередині блоку, записуються в базу
+    по одному разу в кінці, а не на кожну зміну. Лише для поточного потоку; вкладені блоки — одне ціле."""
+    if getattr(_batch, "pending", None) is not None:
+        yield
+        return
+    _batch.pending = {}
+    try:
+        yield
+    finally:
+        pending, _batch.pending = _batch.pending, None
+        for name, (path, data) in pending.items():
+            write(name, path, data)
 
 
 def register(name, reload_fn):
@@ -87,6 +105,10 @@ def merge3(base, ours, theirs):
 
 
 def write(name, path, data):
+    pending = getattr(_batch, "pending", None)
+    if pending is not None:  # усередині batch() — запишемо в кінці (data — той самий об'єкт модуля)
+        pending[name] = (path, data)
+        return
     if not db_sql.configured():
         os.makedirs(os.path.dirname(path), exist_ok=True)
         tmp = path + ".tmp"

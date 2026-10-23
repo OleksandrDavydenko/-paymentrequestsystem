@@ -60,14 +60,23 @@ def all_employees():
     return [_with_department(e) for e in _table.items()]
 
 
+_by_email = {"items": None, "map": {}}
+
+
 def by_email(email):
     """Співробітник за поштою: працюючий має перевагу над звільненим. None — немає в 1С."""
     email = (email or "").strip().lower()
     if not email:
         return None
-    found = [e for e in _table.items() if e["email"] == email]
-    found.sort(key=lambda e: e["deleted"])
-    return _with_department(found[0]) if found else None
+    items = _table.items()
+    if _by_email["items"] is not items:  # довідник оновився — перебудувати покажчик
+        index = {}
+        for e in items:
+            if e["email"] and (e["email"] not in index or index[e["email"]]["deleted"] and not e["deleted"]):
+                index[e["email"]] = e
+        _by_email.update(items=items, map=index)
+    found = _by_email["map"].get(email)
+    return _with_department(found) if found else None
 
 
 def refresh():
