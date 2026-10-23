@@ -273,7 +273,7 @@ def admin_departments(*, context):
             changed = sorted({code for code, *_ in log}, key=lambda c: departments.get_name(c).lower())
             flash("Збережено: " + ", ".join(departments.get_name(c) for c in changed) + ". Діє для нових і повторно "
                   "відправлених заявок." if changed else "Змін немає", "success")
-        return redirect(url_for("admin.admin_departments"))
+        return redirect(url_for("admin.admin_departments", view="direct" if f.get("view") == "direct" else None))
     rows = [{"code": d["code"], "name": d["name"], "members": len(org_structure.members_of(d["code"])),
              "profit_center": departments.is_profit_center(d["code"]), "head": org_structure.head_of(d["code"]),
              "viewers": org_structure.staff(d["code"])["viewers"], "settings": dept_settings.get(d["code"]),
@@ -281,6 +281,7 @@ def admin_departments(*, context):
             for d in deps]
     items = [{"code": i["code"], "name": i["name"]} for i in expense_items.get_items()]
     return render_template("admin_departments.html", user_name=g.user["name"], rows=rows, items=items,
+                           view="direct" if request.args.get("view") == "direct" else "approval",
                            invoices_on=app_settings.get("invoices_mode") != "off",
                            contractor_default=app_settings.get("contractor_expense_codes") or [],
                            HEAD_MODES=dept_settings.HEAD_MODES, CFO_MODES=dept_settings.CFO_MODES,

@@ -11,26 +11,23 @@
     <span class="spacer"></span>
     <button type="submit" class="btn btn-primary">Зберегти</button>
   </div>
+  <input type="hidden" name="view" id="dept-view" value="{{ view }}">
+  {% if invoices_on %}
+  <nav class="tabs dept-tabs" role="tablist" aria-label="Налаштування відділів">
+    <button type="button" class="tab {{ 'active' if view != 'direct' }}" data-view="approval" role="tab">Погодження</button>
+    <button type="button" class="tab {{ 'active' if view == 'direct' }}" data-view="direct" role="tab">Прямі витрати</button>
+  </nav>
+  {% endif %}
+
+  <section class="dept-panel" data-panel="approval" {{ 'hidden' if view == 'direct' }}>
   <p class="muted" style="margin-top:0">Як погоджуються заявки кожного відділу. «Як у загальних налаштуваннях» — за
     «Налаштування → Погодження» (зараз керівник відділу <strong>{{ 'погоджує' if global_head == 'approve' else 'лише бачить' }}</strong>).
     Поріг керівника — у {{ currency }} за курсом 1С: дрібніші заявки йдуть одразу до бухгалтера. Керівника й тих, хто бачить
     заявки відділу, призначають у картці користувача (пункт 3). Нові правила діють для нових і повторно відправлених заявок.</p>
-  {% if invoices_on %}
-  <div class="dept-default">
-    <strong>Статті прямих витрат за замовчуванням</strong>
-    <span class="muted">— для відділів без власного списку. Прямі витрати — оплата рахунків підрядників за угодами
-      профітцентрів; за замовчуванням їх дозволено профітцентрам (Profitcenter у 1С), іншим відділам — лише непрямі.</span>
-    <span class="budget-chips" data-chips="contractor_default">{% for c in contractor_default %}<span class="bchip bchip-dep" title="{{ expense_title(c) or 'немає в довіднику' }}">{{ c }}</span>{% else %}<span class="bchip bchip-none">не задано</span>{% endfor %}</span>
-    <input type="hidden" name="contractor_default" value="{{ contractor_default | join(',') }}">
-    <button type="button" class="btn btn-sm codes-edit" data-target="contractor_default" data-title="Статті оплати підряднику за замовчуванням">Змінити</button>
-  </div>
-  {% else %}
-  <p class="muted">Рахунки в заявці вимкнено («Налаштування → Заявка»), тож статті оплати підряднику й обов'язковість рахунків не діють.</p>
-  {% endif %}
   <div class="table-wrap">
   <table class="stack dept-table">
     <thead><tr><th>Відділ</th><th>Керівник / бачать заявки</th><th>Керівник відділу</th><th class="num">Поріг керівника, {{ currency }}</th>
-      <th class="c">Заступник погоджує</th><th>Фіндиректор</th>{% if invoices_on %}<th>Прямі витрати</th><th>Статті прямих витрат</th><th class="c">Рахунки обов'язкові</th>{% endif %}</tr></thead>
+      <th class="c">Заступник погоджує</th><th>Фіндиректор</th></tr></thead>
     <tbody>
     {% for r in rows %}
       {% set s = r.settings %}
@@ -55,7 +52,34 @@
           <select name="cfo-{{ r.code }}" aria-label="Фіндиректор: {{ r.name }}">
             {% for code, label in CFO_MODES.items() %}<option value="{{ code }}" {{ 'selected' if code == s.cfo }}>{{ label }}</option>{% endfor %}
           </select></td>
-        {% if invoices_on %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  </section>
+
+  {% if invoices_on %}
+  <section class="dept-panel" data-panel="direct" {{ 'hidden' if view != 'direct' }}>
+  <p class="muted" style="margin-top:0">Прямі витрати — оплата рахунків підрядників за угодами профітцентрів (рахунки
+    підбираються з 1С). За замовчуванням їх дозволено профітцентрам (Profitcenter у 1С), іншим відділам — лише непрямі:
+    у заявці такого відділу кроку «Що оплачуємо?» немає.</p>
+  <div class="dept-default">
+    <strong>Статті прямих витрат за замовчуванням</strong>
+    <span class="muted">— для відділів без власного списку:</span>
+    <span class="budget-chips" data-chips="contractor_default">{% for c in contractor_default %}<span class="bchip bchip-dep" title="{{ expense_title(c) or 'немає в довіднику' }}">{{ c }}</span>{% else %}<span class="bchip bchip-none">не задано</span>{% endfor %}</span>
+    <input type="hidden" name="contractor_default" value="{{ contractor_default | join(',') }}">
+    <button type="button" class="btn btn-sm codes-edit" data-target="contractor_default" data-title="Статті прямих витрат за замовчуванням">Змінити</button>
+  </div>
+  <div class="table-wrap">
+  <table class="stack dept-table">
+    <thead><tr><th>Відділ</th><th>Прямі витрати</th><th>Статті прямих витрат</th><th class="c">Рахунки обов'язкові</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      {% set s = r.settings %}
+      <tr>
+        <td data-label="Відділ"><strong>{{ r.name }}</strong>
+          <div class="muted">{{ r.members }} співроб.{% if r.profit_center %} · <span class="bchip bchip-direct" title="Profitcenter у 1С">профітцентр</span>{% endif %}</div></td>
         <td data-label="Прямі витрати">
           <select name="direct_allowed-{{ r.code }}" class="direct-select" aria-label="Прямі витрати: {{ r.name }}">
             <option value="" {{ 'selected' if s.direct_allowed is none }}>За замовчуванням ({{ 'так' if r.profit_center else 'ні' }})</option>
@@ -66,16 +90,19 @@
           {% set key = 'contractor_codes-' ~ r.code %}
           <span class="budget-chips" data-chips="{{ key }}">{% if s.contractor_codes is none %}<span class="muted">як за замовчуванням</span>{% else %}{% for c in s.contractor_codes %}<span class="bchip bchip-dep" title="{{ expense_title(c) or 'немає в довіднику' }}">{{ c }}</span>{% else %}<span class="bchip bchip-none">жодної</span>{% endfor %}{% endif %}</span>
           <input type="hidden" name="{{ key }}" value="{{ '*' if s.contractor_codes is none else s.contractor_codes | join(',') }}">
-          <button type="button" class="btn btn-sm codes-edit" data-target="{{ key }}" data-title="Статті оплати підряднику: {{ r.name }}" data-default="1">Змінити</button></td>
+          <button type="button" class="btn btn-sm codes-edit" data-target="{{ key }}" data-title="Статті прямих витрат: {{ r.name }}" data-default="1">Змінити</button></td>
         <td class="c direct-dep {{ 'is-off' if not r.direct }}" data-label="Рахунки обов'язкові">
           <input type="checkbox" name="invoices_required-{{ r.code }}" value="1" {{ 'checked' if s.invoices_required }}
-                 title="Для «Оплата підряднику» без жодного рахунку заявку не відправити" aria-label="Рахунки обов'язкові: {{ r.name }}"></td>
-        {% endif %}
+                 title="Для прямої витрати без жодного рахунку заявку не відправити" aria-label="Рахунки обов'язкові: {{ r.name }}"></td>
       </tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
+  </section>
+  {% else %}
+  <p class="muted">Рахунки в заявці вимкнено («Налаштування → Заявка»), тож прямі витрати, їхні статті й обов'язковість рахунків не діють.</p>
+  {% endif %}
   <div class="form-actions" style="justify-content:flex-start"><button type="submit" class="btn btn-primary">Зберегти</button></div>
 </form>
 
@@ -96,6 +123,13 @@
 </dialog>
 <script type="application/json" id="codes-items">{{ items | tojson }}</script>
 <script>
+// Вкладки «Погодження / Прямі витрати» — одна форма, одна кнопка «Зберегти»; після збереження — та сама вкладка
+document.querySelectorAll('.dept-tabs .tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.dept-tabs .tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.dept-panel').forEach(p => { p.hidden = p.dataset.panel !== t.dataset.view; });
+  document.getElementById('dept-view').value = t.dataset.view;
+  history.replaceState(null, '', location.pathname + (t.dataset.view === 'direct' ? '?view=direct' : ''));
+}));
 // Прямі витрати заборонено — статті й обов'язковість рахунків для відділу не діють
 document.querySelectorAll('.direct-select').forEach(sel => sel.addEventListener('change', () => {
   const pc = sel.options[0].textContent.includes('так');
