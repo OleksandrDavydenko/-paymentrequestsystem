@@ -2,7 +2,7 @@
    Очікує req, errors, editable, cp (поточний контрагент або None), cp_brief (він же коротко).
    Довідник великий (десятки тисяч з 1С), тому пошук — на сервері (/counterparties/search). #}
 <div class="field">
-  <label for="cp-input">Контрагент</label>
+  <label for="cp-input" class="req">Контрагент</label>
   {% if editable %}
   <div class="exp-picker cp-picker {{ 'invalid' if errors.counterparty_id }}" id="cp-picker"
        data-initial-name="{{ cp.name if cp else '' }}" data-search-url="{{ url_for('requests.counterparties_search') }}">

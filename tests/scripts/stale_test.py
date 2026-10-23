@@ -27,7 +27,7 @@ FORM = {"pay_date": "2026-10-20", "organization_id": "1", "counterparty_id": "1"
 
 login("author@ftpua.com", ["g-i"])
 page = c.get("/requests/new").get_data(as_text=True)
-check("new request: number assigned on save", "Нова заявка" in page and "присвоїться при збереженні" in page)
+check("new request: number assigned on save", "Нова заявка" in page and "Заявка №" not in page)
 before = db.last_id()
 c.post("/requests/new", data={**FORM, "action": "submit"})
 rid = db.last_id()

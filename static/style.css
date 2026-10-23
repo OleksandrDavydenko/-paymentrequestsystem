@@ -896,3 +896,63 @@ a.badge { text-decoration: none; }
 .onec-issue { background: #fff8e6; }
 .onec-diff { display: block; color: #9a6700; font-size: 13px; }
 .org-off-note { margin: 0 0 12px; }
+
+/* Заявка: блоки за порядком заповнення + панель «Підсумок» */
+.req-meta { margin-top: 4px; font-size: 13px; }
+.req-layout { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 28px; align-items: start; }
+.req-layout > *, .req-fields > *, .req-main fieldset { min-width: 0; }
+.req-block { border-top: 1px solid #eaeef2; padding-top: 16px; margin-top: 16px; }
+.req-block:first-of-type { border-top: 0; padding-top: 0; margin-top: 0; }
+.req-block.section { margin-top: 16px; }
+.req-step { display: flex; align-items: center; gap: 8px; font-size: 15px; margin: 0 0 12px; }
+.req-step .uc-num { width: 22px; height: 22px; font-size: 12px; }
+.section-head .req-step { margin: 0; margin-right: auto; }
+.req-mark { color: var(--danger); }
+.req-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 20px; }
+.req-block .field { grid-template-columns: 1fr; gap: 4px; align-content: start; }
+.req-block .field > label { color: var(--text); font-weight: 600; font-size: 13px; }
+.req-block .field .err, .req-block .route-hint { grid-column: 1; }
+label.req::after { content: " *"; color: var(--danger); font-weight: 400; }
+.field-hint { font-size: 12px; color: var(--muted); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.money-input { display: flex; }
+.money-input input { flex: 1; min-width: 0; border-radius: 6px 0 0 6px; text-align: right; font-size: 16px; font-weight: 600; }
+.money-input select { width: auto; flex: none; border-radius: 0 6px 6px 0; border-left: 0; background: #f6f8fa; font-weight: 600; }
+.money-input.invalid input, .money-input.invalid select { border-color: var(--danger); }
+.segmented { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; width: max-content; max-width: 100%; }
+.segmented label { position: relative; cursor: pointer; margin: 0; }
+.segmented label + label { border-left: 1px solid var(--border); }
+.segmented input { position: absolute; opacity: 0; pointer-events: none; }
+.segmented span { display: block; padding: 6px 16px; color: var(--text); }
+.segmented input:checked + span { background: var(--primary); color: #fff; }
+.segmented input:focus-visible + span { outline: 2px solid var(--primary-dark); outline-offset: -2px; }
+.segmented.invalid { border-color: var(--danger); }
+fieldset:disabled .segmented label { cursor: default; }
+.date-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--border); background: #fff; border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; color: var(--text); }
+.chip:hover { border-color: var(--primary); color: var(--primary); }
+.lines-diff { color: #9a6700; font-size: 12px; }
+.req-block textarea#note { min-height: 70px; }
+.req-summary { position: sticky; top: 16px; background: #f6f8fa; border: 1px solid #eaeef2; border-radius: 10px; padding: 16px; }
+.sum-title, .sum-sub { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.sum-sub { margin: 14px 0 6px; }
+.sum-amount { font-size: 24px; font-weight: 700; margin: 4px 0 10px; overflow-wrap: anywhere; }
+.sum-list { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 0; font-size: 13px; }
+.sum-list dt { color: var(--muted); }
+.sum-list dd { margin: 0; overflow-wrap: anywhere; }
+.sum-steps { margin: 0; padding-left: 18px; font-size: 13px; }
+.sum-steps li { margin: 2px 0; }
+.sum-notes { font-size: 12px; margin-top: 6px; }
+.sum-notes div + div { margin-top: 4px; }
+.sum-todo ul { margin: 0; padding-left: 18px; font-size: 13px; color: #9a6700; }
+.sum-actions { flex-direction: column; align-items: stretch; margin-top: 16px; padding-top: 14px; }
+.sum-actions .btn { justify-content: center; text-align: center; }
+@media (max-width: 960px) {
+  .req-layout { grid-template-columns: 1fr; gap: 16px; }
+  .req-summary { position: static; }
+}
+@media (max-width: 760px) {
+  .req-fields { grid-template-columns: 1fr; }
+  .segmented { width: 100%; }
+  .segmented label { flex: 1; text-align: center; }
+}

@@ -68,6 +68,20 @@ check("journal: department settings", "Відділ «Логістика»: по
       and "Відділ «Логістика»: керівник відділу" in labels)
 check("route text", "Керівник (від 1 000 USD) → Бухгалтер → Фіндиректор (завжди) → Оплата" in page("/admin/departments"))
 
+# ---------- підказка маршруту в заявці (панель «Підсумок»)
+login("a@ftpua.com")
+pv = c.get("/requests/route-preview?amount=100000&currency=UAH&department=LOG&payment_form=bank&organization_id=1").get_json()
+check("route preview: head, accountant, cfo always", pv["steps"][0] == "Керівник відділу: H" and "Фіндиректор" in pv["steps"]
+      and pv["steps"][-1] == "Оплата" and any("завжди" in n for n in pv["notes"]))
+pv = c.get("/requests/route-preview?amount=500&currency=UAH&department=LOG&payment_form=bank&organization_id=1").get_json()
+check("route preview: below head threshold", not pv["steps"][0].startswith("Керівник")
+      and any(n.startswith("Без керівника відділу") for n in pv["notes"]))
+pv = c.get("/requests/route-preview?amount=500&currency=UAH&department=FIN&payment_form=cash").get_json()
+check("route preview: foreign department ignored, cash accountant", pv["steps"][0] == "Бухгалтер (готівка)")
+html = page("/requests/new")
+check("form: blocks, money input, summary", all(t in html for t in ("Кому і за що", "Скільки і коли", "Хто платить",
+      'class="money-input', 'id="req-summary"', 'id="sum-steps"', 'id="date-chips"')))
+
 # ---------- поріг керівника й фіндиректор для відділу
 r = submit(500)  # ≈ 12 USD
 check("below head threshold -> skipped with note", r["status"] == "accountant"

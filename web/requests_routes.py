@@ -3,6 +3,7 @@ import io
 import logging
 import mimetypes
 from copy import deepcopy
+from datetime import timedelta
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 
@@ -24,7 +25,7 @@ import workflow as wf
 
 from web.auth import _home, _load_visible, login_required, requires
 from web.listing import _filtered, _page, _parse_date, _ref_keys
-from web.request_helpers import INLINE_EXT, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
+from web.request_helpers import INLINE_EXT, _parse_amount, add_workdays, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
 
 
 bp = Blueprint("requests", __name__)
@@ -73,6 +74,61 @@ def requests_list(*, context):
         handover_count=db.count("handover_mine", g.roles, email),
         paid_entry=wf.paid_entry,
     )
+
+
+def _pay_date_presets():
+    """Швидкий вибір дати оплати з урахуванням «найранішої дати оплати» (налаштування «Заявка»)."""
+    today = clock.today()
+    days = int(app_settings.get("req_min_pay_days") or 0)
+    earliest = add_workdays(today, days) if days else today
+    nxt = add_workdays(earliest, 1)
+    presets = [("Сьогодні" if earliest == today else f"Найраніше — {earliest:%d.%m}", earliest),
+               ("Завтра" if (nxt - today).days == 1 else f"{nxt:%d.%m}", nxt),
+               ("Через тиждень", earliest + timedelta(days=7))]
+    return {"earliest_pay": earliest, "pay_presets": presets}
+
+
+@bp.route("/requests/route-preview")
+@bp.route("/requests/<int:request_id>/route-preview")
+@login_required
+@requires("initiator")
+def route_preview(request_id=None, *, context):
+    """Хто погоджуватиме заявку з поточними даними форми (панель «Підсумок»), і чого ще бракує для відправки."""
+    a, user = request.args, g.user
+    existing = _load_visible(request_id) if request_id else {"attachments": [], "lines": []}
+    dept = a.get("department") if a.get("department") in org_structure.request_departments_of(user["oid"]) \
+        else existing.get("department") or org_structure.department_of(user["oid"])
+    req = {**existing, "author_email": user["email"], "department": dept, "currency": a.get("currency") or "UAH",
+           "amount": _parse_amount(a.get("amount")), "payment_form": a.get("payment_form") or "bank",
+           "organization_id": a.get("organization_id") or existing.get("organization_id"),
+           "accountant_type": a.get("accountant_type") or None, "payer": a.get("payer") or None,
+           "counterparty_id": a.get("counterparty_id") or None, "expense_code": a.get("expense_code") or None,
+           "pay_date": _parse_date(a.get("pay_date")),
+           "lines": [None] * min(int(a.get("lines")) if (a.get("lines") or "").isdigit() else 0, 200)}
+    rs = _route_settings(req)
+    steps, notes = [], []
+    if rs["head_mode"] == "approve":
+        heads = dept_settings.approvers(dept)
+        if user["email"].lower() in {h.lower() for h in rs["heads"]}:
+            steps.append("Керівник відділу — ви (зараховується автоматично)")
+        elif heads:
+            steps.append("Керівник відділу: " + ", ".join(h["name"] or h["email"] for h in heads))
+        else:
+            notes.append("У відділу немає керівника — цей крок пропуститься")
+    elif rs.get("head_note"):
+        notes.append(rs["head_note"].replace("Погодження керівника відділу пропущено: ", "Без керівника відділу: "))
+    role = wf.accountant_role(req)
+    accountant = wf.ROLES.get(role) if role else "Бухгалтер (залежить від організації)"
+    if rs["cfo_step"] and rs["mode"] == "parallel":
+        steps.append(f"{accountant} + Фіндиректор (одночасно)")
+    else:
+        steps.append(accountant)
+        if rs["cfo_step"]:
+            steps.append("Фіндиректор")
+    if rs.get("cfo_note"):
+        notes.append(rs["cfo_note"])
+    todo = list(submit_requirements(req).values()) if req["amount"] else []
+    return {"steps": steps + ["Оплата"], "notes": notes, "todo": todo}
 
 
 @bp.route("/requests/new", methods=["GET", "POST"])
@@ -200,6 +256,9 @@ def request_card(request_id=None, *, context):
         parallel=req.get("route_mode") == "parallel",
         head_names=", ".join(h["name"] or h["email"] for h in dept_settings.approvers(req.get("department"))),
         dept_options=org_structure.request_departments_of(user["oid"]),
+        head_approves=dept_settings.head_approves(req.get("department")),
+        lines_required=bool(app_settings.get("req_lines_required")),
+        **_pay_date_presets(),
         participants=req.get("participants") or [],
         # Учасники, як їх бачить форма: збережені або (після помилки в полях) ті, що користувач уже набрав
         participants_state=_participants_state(req, existing, errors),

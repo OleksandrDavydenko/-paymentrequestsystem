@@ -1,7 +1,7 @@
 {# Вибір статті витрат: поле з підказками + модальне вікно довідника.
    Очікує req, errors, editable, expense_items (список {code, name}). #}
 <div class="field">
-  <label for="expense-input">Стаття витрат</label>
+  <label for="expense-input" class="req">Стаття витрат</label>
   {% if editable and not expense_items and not req.expense_code %}
   <div class="exp-no-budget">
     Вам ще не призначено статті бюджету. Зверніться до адміністратора системи.
