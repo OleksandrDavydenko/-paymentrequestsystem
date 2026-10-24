@@ -40,7 +40,7 @@
 {% set last = history[-1] if history else none %}
 {% if preview %}{% include "request/_preview_bar.html" %}{% endif %}
 
-<div class="card">
+<div class="card req-head">
   <div class="title-row">
     <h1>{% if req.number %}Заявка № {{ req.number }}{% else %}Нова заявка на оплату{% endif %}</h1>
     <span class="badge {{ st[1] }}">{{ st[0] }}</span>

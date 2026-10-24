@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="uk" data-theme="{{ color_theme or 'blue' }}">
+<html lang="uk" data-theme="{{ color_theme or 'blue' }}"{% if holiday %} data-holiday="{{ holiday }}"{% endif %}>
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -40,6 +40,7 @@
       <a href="{{ url_for('admin.admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}">Адміністрування</a>
       {% endif %}
     </nav>
+    <span class="holiday-greet" aria-hidden="true"></span>
     {% if user_name %}
     <details class="user-menu">
       <summary title="{{ user_name }}">

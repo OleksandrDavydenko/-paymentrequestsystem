@@ -50,9 +50,44 @@
     {% endfor %}
   </div>
 
+  <div class="budget-section-title">Святкове оформлення</div>
+  <p class="muted" style="margin-top:0">Відмічені свята з'являються самі у свої дні (за київським часом) і зникають: прикраси
+    в шапці й на картці заявки, у будь-якій темі й дизайні. «Спробувати» показує оформлення на цій сторінці; прикраси нічого
+    не перекривають, а якщо в системі вимкнено анімацію — не рухаються.</p>
+  <div class="holiday-now">
+    {% if holiday_active %}Зараз діє: <strong>{{ (holiday_list | selectattr('code', 'equalto', holiday_active) | first).name }}</strong>
+      {% if holiday_now != 'auto' %}<span class="muted">— вибрано вручну («Показати зараз»)</span>{% endif %}
+    {% elif holiday_next %}Зараз без оформлення — наступне: <strong>{{ holiday_next[0] }}</strong> з {{ holiday_next[1] }}
+    {% else %}Зараз без оформлення — відмітьте свята нижче{% endif %}
+  </div>
+  <div class="design-options">
+    {% for h in holiday_list %}
+    <label class="design-option">
+      <input type="checkbox" name="holidays" value="{{ h.code }}" {{ 'checked' if h.on }} aria-label="{{ h.name }} — за календарем">
+      <span class="holiday-thumb holiday-scope" data-holiday="{{ h.code }}" aria-hidden="true">
+        <span class="ht-head"><span class="ht-logo"></span><i></i><i></i><span class="ht-obj"></span></span>
+        <span class="ht-card"><b></b><em></em><em class="short"></em></span>
+      </span>
+      <span class="design-name"><strong>{{ h.name }}</strong>{% if h.code == holiday_active %}<span class="mode-saved">діє зараз</span>{% endif %}</span>
+      <span class="muted design-desc">{{ h.when }} · «{{ h.greet }}»</span>
+      <button type="button" class="btn btn-sm holiday-try" data-holiday="{{ h.code }}">Спробувати</button>
+    </label>
+    {% endfor %}
+  </div>
+  <label class="mode-option">
+    <span><strong>Показати зараз</strong>
+      <select name="holiday_now" class="inline-select" aria-label="Показати зараз">
+        {% for code, label in HOLIDAY_NOW.items() %}<option value="{{ code }}" {{ 'selected' if holiday_now == code }}>{{ label }}</option>{% endfor %}
+      </select>
+      <span class="mode-hint">Вручну, незалежно від дати й галочок — наприклад, щоб увімкнути оформлення заздалегідь.
+        «За календарем» — лише відмічені свята у свої дні.</span></span>
+  </label>
+
   <div class="form-actions" style="justify-content:flex-start">
     <button type="submit" class="btn btn-primary">Зберегти</button>
     <span class="muted" id="theme-trying" hidden>Тему показано лише на цій сторінці — натисніть «Зберегти», щоб застосувати для всіх.</span>
+    <span class="muted" id="holiday-trying" hidden>Оформлення показано лише на цій сторінці.
+      <button type="button" class="btn-link" id="holiday-undo">Прибрати</button></span>
   </div>
 </form>
 <script>
@@ -64,4 +99,16 @@ document.querySelectorAll('.theme-try').forEach(b => b.addEventListener('click',
   if (radio) radio.checked = true;
   document.getElementById('theme-trying').hidden = b.dataset.theme === '{{ color_theme }}';
 }));
+// «Спробувати» свято: оформлення на цій сторінці (шапка), до збереження нічого не змінюється
+const savedHoliday = document.documentElement.dataset.holiday || '';
+document.querySelectorAll('.holiday-try').forEach(b => b.addEventListener('click', e => {
+  e.preventDefault();
+  document.documentElement.dataset.holiday = b.dataset.holiday;
+  document.getElementById('holiday-trying').hidden = false;
+}));
+document.getElementById('holiday-undo').addEventListener('click', () => {
+  if (savedHoliday) document.documentElement.dataset.holiday = savedHoliday;
+  else delete document.documentElement.dataset.holiday;
+  document.getElementById('holiday-trying').hidden = true;
+});
 </script>

@@ -1255,3 +1255,128 @@ html[data-theme="dark"] dialog { background: var(--card); color: var(--text); }
 .ct-row i.body { flex-basis: 100%; height: 12px; background: var(--surface); }
 .ct-bar { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-top: 2px solid var(--primary); background: var(--card); }
 .ct-bar i { flex: 1; height: 6px; background: var(--text); opacity: .5; }
+
+/* ---------- Святкове оформлення («Налаштування → Дизайн»): <html data-holiday="…"> задає картинки й привітання,
+   загальні правила нижче їх показують. Лише прикраси — нічого не перекривають (pointer-events: none). Ті самі змінні
+   діють на мініатюрах (.holiday-scope[data-holiday]). Кольори прикрас — власні, тож пасують до будь-якої теми. */
+[data-holiday] {
+  --hd-strip: none; --hd-strip-h: 0px; --hd-strip-w: auto; --hd-strip-anim: none;  /* смуга по нижньому краю шапки */
+  --hd-sky: none; --hd-sky-anim: none;                                              /* «небо»: сніг, сердечка */
+  --hd-logo: none; --hd-logo-w: 0px; --hd-logo-h: 0px; --hd-logo-x: 0px; --hd-logo-y: 0px; --hd-logo-r: 0deg;
+  --hd-objects: none; --hd-objects-w: 0px;                                           /* предмети біля привітання */
+  --hd-corner: none;                                                                 /* куток картки заявки */
+  --hd-band: none; --hd-band-h: 0px;                                                 /* смуга вгорі картки */
+  --hd-greet: "";
+}
+[data-holiday="new_year"] {
+  --hd-strip: url(/static/holiday/garland.svg); --hd-strip-h: 22px; --hd-strip-w: 96px; --hd-strip-anim: hd-twinkle;
+  --hd-sky: url(/static/holiday/snow.svg); --hd-sky-anim: hd-fall;
+  --hd-logo: url(/static/holiday/hat.svg); --hd-logo-w: 26px; --hd-logo-h: 21px; --hd-logo-x: -9px; --hd-logo-y: -7px; --hd-logo-r: -16deg;
+  --hd-corner: url(/static/holiday/fir.svg); --hd-greet: "З Новим роком і Різдвом!";
+}
+[data-holiday="easter"] {
+  --hd-objects: url(/static/holiday/eggs.svg); --hd-objects-w: 62px;
+  --hd-corner: url(/static/holiday/willow.svg); --hd-greet: "Христос воскрес!";
+}
+[data-holiday="independence"] {
+  --hd-strip: url(/static/holiday/ribbon-ua.svg); --hd-strip-h: 13px; --hd-strip-w: 156px;
+  --hd-logo: url(/static/holiday/wheat.svg); --hd-logo-w: 17px; --hd-logo-h: 26px; --hd-logo-x: -12px; --hd-logo-y: -2px; --hd-logo-r: -8deg;
+  --hd-corner: url(/static/holiday/wheat-corner.svg); --hd-greet: "З Днем Незалежності!";
+}
+[data-holiday="vyshyvanka"] {
+  --hd-strip: url(/static/holiday/vyshyvanka.svg); --hd-strip-h: 12px; --hd-strip-w: 24px;
+  --hd-band: url(/static/holiday/vyshyvanka.svg); --hd-band-h: 12px;
+  --hd-corner: url(/static/holiday/vyshyvanka-rose.svg); --hd-greet: "З Днем вишиванки!";
+}
+[data-holiday="accountant"] {
+  --hd-objects: url(/static/holiday/coins.svg); --hd-objects-w: 62px;
+  --hd-corner: url(/static/holiday/accountant.svg); --hd-greet: "З Днем бухгалтера!";
+}
+[data-holiday="women_day"] {
+  --hd-objects: url(/static/holiday/tulips.svg); --hd-objects-w: 56px;
+  --hd-corner: url(/static/holiday/tulips-corner.svg); --hd-greet: "З 8 Березня!";
+}
+[data-holiday="valentine"] {
+  --hd-sky: url(/static/holiday/hearts.svg); --hd-sky-anim: hd-rise; --hd-sky-op: .6;
+  --hd-corner: url(/static/holiday/hearts-corner.svg); --hd-greet: "З Днем закоханих!";
+}
+[data-holiday="halloween"] {
+  --hd-objects: url(/static/holiday/pumpkins.svg); --hd-objects-w: 60px;
+  --hd-corner: url(/static/holiday/cobweb.svg); --hd-greet: "Щасливого Хелловіну!";
+}
+
+/* Шапка: зміст над прикрасами */
+html[data-holiday] header > * { position: relative; z-index: 2; }
+html[data-holiday] header::before, html[data-holiday] header::after { content: ""; position: absolute; pointer-events: none; }
+html[data-holiday] header::before {  /* смуга: висить під нижнім краєм шапки */
+  left: 0; right: 0; bottom: calc(var(--hd-strip-h) * -0.65); height: var(--hd-strip-h); z-index: 3;
+  background: var(--hd-strip) left top / var(--hd-strip-w) var(--hd-strip-h) repeat-x;
+  animation: var(--hd-strip-anim) 3.2s ease-in-out infinite;
+}
+html[data-holiday] header::after {  /* «небо» */
+  inset: 0; z-index: 1; opacity: var(--hd-sky-op, .8); background: var(--hd-sky) 0 0 / auto repeat;
+  animation: var(--hd-sky-anim) 16s linear infinite;
+}
+html[data-holiday] header .brand::before {
+  content: ""; position: absolute; pointer-events: none; left: var(--hd-logo-x); top: var(--hd-logo-y);
+  width: var(--hd-logo-w); height: var(--hd-logo-h); background: var(--hd-logo) center / contain no-repeat;
+  transform: rotate(var(--hd-logo-r)); filter: drop-shadow(0 1px 1px rgba(0, 0, 0, .25));
+}
+.holiday-greet { display: none; }
+html[data-holiday] .holiday-greet { display: inline-flex; align-items: flex-end; align-self: stretch; gap: 8px; pointer-events: none;
+  flex-shrink: 0; padding-left: var(--hd-objects-w); padding-bottom: 8px;
+  background: var(--hd-objects) left bottom 3px / auto 27px no-repeat; }
+html[data-holiday] .holiday-greet::after { content: var(--hd-greet); font-size: 12px; font-weight: 600; white-space: nowrap;
+  padding: 3px 10px; border-radius: 999px; background: rgba(255, 255, 255, .16); color: var(--header-text); margin-bottom: 4px; }
+@media (max-width: 1399px) { html[data-holiday] .holiday-greet::after { display: none; } }
+@media (max-width: 1179px) { html[data-holiday] .holiday-greet { display: none; } }
+@keyframes hd-fall { from { background-position: 0 0; } to { background-position: 40px 60px; } }
+@keyframes hd-rise { from { background-position: 0 56px; } to { background-position: -32px 0; } }
+@keyframes hd-twinkle {
+  0%, 100% { filter: drop-shadow(0 0 2px rgba(255, 214, 120, .45)); }
+  50% { filter: drop-shadow(0 0 6px rgba(255, 230, 160, .95)) brightness(1.15); }
+}
+
+/* Картка заявки: куток і (для вишиванки) смуга вгорі */
+.req-head { position: relative; }
+html[data-holiday] .req-head { padding-top: calc(20px + var(--hd-band-h)); }
+html[data-holiday] .req-head > .title-row, html[data-holiday] .req-head > .req-meta { padding-right: 92px; }
+html[data-holiday] .req-head::after, html[data-holiday] .req-head::before { content: ""; position: absolute; pointer-events: none; }
+html[data-holiday] .req-head::after { top: 0; right: 0; width: 124px; height: 76px; border-top-right-radius: 8px;
+  background: var(--hd-corner) right top / contain no-repeat; }
+html[data-holiday] .req-head::before { top: 0; left: 0; right: 0; height: var(--hd-band-h); border-radius: 8px 8px 0 0;
+  background: var(--hd-band) left top / auto var(--hd-band-h) repeat-x; }
+@media (max-width: 760px) {
+  html[data-holiday] .req-head::after { width: 84px; height: 52px; }
+  html[data-holiday] .req-head > .title-row, html[data-holiday] .req-head > .req-meta { padding-right: 60px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-holiday] header::before, html[data-holiday] header::after, .ht-head::after, .ht-head::before { animation: none !important; }
+}
+
+/* «Налаштування → Дизайн»: мініатюри свят (шапка й картка в поточній темі) */
+.holiday-thumb { display: flex; flex-direction: column; gap: 10px; height: 104px; border-radius: 6px; overflow: hidden;
+  border: 1px solid var(--line); background: var(--bg); }
+.ht-head { position: relative; display: flex; align-items: center; gap: 6px; height: 30px; padding: 0 10px; flex: none;
+  background: var(--header-bg); }
+.ht-head::before, .ht-head::after { content: ""; position: absolute; pointer-events: none; }
+.ht-head::before { left: 0; right: 0; bottom: calc(var(--hd-strip-h) * -0.4); height: calc(var(--hd-strip-h) * .7); z-index: 2;
+  background: var(--hd-strip) left top / calc(var(--hd-strip-w) * .7) calc(var(--hd-strip-h) * .7) repeat-x;
+  animation: var(--hd-strip-anim) 3.2s ease-in-out infinite; }
+.ht-head::after { inset: 0; opacity: .8; background: var(--hd-sky) 0 0 / 60% auto repeat; animation: var(--hd-sky-anim) 16s linear infinite; }
+.ht-head i { width: 26px; height: 4px; border-radius: 2px; background: var(--header-text); opacity: .7; position: relative; z-index: 1; }
+.ht-logo { position: relative; z-index: 1; width: 14px; height: 14px; border-radius: 4px; background: #fff; flex: none; }
+.ht-logo::before { content: ""; position: absolute; left: calc(var(--hd-logo-x) * .6); top: calc(var(--hd-logo-y) * .6);
+  width: calc(var(--hd-logo-w) * .6); height: calc(var(--hd-logo-h) * .6); background: var(--hd-logo) center / contain no-repeat;
+  transform: rotate(var(--hd-logo-r)); }
+.ht-obj { margin-left: auto; position: relative; z-index: 1; width: calc(var(--hd-objects-w) * .6); height: 17px; align-self: flex-end;
+  margin-bottom: 1px; background: var(--hd-objects) left bottom / auto 17px no-repeat; }
+.ht-card { position: relative; flex: 1; margin: 0 10px 10px; border-radius: 5px; background: var(--card); box-shadow: 0 0 0 1px var(--line);
+  display: flex; flex-direction: column; gap: 5px; padding: calc(8px + var(--hd-band-h) * .6) 8px 8px; overflow: hidden; }
+.ht-card::before, .ht-card::after { content: ""; position: absolute; pointer-events: none; }
+.ht-card::before { top: 0; left: 0; right: 0; height: calc(var(--hd-band-h) * .6); background: var(--hd-band) left top / auto 100% repeat-x; }
+.ht-card::after { top: 0; right: 0; width: 74px; height: 46px; background: var(--hd-corner) right top / contain no-repeat; }
+.ht-card b { width: 40%; height: 6px; border-radius: 3px; background: var(--text); opacity: .75; }
+.ht-card em { width: 55%; height: 4px; border-radius: 2px; background: var(--line); }
+.ht-card em.short { width: 35%; }
+.holiday-now { margin: 0 0 10px; padding: 8px 12px; border-radius: 6px; background: var(--surface); font-size: 13px; }

@@ -21,6 +21,7 @@ import dept_settings
 import employees
 import expense_items
 import google_login
+import holidays
 import mailer
 import notify_log
 import org_structure
@@ -160,8 +161,15 @@ def _context(tab):
                    SMTP_SECURITY=mailer.SECURITY, telegram=telegram_notify.status(),
                    mail_problems=len(notify_log.query(200, status="problems")))
     elif tab == "design":
+        today, enabled = clock.today(), app_settings.get("holidays") or []
+        upcoming = holidays.next_up(today, enabled)
         ctx.update(color_theme=app_settings.get("color_theme"), COLOR_THEMES=schema.COLOR_THEMES,
-                   card_design=app_settings.get("card_design"), CARD_DESIGNS=schema.CARD_DESIGNS)
+                   card_design=app_settings.get("card_design"), CARD_DESIGNS=schema.CARD_DESIGNS,
+                   holiday_list=[{"code": code, "name": name, "greet": greet, "when": holidays.when(code, today),
+                                  "on": code in enabled} for code, (name, greet) in holidays.HOLIDAYS.items()],
+                   holiday_active=holidays.active(today, enabled, app_settings.get("holiday_now")),
+                   holiday_now=app_settings.get("holiday_now"), HOLIDAY_NOW=schema.SETTINGS["holiday_now"].choices(),
+                   holiday_next=(holidays.HOLIDAYS[upcoming[0]][0], holidays.fmt_day(upcoming[1])) if upcoming else None)
     elif tab == "data":
         ctx.update(login="google" if app_settings.get("login_methods") == "google" else "both",
                    login_effective=login_mode(),
@@ -247,6 +255,9 @@ def design_preview(*, context):
     design = a.get("design") if a.get("design") in schema.CARD_DESIGNS else app_settings.get("card_design")
     theme = a.get("theme") if a.get("theme") in schema.COLOR_THEMES else app_settings.get("color_theme")
     mode = "view" if a.get("mode") == "view" else "edit"
+    holiday = a.get("holiday") if a.get("holiday") in holidays.HOLIDAYS else (
+        None if a.get("holiday") == "none" else holidays.active(clock.today(), app_settings.get("holidays"),
+                                                                 app_settings.get("holiday_now")))
     req = _sample_request(user)
     routed = deepcopy(req)
     wf.add_history(routed, "create", user, "initiator", to_status="draft")
@@ -264,6 +275,7 @@ def design_preview(*, context):
     contractor_lists = {dept or "": contractor_items(dept), "": contractor_items(None)}
     return _render_card(req, req, {}, user, roles, expense_items.get_items(), contractor_lists, design=design, preview={
         "preview_mode": mode, "CARD_DESIGNS": schema.CARD_DESIGNS, "COLOR_THEMES": schema.COLOR_THEMES,
+        "holiday": holiday, "preview_holiday": holiday or "none", "HOLIDAYS": holidays.HOLIDAYS,
         "steps_static": [name for _, name in wf.stage_names(routed)], "back_url": url_for("admin.admin_settings", tab="design"),
         **theme_context(theme)})
 

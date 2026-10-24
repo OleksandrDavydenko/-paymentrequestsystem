@@ -101,6 +101,15 @@ def _card_designs():
     return CARD_DESIGNS
 
 
+def _holidays():
+    import holidays
+    return {code: name for code, (name, _) in holidays.HOLIDAYS.items()}
+
+
+def _holiday_now():
+    return {"auto": "За календарем", **_holidays()}
+
+
 def _color_themes():
     return COLOR_THEMES
 
@@ -222,6 +231,9 @@ _LIST = [
     # ---- Дизайн
     Setting("card_design", "Дизайн картки заявки", "design", "choice", "classic", _card_designs),
     Setting("color_theme", "Кольорова тема", "design", "choice", "blue", _color_themes),
+    # Святкове оформлення: відмічені свята — самі у свої дні; «Показати зараз» — будь-яке вручну
+    Setting("holidays", "Святкове оформлення за календарем", "design", "multi", [], _holidays),
+    Setting("holiday_now", "Святкове оформлення: показати зараз", "design", "choice", "auto", _holiday_now),
     # ---- Дані й система
     Setting("data_mode", "Дані", "data", "choice", "work", _data_modes, available=_db_on),
     Setting("login_methods", "Вхід у систему", "data", "choice", "both", _login_methods),

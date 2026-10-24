@@ -3,12 +3,15 @@
   <div class="pv-title"><strong>Приклад картки заявки</strong> <span class="muted">— дані для прикладу, нічого не зберігається</span>
     <a href="{{ url_for('admin.admin_settings', tab='design') }}" class="btn btn-sm">← До налаштувань «Дизайн»</a></div>
   <div class="pv-row"><span class="pv-label">Дизайн</span>
-    {% for code, label in CARD_DESIGNS.items() %}<a class="chip {{ 'active' if code == card_design }}" href="{{ url_for('admin.design_preview', design=code, theme=color_theme, mode=preview_mode) }}">{{ label.split(':')[0] }}</a>{% endfor %}</div>
+    {% for code, label in CARD_DESIGNS.items() %}<a class="chip {{ 'active' if code == card_design }}" href="{{ url_for('admin.design_preview', design=code, theme=color_theme, mode=preview_mode, holiday=preview_holiday) }}">{{ label.split(':')[0] }}</a>{% endfor %}</div>
   <div class="pv-row"><span class="pv-label">Тема</span>
-    {% for code, label in COLOR_THEMES.items() %}<a class="chip {{ 'active' if code == color_theme }}" href="{{ url_for('admin.design_preview', design=card_design, theme=code, mode=preview_mode) }}">{{ label.split(':')[0] }}</a>{% endfor %}</div>
+    {% for code, label in COLOR_THEMES.items() %}<a class="chip {{ 'active' if code == color_theme }}" href="{{ url_for('admin.design_preview', design=card_design, theme=code, mode=preview_mode, holiday=preview_holiday) }}">{{ label.split(':')[0] }}</a>{% endfor %}</div>
   <div class="pv-row"><span class="pv-label">Вигляд</span>
-    <a class="chip {{ 'active' if preview_mode == 'edit' }}" href="{{ url_for('admin.design_preview', design=card_design, theme=color_theme, mode='edit') }}">Заповнення ініціатором</a>
-    <a class="chip {{ 'active' if preview_mode == 'view' }}" href="{{ url_for('admin.design_preview', design=card_design, theme=color_theme, mode='view') }}">Перегляд бухгалтером</a></div>
+    <a class="chip {{ 'active' if preview_mode == 'edit' }}" href="{{ url_for('admin.design_preview', design=card_design, theme=color_theme, mode='edit', holiday=preview_holiday) }}">Заповнення ініціатором</a>
+    <a class="chip {{ 'active' if preview_mode == 'view' }}" href="{{ url_for('admin.design_preview', design=card_design, theme=color_theme, mode='view', holiday=preview_holiday) }}">Перегляд бухгалтером</a></div>
+  <div class="pv-row"><span class="pv-label">Свято</span>
+    <a class="chip {{ 'active' if preview_holiday == 'none' }}" href="{{ url_for('admin.design_preview', design=card_design, theme=color_theme, mode=preview_mode, holiday='none') }}">Без свята</a>
+    {% for code, (name, _) in HOLIDAYS.items() %}<a class="chip {{ 'active' if code == preview_holiday }}" href="{{ url_for('admin.design_preview', design=card_design, theme=color_theme, mode=preview_mode, holiday=code) }}">{{ name }}</a>{% endfor %}</div>
   <div class="pv-toast" id="pv-toast" hidden>Це приклад — нічого не зберігається й не надсилається</div>
 </div>
 <script>
