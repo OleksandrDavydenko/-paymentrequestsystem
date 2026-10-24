@@ -19,6 +19,7 @@ import notifications
 import org_structure
 import organizations
 import payment_accounts
+import settings_schema
 import storage as db
 import user_budget
 import user_directory
@@ -283,11 +284,39 @@ def request_card(request_id=None, *, context):
             flash(f"Заявку № {number} записано", "success")
             if action == "ok":
                 return redirect(url_for("requests.requests_list"))
-            return redirect(url_for("requests.request_card", request_id=new_id))
+            step = request.form.get("step")  # майстер / чек-лист: повернутися на той самий крок
+            return redirect(url_for("requests.request_card", request_id=new_id, step=step if step in STEP_FIELDS else None))
 
+    return _render_card(req, existing, errors, user, roles, budget_items, contractor_lists)
+
+
+# Кроки нових дизайнів картки й поля кожного: помилка сервера відкриває крок із першою помилкою
+STEP_FIELDS = {"kind": ("payment_kind",), "who": ("counterparty_id", "expense_code", "department"), "lines": ("lines",),
+               "amount": ("amount", "currency", "pay_date", "payment_form", "organization_id", "payer", "accountant_type"),
+               "note": ("note",), "review": ("documents",)}
+
+
+def _start_step(errors, req):
+    """З якого кроку відкрити майстер / чек-лист: крок із помилкою, ?step= після «Записати», для збереженої — перевірка."""
+    for step, fields in STEP_FIELDS.items():
+        if any(f in errors for f in fields):
+            return step
+    if request.args.get("step") in STEP_FIELDS:
+        return request.args["step"]
+    return "review" if req.get("id") else ""
+
+
+def _render_card(req, existing, errors, user, roles, budget_items, contractor_lists, design=None, preview=None):
+    """Картка заявки в дизайні з «Налаштування → Дизайн». design — інший дизайн (приклад в адмінці);
+    preview — змінні прикладу (тема, панель перемикання): тоді форма нічого не надсилає."""
+    use_invoices, ask_kind = invoices_on(), kind_question_on()
+    if design not in settings_schema.CARD_DESIGNS:
+        design = app_settings.get("card_design")
     available = wf.available_actions(req, roles, user["email"])
-    return render_template(
-        "request_form.html",
+    ctx = dict(
+        card_design=design if design in settings_schema.CARD_DESIGNS else "classic",
+        start_step=_start_step(errors, req),
+        preview=preview,
         user_name=user["name"],
         req=req,
         errors=errors,
@@ -384,6 +413,8 @@ def request_card(request_id=None, *, context):
         back_url=url_for("requests.requests_list") if wf.is_author(req, user["email"]) and "initiator" in roles
         else _home(),
     )
+    ctx.update(preview or {})
+    return render_template("request_form.html", **ctx)
 
 
 @bp.route("/requests/<int:request_id>/payment-account", methods=["POST"])

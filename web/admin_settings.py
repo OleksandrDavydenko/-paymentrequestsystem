@@ -4,6 +4,9 @@
 і організації мають власні форми (admin_routes.py) й лише показуються на своїх вкладках.
 """
 import json
+from copy import deepcopy
+from datetime import timedelta
+from decimal import Decimal
 
 from flask import Response, flash, g, redirect, render_template, request, session, url_for
 
@@ -14,11 +17,13 @@ import counterparties
 import currencies
 import db_sql
 import departments
+import dept_settings
 import employees
 import expense_items
 import google_login
 import mailer
 import notify_log
+import org_structure
 import organizations
 import payment_types
 import rates
@@ -155,7 +160,8 @@ def _context(tab):
                    SMTP_SECURITY=mailer.SECURITY, telegram=telegram_notify.status(),
                    mail_problems=len(notify_log.query(200, status="problems")))
     elif tab == "design":
-        ctx.update(color_theme=app_settings.get("color_theme"), COLOR_THEMES=schema.COLOR_THEMES)
+        ctx.update(color_theme=app_settings.get("color_theme"), COLOR_THEMES=schema.COLOR_THEMES,
+                   card_design=app_settings.get("card_design"), CARD_DESIGNS=schema.CARD_DESIGNS)
     elif tab == "data":
         ctx.update(login="google" if app_settings.get("login_methods") == "google" else "both",
                    login_effective=login_mode(),
@@ -202,6 +208,64 @@ def _parse_cfo_rules(form, changes, errors):
     codes = sorted({c.strip() for c in form.getlist("cfo_expense_codes") if c and c.strip()})
     if codes != sorted(app_settings.get("cfo_expense_codes") or []):
         changes["cfo_expense_codes"] = codes
+
+
+def _sample_request(user):
+    """Заявка-приклад для «Відкрити приклад»: контрагент і стаття з довідників, два рахунки, сума й дата."""
+    found, _ = counterparties.search("", limit=1, scope="onec")
+    # Відділ із прямими витратами — щоб у прикладі були всі кроки (тип, рахунки)
+    own = org_structure.department_of(user["oid"])
+    dept = own if own and dept_settings.direct_allowed(own) else next(
+        (d for d in departments.get_map() if dept_settings.direct_allowed(d)), own)
+    code = next((c for c in dept_settings.contractor_codes(dept) if expense_items.get_name(c)), None) or next(
+        (i["code"] for i in expense_items.get_items()), None)
+    org_mode = app_settings.get("org_field_mode")
+    return {"id": None, "number": None, "author_email": user["email"], "author_name": user["name"], "department": dept,
+            "status": "draft", "payment_form": "bank", "currency": "USD", "amount": Decimal("12500.00"),
+            "pay_date": clock.today() + timedelta(days=3), "counterparty_id": found[0]["id"] if found else None,
+            "expense_code": code, "payment_kind": "contractor",
+            "note": "Морське перевезення контейнера для клієнта — приклад примітки для бухгалтера",
+            "organization_id": next(iter(organizations.options()), None) if org_mode == "organization" else None,
+            "accountant_type": "acc_resident" if org_mode == "accountant" else None,
+            "payer": "resident" if org_mode == "payer" else None,
+            "lines": [{"invoice": "НП-104512", "amount": Decimal("7800.00"), "currency": "USD", "deal": "Угода №15/2025 · фрахт"},
+                      {"invoice": "НП-104788", "amount": Decimal("4700.00"), "currency": "USD",
+                       "deal": "Угода №15/2025 · митне оформлення"}],
+            "history": [], "attachments": [], "participants": [], "created_at": clock.now(), "version": 0}
+
+
+@bp.route("/admin/settings/design/preview")
+@login_required
+@requires("admin")
+def design_preview(*, context):
+    """Приклад картки заявки в будь-якому дизайні й темі (не змінюючи налаштувань): заповнення ініціатором або
+    перегляд бухгалтером. Дані — приклад, форми на сторінці нічого не надсилають."""
+    from web.context import theme_context
+    from web.request_helpers import contractor_items
+    from web.requests_routes import _render_card
+    a, user = request.args, g.user
+    design = a.get("design") if a.get("design") in schema.CARD_DESIGNS else app_settings.get("card_design")
+    theme = a.get("theme") if a.get("theme") in schema.COLOR_THEMES else app_settings.get("color_theme")
+    mode = "view" if a.get("mode") == "view" else "edit"
+    req = _sample_request(user)
+    routed = deepcopy(req)
+    wf.add_history(routed, "create", user, "initiator", to_status="draft")
+    try:
+        wf.apply_action(routed, "submit", {"initiator"}, user)
+    except wf.WorkflowError:
+        pass
+    if mode == "view":  # заявку подав інший співробітник, бачить бухгалтер, чия черга
+        req = {**routed, "id": 10 ** 9, "number": "000000123", "author_email": "manager@example.com",
+               "author_name": "Ірина Петренко (приклад)"}
+        roles = {wf.accountant_role(req) or "acc_resident"}
+    else:
+        roles = {"initiator"}
+    dept = req["department"]
+    contractor_lists = {dept or "": contractor_items(dept), "": contractor_items(None)}
+    return _render_card(req, req, {}, user, roles, expense_items.get_items(), contractor_lists, design=design, preview={
+        "preview_mode": mode, "CARD_DESIGNS": schema.CARD_DESIGNS, "COLOR_THEMES": schema.COLOR_THEMES,
+        "steps_static": [name for _, name in wf.stage_names(routed)], "back_url": url_for("admin.admin_settings", tab="design"),
+        **theme_context(theme)})
 
 
 @bp.route("/admin/settings", methods=["GET", "POST"])

@@ -1,0 +1,21 @@
+{# Підсумок: сума, контрагент, стаття, відділ, оплата; «Погоджуватимуть», «Що ще заповнити». Частина картки заявки для всіх дизайнів (ідентифікатори полів — спільні для JS). #}
+    <div class="sum-title">Підсумок</div>
+    <div class="sum-amount" id="sum-amount">{{ ((req.amount | money) ~ ' ' ~ req.currency) if req.amount else '—' }}</div>
+    <dl class="sum-list">
+      {% if ask_kind or (invoices_on and not editable and req.payment_kind) %}<dt>Тип</dt><dd id="sum-kind">{{ PAYMENT_KINDS.get(req.payment_kind, '—') }}</dd>{% endif %}
+      <dt>Контрагент</dt><dd id="sum-cp">{{ cp.name if cp else '—' }}</dd>
+      <dt>Стаття</dt><dd id="sum-exp">{{ (req.expense_code ~ ' · ' ~ (expense_title(req.expense_code) or '')) if req.expense_code else '—' }}</dd>
+      <dt>Відділ</dt><dd id="sum-dept">{{ dept_name(req.department) if req.department else '—' }}</dd>
+      <dt>Оплата</dt><dd id="sum-pay">{{ (req.pay_date | d) if req.pay_date else '—' }} · {{ PAYMENT_FORMS.get(req.payment_form, '') }}</dd>
+    </dl>
+    {% if editable %}
+    <div class="sum-route">
+      <div class="sum-sub">Погоджуватимуть</div>
+      <ol class="sum-steps" id="sum-steps" data-url="{{ url_for('requests.route_preview', request_id=req.id) if req.id else url_for('requests.route_preview') }}"></ol>
+      <div class="sum-notes muted" id="sum-notes"></div>
+    </div>
+    <div class="sum-todo" id="sum-todo-wrap" hidden>
+      <div class="sum-sub">Що ще заповнити</div>
+      <ul id="sum-todo"></ul>
+    </div>
+    {% endif %}

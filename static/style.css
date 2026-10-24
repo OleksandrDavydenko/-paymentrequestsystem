@@ -1085,3 +1085,162 @@ html[data-theme="dark"] dialog { background: var(--card); color: var(--text); }
 .tt-row s.ok { background: var(--ok-soft); box-shadow: inset 0 0 0 1px var(--ok); }
 .tt-row s.warn { background: var(--amber-soft); box-shadow: inset 0 0 0 1px var(--warn); }
 .tt-row s.bad { background: var(--bad-soft); box-shadow: inset 0 0 0 1px var(--bad); }
+
+/* ---------- Картка заявки: «Покроковий майстер» */
+.btn-quiet { border-color: transparent; background: transparent; color: var(--muted); }
+.btn-quiet:hover { background: var(--hover); color: var(--text); }
+.req-wizard fieldset, .req-checklist fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+.wiz-steps { display: flex; list-style: none; margin: 0 0 6px; padding: 0; }
+.wiz-steps li { flex: 1; position: relative; }
+.wiz-steps li + li::before { content: ""; position: absolute; top: 15px; left: calc(-50% + 18px); right: calc(50% + 18px); height: 2px;
+  background: var(--line); }
+.wiz-steps li.is-done + li::before, .wiz-steps li.is-current::before { background: var(--primary); }
+.wiz-steps li.is-first::before { display: none; }
+.wiz-steps button { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 100%; padding: 0; border: 0;
+  background: none; font: inherit; color: var(--muted); cursor: pointer; }
+.ws-num { width: 30px; height: 30px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  font-weight: 700; font-size: 13px; background: var(--card); border: 2px solid var(--line); position: relative; z-index: 1; }
+.ws-title { font-size: 13px; text-align: center; }
+.wiz-steps li.is-done .ws-num { background: var(--primary-100); border-color: var(--primary); color: var(--primary); }
+.wiz-steps li.is-current .ws-num { background: var(--primary); border-color: var(--primary); color: #fff; box-shadow: 0 0 0 4px var(--primary-ring); }
+.wiz-steps li.is-current .ws-title { color: var(--text); font-weight: 600; }
+.wiz-steps button:hover .ws-num { border-color: var(--primary-300); }
+.wiz-progress { display: none; align-items: center; gap: 10px; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.wiz-bar { flex: 1; height: 6px; border-radius: 3px; background: var(--line); overflow: hidden; display: block; min-width: 60px; }
+.wiz-bar i { display: block; height: 100%; width: 0; background: var(--primary); border-radius: 3px; transition: width .25s; }
+.req-wizard .wiz-step { display: none; border-top: 1px solid var(--line); margin-top: 14px; padding-top: 18px; }
+.req-wizard .wiz-step.is-current { display: block; animation: wiz-in .2s ease-out; }
+@keyframes wiz-in { from { transform: translateY(6px); } to { transform: none; } }
+.wiz-title { font-size: 18px; margin: 0 0 6px; }
+.wiz-lead { margin: 0 0 14px; font-size: 13px; }
+.wiz-sub { font-weight: 600; margin: 18px 0 8px; padding-top: 14px; border-top: 1px dashed var(--line); }
+.req-wizard .req-fields, .req-checklist .req-fields { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 24px; }
+.req-wizard .wiz-step[data-step="kind"] .kind-field { max-width: 720px; }
+.req-wizard #kind-label, .req-checklist #kind-label { display: none; }  /* питання вже в заголовку кроку */
+.wiz-error { margin: 14px 0 0; padding: 8px 12px; border-radius: 6px; background: var(--bad-soft); color: var(--bad-ink);
+  border-left: 4px solid var(--bad); font-size: 13px; font-weight: 600; }
+.field.need input, .field.need select, .field.need .exp-input-wrap, .field.need .segmented { border-color: var(--bad);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--bad) 15%, transparent); }
+.wiz-nav { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 20px; padding-top: 14px; border-top: 1px solid var(--line); }
+.wiz-nav .spacer { flex: 1; }
+.wiz-final { display: none; gap: 8px; }
+.req-wizard.on-review .wiz-final { display: inline-flex; }
+.review-grid { display: grid; grid-template-columns: minmax(0, 1fr) 280px; gap: 24px; align-items: start; }
+.review-amount { font-size: 28px; font-weight: 700; margin-bottom: 10px; }
+.review-facts { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; margin: 0 0 14px; }
+.review-facts > div { display: grid; grid-template-columns: 110px 1fr auto; gap: 8px; align-items: baseline; padding: 8px 0;
+  border-bottom: 1px solid var(--line); min-width: 0; }
+.review-facts dt { color: var(--muted); font-size: 13px; }
+.review-facts dd { margin: 0; font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.wiz-goto { font-size: 12px; color: var(--primary); padding: 0; }
+.review-main textarea { min-height: 64px; }
+.review-docs-hint { font-size: 13px; }
+.review-side { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+@media (max-width: 760px) {
+  .wiz-steps { display: none; }
+  .wiz-progress { display: flex; }
+  .req-wizard .req-fields, .req-checklist .req-fields, .review-grid, .review-facts { grid-template-columns: 1fr; }
+  .wiz-nav .btn { flex: 1 1 auto; justify-content: center; }
+  .wiz-nav .spacer { display: none; }
+  .req-wizard.on-review .wiz-final { width: 100%; flex-direction: column; }
+}
+
+/* ---------- Картка заявки: «Чек-лист» */
+.cl-progress { display: flex; align-items: center; gap: 12px; font-size: 13px; margin-bottom: 12px; }
+.cl-sec { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; background: var(--card); }
+.req-checklist .cl-sec.req-block { margin-top: 0; padding-top: 0; border-top: 1px solid var(--line); }
+.req-checklist .cl-sec.req-block:first-of-type { border-top: 1px solid var(--line); }
+.cl-sec.is-skipped { display: none; }
+.cl-sec.is-open { border-color: var(--primary-300); box-shadow: 0 0 0 1px var(--primary-300); }
+.cl-head { display: flex; align-items: center; gap: 10px; width: 100%; padding: 12px 14px; border: 0; background: none; font: inherit;
+  color: var(--text); text-align: left; cursor: pointer; border-radius: 10px; }
+.cl-head:hover { background: var(--hover); }
+.cl-mark { flex: none; width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--border); display: inline-flex;
+  align-items: center; justify-content: center; font-size: 12px; font-weight: 700; }
+.cl-sec.is-done .cl-mark { background: var(--ok); border-color: var(--ok); color: #fff; }
+.cl-sec.is-done .cl-mark::after { content: "\2713"; }
+.cl-title { font-weight: 600; white-space: nowrap; display: inline-flex; gap: 4px; align-items: center; margin: 0; font-size: 14px; }
+.cl-opt { font-weight: 400; font-size: 12px; }
+.cl-sum { flex: 1; min-width: 0; color: var(--muted); font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cl-edit { font-size: 12px; color: var(--primary); }
+.cl-sec.is-open .cl-sum, .cl-sec.is-open .cl-edit { visibility: hidden; }
+.cl-body { display: none; padding: 4px 16px 16px 46px; }
+.cl-sec.is-open .cl-body { display: block; }
+.cl-next { margin-top: 14px; }
+.cl-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; font-size: 13px; }
+.cl-bar { position: sticky; bottom: 0; z-index: 5; display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  margin: 14px -24px -20px; padding: 12px 24px; background: var(--card); border-top: 2px solid var(--primary);
+  border-radius: 0 0 8px 8px; box-shadow: 0 -4px 12px rgba(0, 0, 0, .06); }
+.cl-bar-sum { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.cl-bar-amount { font-size: 20px; font-weight: 700; }
+.cl-bar-route { font-size: 12px; }
+.sum-steps-inline, .inline-list { display: inline; margin: 0; padding: 0; list-style: none; }
+.sum-steps-inline li, .inline-list li { display: inline; }
+.sum-steps-inline li + li::before { content: " \2192\00a0"; }
+.inline-list li + li::before { content: ", "; }
+.cl-bar-todo { font-size: 12px; color: var(--amber-ink); }
+.cl-bar-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+@media (max-width: 760px) {
+  .cl-body { padding-left: 16px; }
+  .cl-sum { display: none; }
+  .cl-bar { margin: 14px -16px -16px; padding: 10px 16px; }
+  .cl-bar-actions { width: 100%; }
+  .cl-bar-actions .btn { flex: 1 1 auto; justify-content: center; }
+}
+
+/* ---------- Перегляд заявки в нових дизайнах (редагувати не можна) */
+.req-view .rv-top { display: flex; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding-bottom: 14px;
+  border-bottom: 1px solid var(--line); margin-bottom: 4px; }
+.rv-amount { font-size: 30px; font-weight: 700; line-height: 1.1; }
+.rv-amount span { font-size: 18px; color: var(--muted); font-weight: 600; }
+.rv-sub { margin-top: 6px; font-size: 13px; }
+.rv-cp { max-width: 420px; }
+.rv-cp-name { font-size: 16px; font-weight: 600; }
+.rv-cp-brief { font-size: 12px; }
+.rv-label { font-size: 12px; text-transform: uppercase; letter-spacing: .4px; color: var(--muted); font-weight: 600; margin: 14px 0 6px; }
+.rv-top .rv-label { margin-top: 0; }
+.rv-facts { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 24px; margin: 0; }
+.rv-facts > div { padding: 10px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.rv-facts dt { font-size: 12px; color: var(--muted); }
+.rv-facts dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.rv-note { white-space: pre-wrap; background: var(--surface); border-radius: 6px; padding: 10px 12px; }
+.rv-lines td { padding: 6px 10px; }
+
+/* ---------- Приклад картки в адмінці */
+.preview-bar { margin-bottom: 16px; border-top: 3px solid var(--violet); display: flex; flex-direction: column; gap: 8px; }
+.pv-title { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.pv-title .btn { margin-left: auto; }
+.pv-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pv-label { width: 70px; font-size: 13px; color: var(--muted); }
+.pv-toast { padding: 8px 12px; border-radius: 6px; background: var(--violet-soft); color: var(--violet-ink); font-weight: 600; }
+
+/* ---------- «Налаштування → Дизайн»: мініатюри дизайнів картки */
+.design-links { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; font-size: 13px; }
+.card-thumb { display: flex; gap: 6px; height: 104px; padding: 8px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); }
+.card-thumb i, .card-thumb b, .card-thumb u { display: block; border-radius: 2px; }
+.card-thumb i { height: 4px; background: var(--line); }
+.card-thumb i.h { height: 6px; width: 40%; background: var(--muted); opacity: .6; margin-top: 4px; }
+.card-thumb u { height: 10px; width: 40px; background: var(--primary); border-radius: 3px; }
+.card-thumb u.ghost { background: var(--card); box-shadow: inset 0 0 0 1px var(--border); }
+.ct-main, .ct-side, .ct-panel { display: flex; flex-direction: column; gap: 5px; padding: 6px; border-radius: 4px; background: var(--card);
+  box-shadow: 0 0 0 1px var(--line); }
+.ct-classic .ct-main { flex: 1; }
+.ct-classic .ct-side { width: 34%; background: var(--surface); }
+.ct-side i.big { height: 8px; width: 70%; background: var(--text); opacity: .7; }
+.ct-side u { margin-top: auto; width: 100%; }
+.ct-wizard, .ct-checklist { flex-direction: column; }
+.ct-steps { display: flex; gap: 6px; justify-content: center; align-items: center; }
+.ct-steps b { width: 12px; height: 12px; border-radius: 50%; background: var(--card); box-shadow: inset 0 0 0 2px var(--line); }
+.ct-steps b.on { background: var(--primary); box-shadow: none; }
+.ct-panel { flex: 1; }
+.ct-nav { display: flex; justify-content: space-between; margin-top: auto; }
+.ct-rows { display: flex; flex-direction: column; gap: 4px; flex: 1; }
+.ct-row { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; padding: 4px 6px; border-radius: 4px; background: var(--card);
+  box-shadow: 0 0 0 1px var(--line); }
+.ct-row b { width: 8px; height: 8px; border-radius: 50%; box-shadow: inset 0 0 0 2px var(--border); }
+.ct-row.done b { background: var(--ok); box-shadow: none; }
+.ct-row i { flex: 1; }
+.ct-row.open { box-shadow: 0 0 0 1px var(--primary); }
+.ct-row i.body { flex-basis: 100%; height: 12px; background: var(--surface); }
+.ct-bar { display: flex; align-items: center; gap: 6px; padding: 4px 6px; border-top: 2px solid var(--primary); background: var(--card); }
+.ct-bar i { flex: 1; height: 6px; background: var(--text); opacity: .5; }

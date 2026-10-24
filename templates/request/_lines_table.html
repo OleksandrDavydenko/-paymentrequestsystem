@@ -1,0 +1,29 @@
+{# Таблиця рахунків (рядки додає «Підбір рахунків»). Частина картки заявки для всіх дизайнів (ідентифікатори полів — спільні для JS). #}
+    <div class="table-wrap">
+    <table class="lines">
+      <thead>
+        <tr><th>№</th><th>Рахунок</th><th class="num">Сума</th><th>Валюта</th><th>Угода</th><th></th></tr>
+      </thead>
+      <tbody id="lines-body">
+        {% for line in req.lines %}
+        <tr>
+          <td class="n">{{ loop.index }}</td>
+          <td><input type="text" name="lines-{{ loop.index0 }}-invoice" value="{{ line.invoice }}" autocomplete="off"></td>
+          <td><input type="text" inputmode="decimal" autocomplete="off" name="lines-{{ loop.index0 }}-amount" value="{{ line.amount_raw if line.amount_raw is defined else line.amount }}" style="text-align:right"></td>
+          <td>
+            <select name="lines-{{ loop.index0 }}-currency">
+              {% for c in CURRENCIES %}<option {{ 'selected' if c == line.currency }}>{{ c }}</option>{% endfor %}{% if line.currency and line.currency not in CURRENCIES %}<option selected>{{ line.currency }}</option>{% endif %}
+            </select>
+          </td>
+          <td><input type="text" name="lines-{{ loop.index0 }}-deal" value="{{ line.deal }}" autocomplete="off"></td>
+          <td>{% if editable %}<button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button>{% endif %}</td>
+        </tr>
+        {% endfor %}
+        <tr id="no-lines" {{ 'hidden' if req.lines }}><td colspan="6" class="empty">Рахунків не додано</td></tr>
+      </tbody>
+      <tfoot>
+        <tr><td></td><td>Разом</td><td class="num" id="lines-total"></td><td colspan="3"><span class="lines-diff" id="lines-diff" hidden></span></td></tr>
+      </tfoot>
+    </table>
+    </div>
+    {% if errors.lines %}<div class="lines-err">{{ errors.lines }}</div>{% endif %}

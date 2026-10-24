@@ -1,0 +1,50 @@
+{# Класична картка: блоки на одній сторінці й панель «Підсумок» праворуч. #}
+<form method="post" class="card req-form {{ 'kind-pending' if ask_kind and editable and not req.payment_kind and not kind_forced }}" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
+  {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
+  {% if errors.documents %}<div class="flash error">{{ errors.documents }}</div>{% endif %}
+  <div class="req-layout">
+  <div class="req-main">
+  <fieldset {{ 'disabled' if not editable }}>
+
+  <section class="req-block" id="block-who">
+    <h2 class="req-step"><span class="uc-num">1</span>Кому і за що</h2>
+    {% include "request/_kind.html" %}
+    {% include "request/_who.html" %}
+  </section>
+
+  <section class="req-block" id="block-amount">
+    <h2 class="req-step"><span class="uc-num">2</span>Скільки і коли</h2>
+    {% include "request/_amount.html" %}
+  </section>
+
+  <section class="req-block" id="block-payer">
+    <h2 class="req-step"><span class="uc-num">3</span>Хто платить</h2>
+    {% include "request/_payer.html" %}
+  </section>
+
+  {% set show_lines = req.lines or (invoices_on and editable and lines_mode != 'hide') %}
+  {% if show_lines %}
+  <section class="req-block section" id="block-lines" {{ 'hidden' if invoices_on and not lines_block and not req.lines }}>
+    <div class="section-head">
+      <h2 class="req-step"><span class="uc-num">4</span>Рахунки{% if lines_required %} <span class="req-mark" title="Обов'язково">*</span>{% endif %}</h2>
+      {% if editable %}
+      <button type="button" class="btn btn-sm" id="pick-invoices">Підбір рахунків</button>
+      {% endif %}
+    </div>
+    {% include "request/_lines_table.html" %}
+  </section>
+  {% endif %}
+
+  <section class="req-block" id="block-note">
+    <h2 class="req-step"><span class="uc-num">5</span>Примітка</h2>
+    {% include "request/_note.html" %}
+  </section>
+  </fieldset>
+  </div>
+
+  <aside class="req-summary" id="req-summary" aria-label="Підсумок заявки">
+    {% include "request/_summary.html" %}
+    {% include "request/_actions.html" %}
+  </aside>
+  </div>
+</form>

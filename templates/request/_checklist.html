@@ -1,0 +1,83 @@
+{# Чек-лист: усі розділи на одній сторінці; заповнений розділ згортається в рядок-підсумок («Змінити» — розгорнути),
+   наступний відкривається сам; унизу закріплена панель із сумою, маршрутом і кнопками (request-steps.js). #}
+{% macro cl_head(title, optional=False) -%}
+  <button type="button" class="cl-head" aria-expanded="false">
+    <span class="cl-mark" aria-hidden="true"></span>
+    <span class="cl-title">{{ title }}{% if optional %} <span class="muted cl-opt">необов'язково</span>{% endif %}</span>
+    <span class="cl-sum"></span>
+    <span class="cl-edit">Змінити</span>
+  </button>
+{%- endmacro %}
+{% macro cl_next() -%}
+  <div class="cl-next"><button type="button" class="btn btn-primary btn-sm cl-continue">Готово, далі</button></div>
+{%- endmacro %}
+<form method="post" class="card req-form req-checklist" id="request-form" data-design="checklist" data-start="{{ start_step }}"
+      novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
+  <input type="hidden" name="step" value="{{ start_step }}">
+  {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
+  {% if errors.documents %}<div class="flash error">{{ errors.documents }}</div>{% endif %}
+  <div class="cl-progress">
+    <span>Заповнено <strong id="cl-count">0</strong> з <strong id="cl-total">0</strong></span>
+    <span class="wiz-bar"><i id="cl-bar"></i></span>
+  </div>
+
+  <fieldset>
+  <section class="cl-sec req-block" data-step="kind" data-title="Що оплачуємо" {{ 'hidden' if not ask_kind }}>
+    {{ cl_head('Що оплачуємо?') }}
+    <div class="cl-body">{% include "request/_kind.html" %}{{ cl_next() }}</div>
+  </section>
+
+  <section class="cl-sec req-block" data-step="who" data-title="Кому">
+    {{ cl_head('Кому і за що') }}
+    <div class="cl-body">{% include "request/_who.html" %}{{ cl_next() }}</div>
+  </section>
+
+  {% set show_lines = req.lines or (invoices_on and lines_mode != 'hide') %}
+  {% if show_lines %}
+  <section class="cl-sec req-block" id="block-lines" data-step="lines" data-title="Рахунки" {{ 'hidden' if invoices_on and not lines_block and not req.lines }}>
+    <button type="button" class="cl-head" aria-expanded="false">
+      <span class="cl-mark" aria-hidden="true"></span>
+      <span class="cl-title req-step">Рахунки{% if lines_required %} <span class="req-mark" title="Обов'язково">*</span>{% endif %}</span>
+      <span class="cl-sum"></span>
+      <span class="cl-edit">Змінити</span>
+    </button>
+    <div class="cl-body">
+      <div class="cl-tools"><button type="button" class="btn btn-primary btn-sm" id="pick-invoices">Підбір рахунків</button>
+        <span class="muted">неоплачені рахунки контрагента з 1С для відділу заявки, від найстаріших</span></div>
+      {% include "request/_lines_table.html" %}{{ cl_next() }}
+    </div>
+  </section>
+  {% endif %}
+
+  <section class="cl-sec req-block" data-step="amount" data-title="Сума й оплата">
+    {{ cl_head('Скільки, коли і хто платить') }}
+    <div class="cl-body">{% include "request/_amount.html" %}{% include "request/_payer.html" %}{{ cl_next() }}</div>
+  </section>
+
+  <section class="cl-sec req-block" data-step="note" data-title="Примітка" data-optional="1">
+    {{ cl_head('Примітка', optional=True) }}
+    <div class="cl-body">{% include "request/_note.html" %}{{ cl_next() }}</div>
+  </section>
+  </fieldset>
+
+  <div class="wiz-error" id="wiz-error" role="alert" hidden></div>
+  <div class="cl-bar">
+    <div class="cl-bar-sum">
+      <span class="cl-bar-amount" id="sum-amount">{{ ((req.amount | money) ~ ' ' ~ req.currency) if req.amount else '—' }}</span>
+      <span class="cl-bar-route muted">Погоджуватимуть:
+        {% if steps_static is defined %}<ol class="sum-steps-inline" id="sum-steps" data-static="1">{% for s in steps_static %}<li>{{ s }}</li>{% endfor %}</ol>
+        {% else %}<ol class="sum-steps-inline" id="sum-steps" data-url="{{ url_for('requests.route_preview', request_id=req.id) if req.id else url_for('requests.route_preview') }}"></ol>{% endif %}</span>
+      <span class="sum-notes muted" id="sum-notes" hidden></span>
+      <span class="cl-bar-todo" id="sum-todo-wrap" hidden>Ще заповнити: <ul id="sum-todo" class="inline-list"></ul></span>
+    </div>
+    <div class="cl-bar-actions">
+      <a href="{{ back_url }}" class="btn">Закрити</a>
+      <button type="submit" name="action" value="save" class="btn">Записати</button>
+      {% if can_submit %}
+      <button type="submit" name="action" value="submit" class="btn btn-primary"
+              {% if req.status == 'rework' %}title="Після виправлень заявка знову піде за маршрутом з першого етапу"{% endif %}>
+        {{ 'Відправити повторно' if req.status == 'rework' else 'Відправити на погодження' }}</button>
+      {% endif %}
+    </div>
+  </div>
+</form>

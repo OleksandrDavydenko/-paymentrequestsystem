@@ -1,0 +1,25 @@
+{# Тип оплати «Що оплачуємо?» (або позначка, що відділ без прямих витрат). Частина картки заявки для всіх дизайнів (ідентифікатори полів — спільні для JS). #}
+    {% if invoices_on %}<input type="hidden" name="payment_kind_sent" value="1">{% endif %}
+    {% if ask_kind %}
+    <div class="field kind-field" id="kind-field">
+      <div id="kind-choice" {{ 'hidden' if kind_forced }}>
+        <label class="req" id="kind-label">Що оплачуємо?</label>
+        <div class="segmented {{ 'invalid' if errors.payment_kind }}" role="radiogroup" aria-labelledby="kind-label">
+          {% for code, label in PAYMENT_KINDS.items() %}
+          <label><input type="radio" name="payment_kind" value="{{ code }}" {{ 'checked' if code == req.payment_kind }}><span>{{ label }}</span></label>
+          {% endfor %}
+        </div>
+        {{ err('payment_kind') }}
+        <ul class="kind-explain" id="kind-explain">
+          {% for code, label in PAYMENT_KINDS.items() %}
+          <li data-kind="{{ code }}" class="{{ 'is-chosen' if code == req.payment_kind }}"><strong>{{ label }}</strong> — {{ PAYMENT_KIND_HINTS[code] }}</li>
+          {% endfor %}
+        </ul>
+        <div class="kind-unsure">Не впевнені? Є рахунок підрядника за угодою з клієнтом — це <strong>пряма витрата</strong>; усе інше — <strong>непряма</strong>.</div>
+        <div class="kind-chosen" id="kind-chosen" {{ 'hidden' if not req.payment_kind }}>Ви обрали: <strong id="kind-chosen-name">{{ PAYMENT_KINDS.get(req.payment_kind, '') }}</strong> — <span id="kind-chosen-text">{{ PAYMENT_KIND_CHOSEN.get(req.payment_kind, '') }}</span>.</div>
+        {% if editable %}<span class="field-hint kind-first">Спершу виберіть, що оплачуєте, — далі з'являться інші поля заявки.</span>{% endif %}
+      </div>
+      <div class="kind-forced" id="kind-forced" {{ 'hidden' if not kind_forced }}><strong>Непряма витрата</strong> — у цьому відділі
+        прямих витрат немає: {{ PAYMENT_KIND_CHOSEN.indirect }}.</div>
+    </div>
+    {% endif %}

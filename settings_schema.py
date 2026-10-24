@@ -91,6 +91,16 @@ COLOR_THEMES = {"blue": "Синя: стандартна, як було",
 THEME_COLORS = {"blue": "#0f6cbd", "dark": "#161b22", "emerald": "#0f7b6c", "graphite": "#2b2f36"}
 
 
+# Дизайн картки заявки: класична — як була; майстер і чек-лист — ті самі поля, інший порядок заповнення
+CARD_DESIGNS = {"classic": "Класична: блоки на одній сторінці й панель «Підсумок» праворуч",
+                "wizard": "Покроковий майстер: один крок на екрані, «Далі» й «Назад», наприкінці — перевірка всієї заявки",
+                "checklist": "Чек-лист: усе на одній сторінці, заповнений розділ згортається в рядок, унизу — сума й кнопки"}
+
+
+def _card_designs():
+    return CARD_DESIGNS
+
+
 def _color_themes():
     return COLOR_THEMES
 
@@ -210,6 +220,7 @@ _LIST = [
     Setting("approver_remind_cfo_copy", "Копія нагадування фіндиректору, якщо заявка чекає бухгалтера", "notify",
             "bool", False),
     # ---- Дизайн
+    Setting("card_design", "Дизайн картки заявки", "design", "choice", "classic", _card_designs),
     Setting("color_theme", "Кольорова тема", "design", "choice", "blue", _color_themes),
     # ---- Дані й система
     Setting("data_mode", "Дані", "data", "choice", "work", _data_modes, available=_db_on),

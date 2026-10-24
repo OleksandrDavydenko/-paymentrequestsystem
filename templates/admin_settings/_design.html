@@ -2,6 +2,33 @@
   <input type="hidden" name="tab" value="design">
   <div class="toolbar"><h2 style="margin:0">Дизайн</h2></div>
 
+  <div class="budget-section-title">Дизайн картки заявки</div>
+  <p class="muted" style="margin-top:0">Поля, правила й кнопки ті самі — змінюється, як ініціатор заповнює заявку. Погоджувачі
+    в новому дизайні бачать заявку коротким переглядом (сума, контрагент, факти, рахунки), у класичному — як зараз.
+    «Приклад» відкриває картку з прикладом даних у вибраному дизайні, нічого не змінюючи.</p>
+  <div class="design-options">
+    {% for code, label in CARD_DESIGNS.items() %}
+    <label class="design-option">
+      <input type="radio" name="card_design" value="{{ code }}" {{ 'checked' if card_design == code }}>
+      <span class="card-thumb ct-{{ code }}" aria-hidden="true">
+        {% if code == 'classic' %}
+        <span class="ct-main"><i class="h"></i><i></i><i></i><i class="h"></i><i></i><i class="h"></i><i></i></span><span class="ct-side"><i class="big"></i><i></i><i></i><u></u></span>
+        {% elif code == 'wizard' %}
+        <span class="ct-steps"><b class="on"></b><b class="on"></b><b></b><b></b><b></b></span><span class="ct-panel"><i class="h"></i><i></i><i></i><span class="ct-nav"><u class="ghost"></u><u></u></span></span>
+        {% else %}
+        <span class="ct-rows"><span class="ct-row done"><b></b><i></i></span><span class="ct-row done"><b></b><i></i></span><span class="ct-row open"><b></b><i></i><i class="body"></i></span><span class="ct-row"><b></b><i></i></span></span><span class="ct-bar"><i></i><u></u></span>
+        {% endif %}
+      </span>
+      <span class="design-name"><strong>{{ label.split(':')[0] }}</strong>{% if card_design == code %}<span class="mode-saved">діє зараз</span>{% endif %}</span>
+      <span class="muted design-desc">{{ label.split(':', 1)[1].strip() }}</span>
+      <span class="design-links"><span class="muted">Приклад:</span>
+        <a class="btn btn-sm" href="{{ url_for('admin.design_preview', design=code, mode='edit') }}" target="_blank" rel="noopener">заповнення</a>
+        <a class="btn btn-sm" href="{{ url_for('admin.design_preview', design=code, mode='view') }}" target="_blank" rel="noopener">перегляд</a>
+      </span>
+    </label>
+    {% endfor %}
+  </div>
+
   <div class="budget-section-title">Кольорова тема</div>
   <p class="muted" style="margin-top:0">Кольори всієї програми — для всіх користувачів. «Спробувати» одразу показує тему на цій
     сторінці; для всіх вона діятиме після «Зберегти». Листи на пошту не змінюються.</p>

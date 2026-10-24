@@ -1,0 +1,40 @@
+{# Сума й валюта, дата й форма оплати. Частина картки заявки для всіх дизайнів (ідентифікатори полів — спільні для JS). #}
+    <div class="req-fields">
+      <div class="field">
+        <label for="amount" class="req">Сума</label>
+        <div class="money-input {{ 'invalid' if errors.amount or errors.currency }}">
+          <input type="text" inputmode="decimal" id="amount" name="amount" autocomplete="off"
+                 value="{{ req.amount_raw if req.amount_raw is defined else (req.amount if req.amount is not none else '') }}"
+                 class="{{ 'invalid' if errors.amount }}" placeholder="0,00" aria-describedby="amount-hint">
+          <select id="currency" name="currency" class="{{ 'invalid' if errors.currency }}" aria-label="Валюта">
+            {% for c in CURRENCIES %}
+            <option value="{{ c }}" {{ 'selected' if c == req.currency }} title="{{ CURRENCY_NAMES.get(c, '') }}">{{ c }}</option>
+            {% endfor %}
+            {% if req.currency and req.currency not in CURRENCIES %}<option value="{{ req.currency }}" selected>{{ req.currency }} (немає в довіднику)</option>{% endif %}
+          </select>
+        </div>
+        {{ err('amount') }}{{ err('currency') }}
+        {% if editable %}<span class="field-hint" id="amount-hint">Загальна сума до оплати; рахунки нижче мають дати ту саму суму</span>{% endif %}
+      </div>
+      <div class="field">
+        <label for="pay_date" class="req">Дата оплати</label>
+        <input type="date" id="pay_date" name="pay_date" value="{{ req.pay_date.isoformat() if req.pay_date }}"
+               min="{{ earliest_pay.isoformat() if editable and earliest_pay }}" class="{{ 'invalid' if errors.pay_date }}">
+        {{ err('pay_date') }}
+        {% if editable %}
+        <div class="date-chips" id="date-chips">
+          {% for label, day in pay_presets %}<button type="button" class="chip" data-date="{{ day.isoformat() }}">{{ label }}</button>{% endfor %}
+        </div>
+        {% if earliest_pay and earliest_pay > today %}<span class="field-hint">Не раніше {{ earliest_pay | d }} — стільки потрібно на погодження й оплату</span>{% endif %}
+        {% endif %}
+      </div>
+      <div class="field">
+        <label>Форма оплати</label>
+        <div class="segmented" role="radiogroup" aria-label="Форма оплати">
+          {% for code, label in PAYMENT_FORMS.items() %}
+          <label><input type="radio" name="payment_form" value="{{ code }}" {{ 'checked' if code == req.payment_form }}><span>{{ label }}</span></label>
+          {% endfor %}
+        </div>
+        {{ err('payment_form') }}
+      </div>
+    </div>

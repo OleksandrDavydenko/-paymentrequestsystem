@@ -1,0 +1,14 @@
+{# Кнопки картки: відправити, записати, закрити. Частина картки заявки для всіх дизайнів (ідентифікатори полів — спільні для JS). #}
+    <div class="form-actions sum-actions">
+      {% if editable %}
+        {% if can_submit %}
+        <button type="submit" name="action" value="submit" class="btn btn-primary"
+                {% if req.status == 'rework' %}title="Після виправлень заявка знову піде за маршрутом з першого етапу"{% endif %}>
+          {{ 'Відправити повторно' if req.status == 'rework' else 'Відправити на погодження' }}
+        </button>
+        {% endif %}
+        <button type="submit" name="action" value="save" class="btn">Записати</button>
+        <button type="submit" name="action" value="ok" class="btn">Записати й закрити</button>
+      {% endif %}
+      <a href="{{ back_url }}" class="btn">Закрити</a>
+    </div>

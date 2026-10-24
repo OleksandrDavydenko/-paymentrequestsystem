@@ -1,0 +1,100 @@
+{# Покроковий майстер: один крок на екрані, «Назад» / «Далі», останній — перевірка всієї заявки й відправка.
+   Кроки — секції [data-step]; «Рахунки» (#block-lines) і «Що оплачуємо» пропускаються, коли їх немає (request-steps.js). #}
+<form method="post" class="card req-form req-wizard" id="request-form" data-design="wizard" data-start="{{ start_step }}"
+      novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
+  <input type="hidden" name="step" value="{{ start_step }}">
+  {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
+  {% if errors.documents %}<div class="flash error">{{ errors.documents }}</div>{% endif %}
+
+  <ol class="wiz-steps" id="wiz-steps" aria-label="Кроки заявки">
+    {% for key, title in [('kind', 'Що оплачуємо'), ('who', 'Кому'), ('lines', 'Рахунки'), ('amount', 'Сума й оплата'), ('review', 'Перевірка')] %}
+    <li data-goto="{{ key }}"><button type="button"><span class="ws-num">{{ loop.index }}</span><span class="ws-title">{{ title }}</span></button></li>
+    {% endfor %}
+  </ol>
+  <div class="wiz-progress"><span id="wiz-progress-text"></span><span class="wiz-bar"><i id="wiz-bar"></i></span></div>
+
+  <fieldset>
+  <section class="wiz-step req-block" data-step="kind" data-title="Що оплачуємо" {{ 'hidden' if not ask_kind }}>
+    <h2 class="wiz-title">Що оплачуємо?</h2>
+    {% include "request/_kind.html" %}
+  </section>
+
+  <section class="wiz-step req-block" data-step="who" data-title="Кому">
+    <h2 class="wiz-title">Кому платимо і за що</h2>
+    <p class="wiz-lead muted">Контрагент — з довідника 1С (або новий); стаття — з тих, що вам дозволено.</p>
+    {% include "request/_who.html" %}
+  </section>
+
+  {% set show_lines = req.lines or (invoices_on and lines_mode != 'hide') %}
+  {% if show_lines %}
+  <section class="wiz-step req-block" id="block-lines" data-step="lines" data-title="Рахунки" {{ 'hidden' if invoices_on and not lines_block and not req.lines }}>
+    <div class="section-head">
+      <h2 class="wiz-title req-step">Рахунки підрядника{% if lines_required %} <span class="req-mark" title="Обов'язково">*</span>{% endif %}</h2>
+      <button type="button" class="btn btn-primary btn-sm" id="pick-invoices">Підбір рахунків</button>
+    </div>
+    <p class="wiz-lead muted">Неоплачені рахунки контрагента з 1С для відділу заявки — від найстаріших. Якщо сума заявки ще порожня,
+      вона заповниться сумою вибраних рахунків.</p>
+    {% include "request/_lines_table.html" %}
+  </section>
+  {% endif %}
+
+  <section class="wiz-step req-block" data-step="amount" data-title="Сума й оплата">
+    <h2 class="wiz-title">Скільки, коли і хто платить</h2>
+    {% include "request/_amount.html" %}
+    <div class="wiz-sub">Хто платить</div>
+    {% include "request/_payer.html" %}
+  </section>
+
+  <section class="wiz-step req-block" data-step="review" data-title="Перевірка">
+    <h2 class="wiz-title">Перевірте заявку</h2>
+    <div class="review-grid">
+      <div class="review-main">
+        <div class="review-amount" id="sum-amount">{{ ((req.amount | money) ~ ' ' ~ req.currency) if req.amount else '—' }}</div>
+        <dl class="review-facts">
+          {% if ask_kind %}<div><dt>Що оплачуємо</dt><dd id="sum-kind">{{ PAYMENT_KINDS.get(req.payment_kind, '—') }}</dd><button type="button" class="btn-link wiz-goto" data-goto="kind">змінити</button></div>{% endif %}
+          <div><dt>Контрагент</dt><dd id="sum-cp">{{ cp.name if cp else '—' }}</dd><button type="button" class="btn-link wiz-goto" data-goto="who">змінити</button></div>
+          <div><dt>Стаття</dt><dd id="sum-exp">{{ (req.expense_code ~ ' · ' ~ (expense_title(req.expense_code) or '')) if req.expense_code else '—' }}</dd><button type="button" class="btn-link wiz-goto" data-goto="who">змінити</button></div>
+          <div><dt>Відділ</dt><dd id="sum-dept">{{ dept_name(req.department) if req.department else '—' }}</dd></div>
+          <div class="review-lines"><dt>Рахунки</dt><dd id="sum-lines">—</dd><button type="button" class="btn-link wiz-goto" data-goto="lines">змінити</button></div>
+          <div><dt>Оплата</dt><dd id="sum-pay">{{ (req.pay_date | d) if req.pay_date else '—' }} · {{ PAYMENT_FORMS.get(req.payment_form, '') }}</dd><button type="button" class="btn-link wiz-goto" data-goto="amount">змінити</button></div>
+          <div><dt>Хто платить</dt><dd id="sum-payer">—</dd><button type="button" class="btn-link wiz-goto" data-goto="amount">змінити</button></div>
+        </dl>
+        {% include "request/_note.html" %}
+        {% if not req.id %}<p class="muted review-docs-hint">Документи (рахунок, договір, акт) можна додати після «Записати» — тут, під заявкою.</p>{% endif %}
+      </div>
+      <aside class="review-side">
+        {% if steps_static is defined %}
+        <div class="sum-sub">Погоджуватимуть</div>
+        <ol class="sum-steps" id="sum-steps" data-static="1">{% for s in steps_static %}<li>{{ s }}</li>{% endfor %}</ol>
+        <div class="sum-notes muted" id="sum-notes"></div>
+        {% else %}
+        <div class="sum-sub">Погоджуватимуть</div>
+        <ol class="sum-steps" id="sum-steps" data-url="{{ url_for('requests.route_preview', request_id=req.id) if req.id else url_for('requests.route_preview') }}"></ol>
+        <div class="sum-notes muted" id="sum-notes"></div>
+        {% endif %}
+        <div class="sum-todo" id="sum-todo-wrap" hidden>
+          <div class="sum-sub">Що ще заповнити</div>
+          <ul id="sum-todo"></ul>
+        </div>
+      </aside>
+    </div>
+  </section>
+  </fieldset>
+
+  <div class="wiz-error" id="wiz-error" role="alert" hidden></div>
+  <div class="wiz-nav">
+    <button type="button" class="btn" id="wiz-back">← Назад</button>
+    <a href="{{ back_url }}" class="btn btn-quiet">Закрити</a>
+    <button type="submit" name="action" value="save" class="btn btn-quiet" title="Зберегти чернетку й продовжити пізніше">Записати</button>
+    <span class="spacer"></span>
+    <button type="button" class="btn btn-primary" id="wiz-next">Далі →</button>
+    <span class="wiz-final">
+      <button type="submit" name="action" value="ok" class="btn">Записати й закрити</button>
+      {% if can_submit %}
+      <button type="submit" name="action" value="submit" class="btn btn-primary"
+              {% if req.status == 'rework' %}title="Після виправлень заявка знову піде за маршрутом з першого етапу"{% endif %}>
+        {{ 'Відправити повторно' if req.status == 'rework' else 'Відправити на погодження' }}</button>
+      {% endif %}
+    </span>
+  </div>
+</form>

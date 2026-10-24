@@ -38,6 +38,7 @@
 {% block content %}
 {% set st = STATUSES[req.status] %}
 {% set last = history[-1] if history else none %}
+{% if preview %}{% include "request/_preview_bar.html" %}{% endif %}
 
 <div class="card">
   <div class="title-row">
@@ -112,216 +113,13 @@
   {% endif %}
 </div>
 
-<form method="post" class="card req-form {{ 'kind-pending' if ask_kind and editable and not req.payment_kind and not kind_forced }}" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
-  {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
-  {% if errors.documents %}<div class="flash error">{{ errors.documents }}</div>{% endif %}
-  <div class="req-layout">
-  <div class="req-main">
-  <fieldset {{ 'disabled' if not editable }}>
-
-  <section class="req-block" id="block-who">
-    <h2 class="req-step"><span class="uc-num">1</span>Кому і за що</h2>
-    {% if invoices_on %}<input type="hidden" name="payment_kind_sent" value="1">{% endif %}
-    {% if ask_kind %}
-    <div class="field kind-field" id="kind-field">
-      <div id="kind-choice" {{ 'hidden' if kind_forced }}>
-        <label class="req" id="kind-label">Що оплачуємо?</label>
-        <div class="segmented {{ 'invalid' if errors.payment_kind }}" role="radiogroup" aria-labelledby="kind-label">
-          {% for code, label in PAYMENT_KINDS.items() %}
-          <label><input type="radio" name="payment_kind" value="{{ code }}" {{ 'checked' if code == req.payment_kind }}><span>{{ label }}</span></label>
-          {% endfor %}
-        </div>
-        {{ err('payment_kind') }}
-        <ul class="kind-explain" id="kind-explain">
-          {% for code, label in PAYMENT_KINDS.items() %}
-          <li data-kind="{{ code }}" class="{{ 'is-chosen' if code == req.payment_kind }}"><strong>{{ label }}</strong> — {{ PAYMENT_KIND_HINTS[code] }}</li>
-          {% endfor %}
-        </ul>
-        <div class="kind-unsure">Не впевнені? Є рахунок підрядника за угодою з клієнтом — це <strong>пряма витрата</strong>; усе інше — <strong>непряма</strong>.</div>
-        <div class="kind-chosen" id="kind-chosen" {{ 'hidden' if not req.payment_kind }}>Ви обрали: <strong id="kind-chosen-name">{{ PAYMENT_KINDS.get(req.payment_kind, '') }}</strong> — <span id="kind-chosen-text">{{ PAYMENT_KIND_CHOSEN.get(req.payment_kind, '') }}</span>.</div>
-        {% if editable %}<span class="field-hint kind-first">Спершу виберіть, що оплачуєте, — далі з'являться інші поля заявки.</span>{% endif %}
-      </div>
-      <div class="kind-forced" id="kind-forced" {{ 'hidden' if not kind_forced }}><strong>Непряма витрата</strong> — у цьому відділі
-        прямих витрат немає: {{ PAYMENT_KIND_CHOSEN.indirect }}.</div>
-    </div>
-    {% endif %}
-    <div class="req-fields">
-      {% include "_counterparty_picker.html" %}
-      {% include "_expense_picker.html" %}
-      <div class="field">
-        <label for="department">Відділ</label>
-        {% if editable and dept_options | length > 1 %}
-        <select id="department" name="department">
-          {% for d in dept_options %}<option value="{{ d }}" {{ 'selected' if d == req.department }}>{{ dept_name(d) }}</option>{% endfor %}
-          {% if req.department and req.department not in dept_options %}<option value="{{ req.department }}" selected>{{ dept_name(req.department) }}</option>{% endif %}
-        </select>
-        <span class="field-hint">Для якого відділу заявка — його керівник бачить{{ ' і погоджує' if head_approves }} її</span>
-        {% else %}
-        <input type="text" id="department-text" value="{{ dept_name(req.department) if req.department else '—' }}" readonly>
-        {% endif %}
-      </div>
-    </div>
-  </section>
-
-  <section class="req-block" id="block-amount">
-    <h2 class="req-step"><span class="uc-num">2</span>Скільки і коли</h2>
-    <div class="req-fields">
-      <div class="field">
-        <label for="amount" class="req">Сума</label>
-        <div class="money-input {{ 'invalid' if errors.amount or errors.currency }}">
-          <input type="text" inputmode="decimal" id="amount" name="amount" autocomplete="off"
-                 value="{{ req.amount_raw if req.amount_raw is defined else (req.amount if req.amount is not none else '') }}"
-                 class="{{ 'invalid' if errors.amount }}" placeholder="0,00" aria-describedby="amount-hint">
-          <select id="currency" name="currency" class="{{ 'invalid' if errors.currency }}" aria-label="Валюта">
-            {% for c in CURRENCIES %}
-            <option value="{{ c }}" {{ 'selected' if c == req.currency }} title="{{ CURRENCY_NAMES.get(c, '') }}">{{ c }}</option>
-            {% endfor %}
-            {% if req.currency and req.currency not in CURRENCIES %}<option value="{{ req.currency }}" selected>{{ req.currency }} (немає в довіднику)</option>{% endif %}
-          </select>
-        </div>
-        {{ err('amount') }}{{ err('currency') }}
-        {% if editable %}<span class="field-hint" id="amount-hint">Загальна сума до оплати; рахунки нижче мають дати ту саму суму</span>{% endif %}
-      </div>
-      <div class="field">
-        <label for="pay_date" class="req">Дата оплати</label>
-        <input type="date" id="pay_date" name="pay_date" value="{{ req.pay_date.isoformat() if req.pay_date }}"
-               min="{{ earliest_pay.isoformat() if editable and earliest_pay }}" class="{{ 'invalid' if errors.pay_date }}">
-        {{ err('pay_date') }}
-        {% if editable %}
-        <div class="date-chips" id="date-chips">
-          {% for label, day in pay_presets %}<button type="button" class="chip" data-date="{{ day.isoformat() }}">{{ label }}</button>{% endfor %}
-        </div>
-        {% if earliest_pay and earliest_pay > today %}<span class="field-hint">Не раніше {{ earliest_pay | d }} — стільки потрібно на погодження й оплату</span>{% endif %}
-        {% endif %}
-      </div>
-      <div class="field">
-        <label>Форма оплати</label>
-        <div class="segmented" role="radiogroup" aria-label="Форма оплати">
-          {% for code, label in PAYMENT_FORMS.items() %}
-          <label><input type="radio" name="payment_form" value="{{ code }}" {{ 'checked' if code == req.payment_form }}><span>{{ label }}</span></label>
-          {% endfor %}
-        </div>
-        {{ err('payment_form') }}
-      </div>
-    </div>
-  </section>
-
-  <section class="req-block" id="block-payer">
-    <h2 class="req-step"><span class="uc-num">3</span>Хто платить</h2>
-    <div class="req-fields">
-    {% if org_mode == 'accountant' %}
-    <div class="field full">
-      <label class="req">Бухгалтер</label>
-      {{ choice_tiles('accountant_type', ACCOUNTANT_TILES, req.accountant_type, 'Бухгалтер') }}
-      {{ err('accountant_type') }}
-      {% if req.accountant_hint and not errors %}<span class="route-hint">{{ req.accountant_hint | capitalize }} — можна змінити</span>{% endif %}
-      {% if req.organization_id %}<span class="route-hint">Організація: {{ org_name(req.organization_id) }}</span>{% endif %}
-    </div>
-    {% elif org_mode == 'payer' %}
-    <div class="field">
-      <label class="req">Платник</label>
-      {{ choice_tiles('payer', PAYER_TILES, payer_value, 'Платник') }}
-      {{ err('payer') }}
-      {% if req.organization_id %}<span class="route-hint">Організація: {{ org_name(req.organization_id) }}</span>{% endif %}
-    </div>
-    {% else %}
-    <div class="field">
-      <label for="organization_id" class="req">Організація</label>
-      {{ select_ref('organization_id', org_options, req.organization_id, '— оберіть організацію —') }}
-      {{ err('organization_id') }}
-    </div>
-    {% endif %}
-    <div class="field"><span class="route-hint" id="route-hint"></span></div>
-    </div>
-  </section>
-
-  {% set show_lines = req.lines or (invoices_on and editable and lines_mode != 'hide') %}
-  {% if show_lines %}
-  <section class="req-block section" id="block-lines" {{ 'hidden' if invoices_on and not lines_block and not req.lines }}>
-    <div class="section-head">
-      <h2 class="req-step"><span class="uc-num">4</span>Рахунки{% if lines_required %} <span class="req-mark" title="Обов'язково">*</span>{% endif %}</h2>
-      {% if editable %}
-      <button type="button" class="btn btn-sm" id="pick-invoices">Підбір рахунків</button>
-      {% endif %}
-    </div>
-    <div class="table-wrap">
-    <table class="lines">
-      <thead>
-        <tr><th>№</th><th>Рахунок</th><th class="num">Сума</th><th>Валюта</th><th>Угода</th><th></th></tr>
-      </thead>
-      <tbody id="lines-body">
-        {% for line in req.lines %}
-        <tr>
-          <td class="n">{{ loop.index }}</td>
-          <td><input type="text" name="lines-{{ loop.index0 }}-invoice" value="{{ line.invoice }}" autocomplete="off"></td>
-          <td><input type="text" inputmode="decimal" autocomplete="off" name="lines-{{ loop.index0 }}-amount" value="{{ line.amount_raw if line.amount_raw is defined else line.amount }}" style="text-align:right"></td>
-          <td>
-            <select name="lines-{{ loop.index0 }}-currency">
-              {% for c in CURRENCIES %}<option {{ 'selected' if c == line.currency }}>{{ c }}</option>{% endfor %}{% if line.currency and line.currency not in CURRENCIES %}<option selected>{{ line.currency }}</option>{% endif %}
-            </select>
-          </td>
-          <td><input type="text" name="lines-{{ loop.index0 }}-deal" value="{{ line.deal }}" autocomplete="off"></td>
-          <td>{% if editable %}<button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button>{% endif %}</td>
-        </tr>
-        {% endfor %}
-        <tr id="no-lines" {{ 'hidden' if req.lines }}><td colspan="6" class="empty">Рахунків не додано</td></tr>
-      </tbody>
-      <tfoot>
-        <tr><td></td><td>Разом</td><td class="num" id="lines-total"></td><td colspan="3"><span class="lines-diff" id="lines-diff" hidden></span></td></tr>
-      </tfoot>
-    </table>
-    </div>
-    {% if errors.lines %}<div class="lines-err">{{ errors.lines }}</div>{% endif %}
-  </section>
-  {% endif %}
-
-  <section class="req-block" id="block-note">
-    <h2 class="req-step"><span class="uc-num">5</span>Примітка</h2>
-    <div class="field full">
-      <label for="note" class="sr-only">Примітка</label>
-      <textarea id="note" name="note" placeholder="Що оплачуємо, деталі для бухгалтера (необов'язково)">{{ req.note or '' }}</textarea>
-    </div>
-  </section>
-  </fieldset>
-  </div>
-
-  <aside class="req-summary" id="req-summary" aria-label="Підсумок заявки">
-    <div class="sum-title">Підсумок</div>
-    <div class="sum-amount" id="sum-amount">{{ ((req.amount | money) ~ ' ' ~ req.currency) if req.amount else '—' }}</div>
-    <dl class="sum-list">
-      {% if ask_kind or (invoices_on and not editable and req.payment_kind) %}<dt>Тип</dt><dd id="sum-kind">{{ PAYMENT_KINDS.get(req.payment_kind, '—') }}</dd>{% endif %}
-      <dt>Контрагент</dt><dd id="sum-cp">{{ cp.name if cp else '—' }}</dd>
-      <dt>Стаття</dt><dd id="sum-exp">{{ (req.expense_code ~ ' · ' ~ (expense_title(req.expense_code) or '')) if req.expense_code else '—' }}</dd>
-      <dt>Відділ</dt><dd id="sum-dept">{{ dept_name(req.department) if req.department else '—' }}</dd>
-      <dt>Оплата</dt><dd id="sum-pay">{{ (req.pay_date | d) if req.pay_date else '—' }} · {{ PAYMENT_FORMS.get(req.payment_form, '') }}</dd>
-    </dl>
-    {% if editable %}
-    <div class="sum-route">
-      <div class="sum-sub">Погоджуватимуть</div>
-      <ol class="sum-steps" id="sum-steps" data-url="{{ url_for('requests.route_preview', request_id=req.id) if req.id else url_for('requests.route_preview') }}"></ol>
-      <div class="sum-notes muted" id="sum-notes"></div>
-    </div>
-    <div class="sum-todo" id="sum-todo-wrap" hidden>
-      <div class="sum-sub">Що ще заповнити</div>
-      <ul id="sum-todo"></ul>
-    </div>
-    {% endif %}
-    <div class="form-actions sum-actions">
-      {% if editable %}
-        {% if can_submit %}
-        <button type="submit" name="action" value="submit" class="btn btn-primary"
-                {% if req.status == 'rework' %}title="Після виправлень заявка знову піде за маршрутом з першого етапу"{% endif %}>
-          {{ 'Відправити повторно' if req.status == 'rework' else 'Відправити на погодження' }}
-        </button>
-        {% endif %}
-        <button type="submit" name="action" value="save" class="btn">Записати</button>
-        <button type="submit" name="action" value="ok" class="btn">Записати й закрити</button>
-      {% endif %}
-      <a href="{{ back_url }}" class="btn">Закрити</a>
-    </div>
-  </aside>
-  </div>
-</form>
+{% if card_design == 'classic' %}
+{% include "request/_classic.html" %}
+{% elif not editable %}
+{% include "request/_view.html" %}
+{% else %}
+{% include "request/_" ~ card_design ~ ".html" %}
+{% endif %}
 
 {% if self_blocked %}
 <div class="callout blue">Ви автор цієї заявки, тому рішення на цьому етапі ухвалює інша людина з цією роллю:
@@ -865,4 +663,5 @@ document.querySelectorAll('.cp-copy').forEach(b => b.addEventListener('click', a
 <script src="{{ url_for('static', filename='documents.js') }}"></script>
 {% if editable and invoices_on %}<script type="application/json" id="expense-lists">{{ expense_lists | tojson }}</script>{% endif %}
 <script src="{{ url_for('static', filename='request-summary.js') }}"></script>
+{% if editable and card_design in ('wizard', 'checklist') %}<script src="{{ url_for('static', filename='request-steps.js') }}"></script>{% endif %}
 {% endblock %}

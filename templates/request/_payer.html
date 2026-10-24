@@ -1,0 +1,26 @@
+{# Хто платить: бухгалтер, платник або організація. Частина картки заявки для всіх дизайнів (ідентифікатори полів — спільні для JS). #}
+    <div class="req-fields">
+    {% if org_mode == 'accountant' %}
+    <div class="field full">
+      <label class="req">Бухгалтер</label>
+      {{ choice_tiles('accountant_type', ACCOUNTANT_TILES, req.accountant_type, 'Бухгалтер') }}
+      {{ err('accountant_type') }}
+      {% if req.accountant_hint and not errors %}<span class="route-hint">{{ req.accountant_hint | capitalize }} — можна змінити</span>{% endif %}
+      {% if req.organization_id %}<span class="route-hint">Організація: {{ org_name(req.organization_id) }}</span>{% endif %}
+    </div>
+    {% elif org_mode == 'payer' %}
+    <div class="field">
+      <label class="req">Платник</label>
+      {{ choice_tiles('payer', PAYER_TILES, payer_value, 'Платник') }}
+      {{ err('payer') }}
+      {% if req.organization_id %}<span class="route-hint">Організація: {{ org_name(req.organization_id) }}</span>{% endif %}
+    </div>
+    {% else %}
+    <div class="field">
+      <label for="organization_id" class="req">Організація</label>
+      {{ select_ref('organization_id', org_options, req.organization_id, '— оберіть організацію —') }}
+      {{ err('organization_id') }}
+    </div>
+    {% endif %}
+    <div class="field"><span class="route-hint" id="route-hint"></span></div>
+    </div>

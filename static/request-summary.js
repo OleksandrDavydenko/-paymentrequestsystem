@@ -12,6 +12,7 @@
   const fmtDate = iso => iso ? iso.split('-').reverse().join('.') : '—';
   const lineRows = () => [...document.querySelectorAll('#lines-body tr')].filter(tr => tr.id !== 'no-lines');
   const steps = $('sum-steps');
+  const put = (id, text) => { if ($(id)) $(id).textContent = text; };  // у різних дизайнах картки — різний набір полів
 
   // Тип оплати: «Оплата підряднику» — статті відділу заявки й рахунки; «Непрямі витрати» — бюджет, без рахунків
   const listsEl = $('expense-lists');
@@ -134,19 +135,19 @@
 
   function update() {
     const amount = num(val('amount')), currency = val('currency') || 'UAH';
-    $('sum-amount').textContent = amount === null ? '—' : `${fmt(amount)} ${currency}`;
-    if ($('cp-input')) $('sum-cp').textContent = val('cp-input') || '—';
-    if ($('expense-input')) $('sum-exp').textContent = val('expense-input') || '—';
-    if ($('department')) $('sum-dept').textContent = selectedText('department') || '—';
+    put('sum-amount', amount === null ? '—' : `${fmt(amount)} ${currency}`);
+    if ($('cp-input')) put('sum-cp', val('cp-input') || '—');
+    if ($('expense-input')) put('sum-exp', val('expense-input') || '—');
+    if ($('department')) put('sum-dept', selectedText('department') || '—');
     if ($('sum-kind') && form.querySelector('input[name=payment_kind]')) {
       $('sum-kind').textContent = (form.querySelector('input[name=payment_kind]:checked + span') || {}).textContent || '—';
     }
     applyKind();
     const formLabel = (form.querySelector('input[name=payment_form]:checked + span') || {}).textContent || '';
-    $('sum-pay').textContent = `${fmtDate(val('pay_date'))} · ${formLabel}`;
+    put('sum-pay', `${fmtDate(val('pay_date'))} · ${formLabel}`);
     linesDiff(amount, currency);
     renderTodo(amount);
-    if (!steps) return;
+    if (!steps || steps.dataset.static) return;  // приклад в адмінці — маршрут уже показано
     const params = new URLSearchParams({
       amount: val('amount'), currency, department: val('department'), payment_form: radio('payment_form'),
       payment_kind: radio('payment_kind'),
