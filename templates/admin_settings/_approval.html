@@ -42,7 +42,7 @@
     </div>
     <label class="mode-option">
       <span><strong>Валюта порогу</strong>
-        <select name="cfo_currency" aria-label="Валюта порогу" style="width:auto;margin-left:8px">
+        <select name="cfo_currency" aria-label="Валюта порогу" class="inline-select">
           {% for c in CFO_CURRENCIES %}<option value="{{ c }}" {{ 'selected' if cfo.currency == c }}>{{ c }}</option>{% endfor %}
         </select>
         <span class="mode-hint">Сума заявки перераховується за останнім відомим курсом 1С на момент відправки. Якщо курсу немає —

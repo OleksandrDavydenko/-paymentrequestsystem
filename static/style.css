@@ -537,6 +537,9 @@ details.admin-status form > .btn { align-self: flex-start; }
 .mode-option:has(input:checked) { border-color: var(--primary); background: var(--primary-50); box-shadow: 0 0 0 1px var(--primary); }
 .mode-option:hover { border-color: var(--primary-300); }
 .mode-saved { font-size: 11px; font-weight: 600; color: var(--ok-ink); background: var(--ok-soft); border-radius: 999px; padding: 1px 8px; margin-left: 6px; }
+/* Список у рядку налаштування: на телефоні — на всю ширину під підписом (довгі варіанти не виходять за екран) */
+.inline-select { width: auto; max-width: 100%; margin-left: 8px; }
+@media (max-width: 600px) { .inline-select { display: block; width: 100%; margin: 6px 0 0; } }
 .mode-option input { margin-top: 3px; }
 .mode-hint { display: block; font-size: 12px; color: var(--muted); margin-top: 2px; }
 input.exp-missing { color: var(--orange-ink); background: var(--warn-faint); border-color: var(--warn-line); }

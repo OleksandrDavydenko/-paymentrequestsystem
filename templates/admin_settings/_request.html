@@ -33,7 +33,7 @@
     </label>
     <label class="mode-option kind-off-only {{ 'is-off' if kind_question }}" id="invoices-block-option">
       <span><strong>Блок «Рахунки», коли питання вимкнено</strong>
-        <select name="invoices_block" aria-label="Блок «Рахунки», коли питання вимкнено" style="width:auto;margin-left:8px">
+        <select name="invoices_block" aria-label="Блок «Рахунки», коли питання вимкнено" class="inline-select">
           {% for code, label in INVOICES_BLOCK_MODES.items() %}<option value="{{ code }}" {{ 'selected' if invoices_block == code }}>{{ label }}</option>{% endfor %}
         </select>
         <span class="mode-hint">З питанням блок показується для прямої витрати автоматично. Без питання: «Показувати» — завжди
@@ -83,7 +83,7 @@
   <div class="budget-section-title">Дії автора</div>
   <label class="mode-option">
     <span><strong>«Відкликати на редагування»</strong>
-      <select name="withdraw_mode" aria-label="Відкликати на редагування" style="width:auto;margin-left:8px">
+      <select name="withdraw_mode" aria-label="Відкликати на редагування" class="inline-select">
         {% for code, label in WITHDRAW_MODES.items() %}<option value="{{ code }}" {{ 'selected' if withdraw_mode == code }}>{{ label }}</option>{% endfor %}
       </select>
       <span class="mode-hint">Заявка повертається автору в чернетку, погодження скидаються, повторна відправка — маршрут з початку.
@@ -91,7 +91,7 @@
   </label>
   <label class="mode-option">
     <span><strong>«Скасувати заявку»</strong>
-      <select name="cancel_mode" aria-label="Скасувати заявку" style="width:auto;margin-left:8px">
+      <select name="cancel_mode" aria-label="Скасувати заявку" class="inline-select">
         {% for code, label in CANCEL_MODES.items() %}<option value="{{ code }}" {{ 'selected' if cancel_mode == code }}>{{ label }}</option>{% endfor %}
       </select>
       <span class="mode-hint">Статус «Скасовано» з причиною в історії. Після «До оплати» автор не скасовує в жодному режимі.</span></span>
