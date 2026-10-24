@@ -1,0 +1,40 @@
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="design-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="design">
+  <div class="toolbar"><h2 style="margin:0">Дизайн</h2></div>
+
+  <div class="budget-section-title">Кольорова тема</div>
+  <p class="muted" style="margin-top:0">Кольори всієї програми — для всіх користувачів. «Спробувати» одразу показує тему на цій
+    сторінці; для всіх вона діятиме після «Зберегти». Листи на пошту не змінюються.</p>
+  <div class="design-options">
+    {% for code, label in COLOR_THEMES.items() %}
+    <label class="design-option">
+      <input type="radio" name="color_theme" value="{{ code }}" {{ 'checked' if color_theme == code }}>
+      <span class="theme-thumb theme-scope" data-theme="{{ code }}" aria-hidden="true">
+        <span class="tt-header"><i></i><i></i><i></i></span>
+        <span class="tt-body">
+          <span class="tt-card"><b></b><em></em><em class="short"></em>
+            <span class="tt-row"><u class="tt-primary"></u><u></u><s class="ok"></s><s class="warn"></s><s class="bad"></s></span></span>
+        </span>
+      </span>
+      <span class="design-name"><strong>{{ label.split(':')[0] }}</strong>{% if color_theme == code %}<span class="mode-saved">діє зараз</span>{% endif %}</span>
+      <span class="muted design-desc">{{ label.split(':', 1)[1].strip() }}</span>
+      <button type="button" class="btn btn-sm theme-try" data-theme="{{ code }}">Спробувати</button>
+    </label>
+    {% endfor %}
+  </div>
+
+  <div class="form-actions" style="justify-content:flex-start">
+    <button type="submit" class="btn btn-primary">Зберегти</button>
+    <span class="muted" id="theme-trying" hidden>Тему показано лише на цій сторінці — натисніть «Зберегти», щоб застосувати для всіх.</span>
+  </div>
+</form>
+<script>
+// «Спробувати»: тема на цій сторінці до збереження
+document.querySelectorAll('.theme-try').forEach(b => b.addEventListener('click', e => {
+  e.preventDefault();
+  document.documentElement.dataset.theme = b.dataset.theme;
+  const radio = document.querySelector(`input[name=color_theme][value="${b.dataset.theme}"]`);
+  if (radio) radio.checked = true;
+  document.getElementById('theme-trying').hidden = b.dataset.theme === '{{ color_theme }}';
+}));
+</script>

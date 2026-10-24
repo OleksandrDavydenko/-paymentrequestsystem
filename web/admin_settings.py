@@ -154,6 +154,8 @@ def _context(tab):
                    mail_password=app_settings.info("smtp_password"), SMTP_PRESETS=mailer.PRESETS,
                    SMTP_SECURITY=mailer.SECURITY, telegram=telegram_notify.status(),
                    mail_problems=len(notify_log.query(200, status="problems")))
+    elif tab == "design":
+        ctx.update(color_theme=app_settings.get("color_theme"), COLOR_THEMES=schema.COLOR_THEMES)
     elif tab == "data":
         ctx.update(login="google" if app_settings.get("login_methods") == "google" else "both",
                    login_effective=login_mode(),

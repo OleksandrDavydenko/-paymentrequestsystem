@@ -9,6 +9,7 @@ import expense_items
 import notifications
 import organizations
 import payment_accounts
+import settings_schema
 import storage as db
 import workflow as wf
 
@@ -39,7 +40,14 @@ def inject_refs():
         "pay_org": pay_org,
         # У режимі «Бухгалтер» організацію не вказують — колонки й фільтра «Організація» немає
         "show_org": app_settings.get("org_field_mode") != "accountant",
+        **theme_context(app_settings.get("color_theme")),
     }
+
+
+def theme_context(theme):
+    """Кольорова тема для <html data-theme> і колір рядка браузера («Налаштування → Дизайн»)."""
+    theme = theme if theme in settings_schema.COLOR_THEMES else "blue"
+    return {"color_theme": theme, "theme_color": settings_schema.THEME_COLORS[theme]}
 
 
 def inject_roles():

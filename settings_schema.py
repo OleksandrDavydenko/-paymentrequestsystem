@@ -23,6 +23,7 @@ TABS = [
     ("request", "Заявка"),
     ("payment", "Оплата й готівка"),
     ("notify", "Сповіщення"),
+    ("design", "Дизайн"),
     ("data", "Дані й система"),
     ("log", "Журнал змін"),
 ]
@@ -80,6 +81,18 @@ def _invoices_modes():
 def _invoices_block_modes():
     return {"show": "Показувати: рахунки — за бажанням ініціатора", "hide": "Не показувати",
             "auto": "За статтею: для прямої статті відділу — показувати"}
+
+
+# Кольорові теми всієї програми (<html data-theme>) і колір рядка браузера на телефоні для кожної
+COLOR_THEMES = {"blue": "Синя: стандартна, як було",
+                "dark": "Темна: темний фон і картки, світлий текст — менше втомлює очі",
+                "emerald": "Смарагдова: світла, із зеленим акцентом",
+                "graphite": "Графіт: темно-сіра шапка й фіолетовий акцент"}
+THEME_COLORS = {"blue": "#0f6cbd", "dark": "#161b22", "emerald": "#0f7b6c", "graphite": "#2b2f36"}
+
+
+def _color_themes():
+    return COLOR_THEMES
 
 
 def _data_modes():
@@ -196,6 +209,8 @@ _LIST = [
     Setting("approver_remind_max", "Нагадувань погоджувачу — не більше", "notify", "int", 3, min=1, max=20),
     Setting("approver_remind_cfo_copy", "Копія нагадування фіндиректору, якщо заявка чекає бухгалтера", "notify",
             "bool", False),
+    # ---- Дизайн
+    Setting("color_theme", "Кольорова тема", "design", "choice", "blue", _color_themes),
     # ---- Дані й система
     Setting("data_mode", "Дані", "data", "choice", "work", _data_modes, available=_db_on),
     Setting("login_methods", "Вхід у систему", "data", "choice", "both", _login_methods),
