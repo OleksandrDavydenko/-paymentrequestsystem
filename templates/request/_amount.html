@@ -14,7 +14,7 @@
           </select>
         </div>
         {{ err('amount') }}{{ err('currency') }}
-        {% if editable %}<span class="field-hint" id="amount-hint">Загальна сума до оплати; рахунки нижче мають дати ту саму суму</span>{% endif %}
+        {% if editable %}<span class="field-hint" id="amount-hint">Загальна сума до оплати{{ '; для прямої витрати — сума вибраних рахунків' if invoices_on }}</span>{% endif %}
       </div>
       <div class="field">
         <label for="pay_date" class="req">Дата оплати</label>

@@ -135,7 +135,8 @@ check("LOG head sees and can approve", req["number"] in page("/department") and 
 
 login("m.koval@ftpua.com")
 html = page("/requests/new")
-check("one department: no select", 'name="department"' not in html and 'value="Відділ продажу" readonly' in html)
+check("one department: no field, shown in the header", 'name="department"' not in html
+      and 'id="meta-dept">Відділ продажу<' in html and 'id="department-text"' not in html)
 
 # ---------- відбори в списку користувачів
 login("admin@ftpua.com", "Адмін")

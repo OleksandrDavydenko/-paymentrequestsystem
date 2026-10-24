@@ -47,7 +47,7 @@
     {% if handover_pending %}<a href="#handover" class="badge amber" title="Автор ще не підтвердив, що передав готівку підряднику">⏳ передачу готівки не підтверджено</a>
     {% elif handover_done %}<span class="badge green" title="Передано {{ handover.date | d }}">✓ готівку передано підряднику</span>{% endif %}
   </div>
-  <div class="req-meta muted">{{ req.created_at | dt }} · автор {{ req.author_name }}{% if req.number %} · заявка на оплату витрат{% endif %}</div>
+  <div class="req-meta muted">{{ req.created_at | dt }} · автор {{ req.author_name }}{% if req.department %} · відділ <span id="meta-dept">{{ dept_name(req.department) }}</span>{% endif %}{% if req.number %} · заявка на оплату витрат{% endif %}</div>
 
   {% if req.id %}
   <ol class="route {{ 'route-parallel' if parallel }}">

@@ -70,6 +70,27 @@
     }
   }
 
+  // Відділ змінили, коли рахунки вже підібрано (вони — того відділу): прибрати їх або повернути відділ
+  const deptSel = $('department');
+  if (deptSel && deptSel.tagName === 'SELECT') {
+    let prevDept = deptSel.value;
+    deptSel.addEventListener('change', () => {
+      const rows = lineRows();
+      if (rows.length) {
+        const prevName = (deptSel.querySelector(`option[value="${CSS.escape(prevDept)}"]`) || {}).textContent || '';
+        if (confirm(`Рахунки підібрано для відділу «${prevName}». Прибрати їх, щоб підібрати рахунки нового відділу?`)) {
+          rows.forEach(tr => tr.remove());
+          if (typeof window.refresh === 'function') window.refresh();
+        } else {
+          deptSel.value = prevDept;  // решта обробників (форма) побачать уже повернутий відділ
+          return;
+        }
+      }
+      prevDept = deptSel.value;
+      put('meta-dept', selectedText('department'));
+    });
+  }
+
   // Швидкий вибір дати оплати
   document.querySelectorAll('#date-chips .chip').forEach(b => b.addEventListener('click', () => {
     $('pay_date').value = b.dataset.date;

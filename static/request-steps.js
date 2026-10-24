@@ -23,15 +23,17 @@
   // Крок пропускається: блоку немає (рахунки без прямої витрати) або тип визначено без питання
   function skipped(sec) {
     if (sec.hidden) return true;
-    if (sec.dataset.step === 'kind') { const ch = $('kind-choice'); return !ch || ch.hidden; }
+    if (sec.dataset.step === 'start') return !deptSelect() && !kindAsked();
     return false;
   }
+  const deptSelect = () => $('department') && $('department').tagName === 'SELECT';
+  const kindAsked = () => !!$('kind-choice') && !$('kind-choice').hidden;
   const active = () => sections.filter(s => !skipped(s));
   const key = sec => sec.dataset.step;
 
   // Чого бракує на кроці: [підпис, елемент для фокусу]
   const CHECKS = {
-    kind: () => radio('payment_kind') ? [] : [['Що оплачуємо', form.querySelector('input[name=payment_kind]')]],
+    start: () => !kindAsked() || radio('payment_kind') ? [] : [['Що оплачуємо', form.querySelector('input[name=payment_kind]')]],
     who: () => {
       const miss = [];
       if ($('cp-input') && !val('counterparty_id')) miss.push(['Контрагент', $('cp-input')]);
@@ -58,8 +60,8 @@
   const payerText = () => chosen('accountant_type') || chosen('payer') || ($('organization_id') && val('organization_id') ? text($('organization_id')) : '');
   const linesText = () => { const r = lineRows(); return r.length ? `${r.length} рахунк. · ${($('lines-total') || {}).textContent || ''}` : 'рахунків не додано'; };
   const SUMMARY = {
-    kind: () => chosen('payment_kind'),
-    who: () => [val('cp-input'), val('expense-input'), $('department') ? text($('department')) : val('department-text')].filter(Boolean).join(' · '),
+    start: () => [deptSelect() ? text($('department')) : '', chosen('payment_kind')].filter(Boolean).join(' · '),
+    who: () => [val('cp-input'), val('expense-input')].filter(Boolean).join(' · '),
     lines: linesText,
     amount: () => {
       const a = num(val('amount'));
@@ -194,7 +196,7 @@
     }));
     // Вибір типу на першому кроці — одразу далі
     form.querySelectorAll('input[name=payment_kind]').forEach(r => r.addEventListener('change', () => {
-      if (current && key(current) === 'kind') setTimeout(() => go(active()[active().indexOf(current) + 1]), 250);
+      if (current && key(current) === 'start') setTimeout(() => go(active()[active().indexOf(current) + 1]), 250);
     }));
   } else {
     sections.forEach(sec => {
@@ -204,7 +206,7 @@
       if (b) b.addEventListener('click', () => continueFrom(sec));
     });
     form.querySelectorAll('input[name=payment_kind]').forEach(r => r.addEventListener('change', () => {
-      const sec = sections.find(s => key(s) === 'kind');
+      const sec = sections.find(s => key(s) === 'start');
       if (sec && sec.classList.contains('is-open')) setTimeout(() => continueFrom(sec), 250);
     }));
   }

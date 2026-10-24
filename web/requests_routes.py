@@ -291,7 +291,7 @@ def request_card(request_id=None, *, context):
 
 
 # Кроки нових дизайнів картки й поля кожного: помилка сервера відкриває крок із першою помилкою
-STEP_FIELDS = {"kind": ("payment_kind",), "who": ("counterparty_id", "expense_code", "department"), "lines": ("lines",),
+STEP_FIELDS = {"start": ("department", "payment_kind"), "who": ("counterparty_id", "expense_code"), "lines": ("lines",),
                "amount": ("amount", "currency", "pay_date", "payment_form", "organization_id", "payer", "accountant_type"),
                "note": ("note",), "review": ("documents",)}
 
@@ -413,6 +413,11 @@ def _render_card(req, existing, errors, user, roles, budget_items, contractor_li
         back_url=url_for("requests.requests_list") if wf.is_author(req, user["email"]) and "initiator" in roles
         else _home(),
     )
+    # Перший блок «Відділ і що оплачуємо»: відділ — лише якщо їх кілька (у перегляді — завжди), тип — якщо питають
+    dept_choice = ctx["editable"] and len(ctx["dept_options"]) > 1
+    dept_field = dept_choice or not ctx["editable"]
+    ctx.update(dept_choice=dept_choice, start_shown=dept_field or (ask_kind and not ctx["kind_forced"]),
+               start_title="Відділ і що оплачуємо" if dept_field and ask_kind else "Відділ" if dept_field else "Що оплачуємо")
     ctx.update(preview or {})
     return render_template("request_form.html", **ctx)
 

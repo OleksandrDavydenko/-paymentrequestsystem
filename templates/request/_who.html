@@ -1,17 +1,5 @@
-{# Контрагент, стаття витрат, відділ. Частина картки заявки для всіх дизайнів (ідентифікатори полів — спільні для JS). #}
+{# Контрагент і стаття витрат. Частина картки заявки для всіх дизайнів (ідентифікатори полів — спільні для JS). #}
     <div class="req-fields">
       {% include "_counterparty_picker.html" %}
       {% include "_expense_picker.html" %}
-      <div class="field">
-        <label for="department">Відділ</label>
-        {% if editable and dept_options | length > 1 %}
-        <select id="department" name="department">
-          {% for d in dept_options %}<option value="{{ d }}" {{ 'selected' if d == req.department }}>{{ dept_name(d) }}</option>{% endfor %}
-          {% if req.department and req.department not in dept_options %}<option value="{{ req.department }}" selected>{{ dept_name(req.department) }}</option>{% endif %}
-        </select>
-        <span class="field-hint">Для якого відділу заявка — його керівник бачить{{ ' і погоджує' if head_approves }} її</span>
-        {% else %}
-        <input type="text" id="department-text" value="{{ dept_name(req.department) if req.department else '—' }}" readonly>
-        {% endif %}
-      </div>
     </div>

@@ -61,6 +61,20 @@ BASE = {"pay_date": "2026-12-20", "organization_id": "1", "counterparty_id": "1"
 login("a@ftpua.com")
 html = page("/requests/new")
 check("default design: classic", 'class="req-layout"' in html and 'data-design=' not in html and "request-steps.js" not in html)
+pos = [html.find(f'id="block-{b}"') for b in ("start", "who", "lines", "amount", "payer", "note")]
+check("classic order: department & kind, who, invoices, amount, payer, note", -1 not in pos and pos == sorted(pos)
+      and 'id="block-start" hidden' not in html and ">Що оплачуємо</h2>" in html and 'name="department"' not in html
+      and 'id="meta-dept">' in html and '<span class="uc-num req-num"></span>' in html)
+user_roles.set_roles("b@ftpua.com", "b@ftpua.com", "B", ["initiator"], "t")
+org_structure.set_department("b@ftpua.com", "b@ftpua.com", "B", "BA", "t")
+login("b@ftpua.com")
+check("one department without direct costs: first block skipped", 'id="block-start" hidden' in page("/requests/new"))
+org_structure.set_request_departments("a@ftpua.com", "a@ftpua.com", "A", ["SAL"], "t")
+login("a@ftpua.com")
+html = page("/requests/new")
+check("several departments: department first, own preselected", ">Відділ і що оплачуємо</h2>" in html
+      and html.find('name="department"') < html.find('name="payment_kind"') < html.find('id="cp-input"')
+      and 'value="LOG" selected' in html)
 
 login("adm@ftpua.com")
 html = page("/admin/settings?tab=design")
@@ -79,6 +93,10 @@ check("wizard: steps, review, scripts", 'data-design="wizard"' in html and 'id="
       and 'value="submit"' in html and 'class="req-layout"' not in html)
 r_ = c.post("/requests/new", data={**BASE, "amount": "", "action": "submit"})
 check("wizard: server error opens its step", 'data-start="amount"' in r_.get_data(as_text=True))
+r_ = c.post("/requests/new", data={k: v for k, v in BASE.items() if k != "payment_kind"} | {"action": "save"})
+check("wizard: missing kind opens the first step", 'data-start="start"' in r_.get_data(as_text=True))
+check("wizard: department and kind in the first step", 'data-step="start" data-title="Відділ і що оплачуємо"' in html
+      and 'data-goto="start"' in html)
 r_ = c.post("/requests/new", data={**BASE, "action": "save", "step": "lines"})
 rid = db.last_id()
 check("wizard: «Записати» keeps the step", r_.status_code == 302 and "step=lines" in r_.headers["Location"]

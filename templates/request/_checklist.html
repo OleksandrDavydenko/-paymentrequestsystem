@@ -22,9 +22,9 @@
   </div>
 
   <fieldset>
-  <section class="cl-sec req-block" data-step="kind" data-title="Що оплачуємо" {{ 'hidden' if not ask_kind }}>
-    {{ cl_head('Що оплачуємо?') }}
-    <div class="cl-body">{% include "request/_kind.html" %}{{ cl_next() }}</div>
+  <section class="cl-sec req-block {{ 'kind-only' if start_title == 'Що оплачуємо' }}" data-step="start" data-title="{{ start_title }}" {{ 'hidden' if not start_shown }}>
+    {{ cl_head(start_title) }}
+    <div class="cl-body">{% include "request/_dept.html" %}{% include "request/_kind.html" %}{{ cl_next() }}</div>
   </section>
 
   <section class="cl-sec req-block" data-step="who" data-title="Кому">

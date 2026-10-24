@@ -1,0 +1,17 @@
+{# Відділ заявки — перший пункт: від нього залежать прямі витрати, статті, рахунки й хто погоджує. Список — лише коли
+   в автора кілька відділів для заявок (основний підставлено); один відділ — пункту немає, він у шапці заявки. #}
+    {% if dept_choice %}
+    <div class="field dept-field">
+      <label for="department" class="req">Для якого відділу заявка</label>
+      <select id="department" name="department">
+        {% for d in dept_options %}<option value="{{ d }}" {{ 'selected' if d == req.department }}>{{ dept_name(d) }}</option>{% endfor %}
+        {% if req.department and req.department not in dept_options %}<option value="{{ req.department }}" selected>{{ dept_name(req.department) }}</option>{% endif %}
+      </select>
+      <span class="field-hint">Від відділу залежать прямі витрати, статті й рахунки; його керівник бачить{{ ' і погоджує' if head_approves }} заявку</span>
+    </div>
+    {% elif not editable %}
+    <div class="field">
+      <label for="department-text">Відділ</label>
+      <input type="text" id="department-text" value="{{ dept_name(req.department) if req.department else '—' }}" readonly>
+    </div>
+    {% endif %}
