@@ -133,6 +133,47 @@ check("BA now chooses", "kind-pending" in page("/requests/new"))
 login("a@ftpua.com")
 check("LOG now indirect only", "kind-pending" not in page("/requests/new"))
 
+# ---------- питання «Що оплачуємо?» вимкнено: статті користувача, тип — за статтею, блок рахунків — за налаштуванням
+login("adm@ftpua.com")
+html = page("/admin/settings?tab=request")
+check("admin: question switch and invoices block", 'name="kind_question"' in html and 'name="invoices_block"' in html)
+app_settings.set("kind_question", False, "t")
+app_settings.set("invoices_block", "auto", "t")
+login("b@ftpua.com")
+html = page("/requests/new")
+check("no question: no kind step, block hidden until a direct item", 'name="payment_kind"' not in html
+      and "kind-pending" not in html and 'id="block-lines" hidden' in html and '"ask": false' in html)
+LINE = {"lines-0-invoice": "НП-7", "lines-0-amount": "100", "lines-0-currency": "UAH"}
+c.post("/requests/new", data={**BASE, "expense_code": "01.002", "action": "save", **LINE})
+req = db.get_request(db.last_id())
+check("auto: direct item of department -> direct, lines kept", req["payment_kind"] == "contractor"
+      and req["lines"][0]["invoice"] == "НП-7")
+c.post("/requests/new", data={**BASE, "expense_code": "01.001", "action": "save", **LINE})
+req = db.get_request(db.last_id())
+check("auto: other item -> indirect, lines dropped", req["payment_kind"] == "indirect" and req["lines"] == [])
+pv = get("/requests/route-preview?amount=100&currency=UAH&department=BA&payment_form=bank&organization_id=1&expense_code=01.002")
+check("summary works without kind", pv["steps"])
+app_settings.set("invoices_block", "hide", "t")
+check("hide: no invoices block", 'id="block-lines"' not in page("/requests/new"))
+c.post("/requests/new", data={**BASE, "expense_code": "01.002", "action": "save", **LINE})
+req = db.get_request(db.last_id())
+check("hide: direct by item, lines dropped", req["payment_kind"] == "contractor" and req["lines"] == [])
+app_settings.set("invoices_block", "show", "t")
+html = page("/requests/new")
+check("show: block always visible", 'id="block-lines"' in html and 'id="block-lines" hidden' not in html)
+c.post("/requests/new", data={**BASE, "expense_code": "01.001", "action": "save", **LINE})
+req = db.get_request(db.last_id())
+check("show: indirect item keeps lines", req["payment_kind"] == "indirect" and req["lines"][0]["invoice"] == "НП-7")
+app_settings.set("kind_question", True, "t")
+check("question back on", "kind-pending" in page("/requests/new"))
+
+# ---------- «Хто платить»: назви бухгалтерів як були
+app_settings.set("org_field_mode", "accountant", "t")
+html = page("/requests/new")
+check("accountant tiles: old names", "<b>Бухгалтер по готівці</b>" in html and "<b>Бухгалтер резидентів</b>" in html
+      and "<small>іноземні компанії, безготівка</small>" in html and '<label class="req">Бухгалтер</label>' in html)
+app_settings.set("org_field_mode", "organization", "t")
+
 # ---------- рахунки вимкнено
 app_settings.set("invoices_mode", "off", "t")
 html = page("/requests/new")

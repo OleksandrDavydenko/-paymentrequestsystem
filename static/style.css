@@ -891,6 +891,7 @@ a.badge { text-decoration: none; }
 .dept-tabs { margin: 0 0 12px; }
 .dept-tabs .tab { background: none; border-width: 0 0 2px; font-family: inherit; font-size: inherit; cursor: pointer; }
 .direct-dep.is-off { opacity: .45; pointer-events: none; }
+.kind-settings.is-off, .kind-off-only.is-off { opacity: .45; pointer-events: none; }
 
 /* Тип оплати й підбір рахунків */
 .kind-field { margin-bottom: 14px; }

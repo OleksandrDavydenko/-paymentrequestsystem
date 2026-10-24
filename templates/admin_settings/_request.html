@@ -18,12 +18,42 @@
   <label class="mode-option">
     <input type="radio" name="invoices_mode" value="{{ code }}" {{ 'checked' if invoices_mode == code }}>
     <span><strong>{{ label.split(':')[0] }}</strong>{% if invoices_mode == code %}<span class="mode-saved">діє зараз</span>{% endif %}
-      <span class="mode-hint">{% if code == 'on' %}Ініціатор вибирає, що оплачує: «Оплата підряднику» (рахунки з 1С за контрагентом
-        і відділом заявки, статті — зі списку відділу) або «Непрямі витрати» (статті з його бюджету). Статті підрядника й
-        обов'язковість рахунків для кожного відділу — «Адміністрування → Відділи».{% else %}Блоку рахунків і вибору типу оплати
+      <span class="mode-hint">{% if code == 'on' %}Рахунки підрядника підбираються з 1С за контрагентом і відділом заявки.
+        Статті прямих витрат, які відділи роблять прямі витрати, і обов'язковість рахунків — «Адміністрування → Відділи».{% else %}Блоку рахунків і вибору типу оплати
         немає, статті — з бюджету людини; рахунки, збережені раніше, лише показуються.{% endif %}</span></span>
   </label>
   {% endfor %}
+  <div class="kind-settings {{ 'is-off' if invoices_mode == 'off' }}" id="kind-settings">
+    <label class="mode-option">
+      <input type="checkbox" name="kind_question" value="1" id="kind-question" {{ 'checked' if kind_question }}>
+      <span><strong>Питання «Що оплачуємо?» у заявці</strong>
+        <span class="mode-hint">Ініціатор спершу вибирає «Пряма витрата» (рахунки підрядника, статті відділу) чи «Непряма витрата»
+          (статті з його бюджету). Вимкніть, якщо менеджерам важко це визначити: тоді питання немає, у списку — усі статті,
+          дозволені користувачу, а тип заявки визначає вибрана стаття (пряма стаття відділу — пряма витрата).</span></span>
+    </label>
+    <label class="mode-option kind-off-only {{ 'is-off' if kind_question }}" id="invoices-block-option">
+      <span><strong>Блок «Рахунки», коли питання вимкнено</strong>
+        <select name="invoices_block" aria-label="Блок «Рахунки», коли питання вимкнено" style="width:auto;margin-left:8px">
+          {% for code, label in INVOICES_BLOCK_MODES.items() %}<option value="{{ code }}" {{ 'selected' if invoices_block == code }}>{{ label }}</option>{% endfor %}
+        </select>
+        <span class="mode-hint">З питанням блок показується для прямої витрати автоматично. Без питання: «Показувати» — завжди
+          (рахунки обов'язкові лише для прямої статті у відділі з обов'язковими рахунками), «Не показувати» — без рахунків,
+          «За статтею» — лише коли вибрано пряму статтю відділу.</span></span>
+    </label>
+  </div>
+  <script>
+  (function () {
+    const q = document.getElementById('kind-question'), opt = document.getElementById('invoices-block-option');
+    const box = document.getElementById('kind-settings');
+    const sync = () => {
+      opt.classList.toggle('is-off', q.checked);
+      const off = (document.querySelector('input[name=invoices_mode]:checked') || {}).value === 'off';
+      box.classList.toggle('is-off', off);
+    };
+    q.addEventListener('change', sync);
+    document.querySelectorAll('input[name=invoices_mode]').forEach(r => r.addEventListener('change', sync));
+  })();
+  </script>
 
   <div class="budget-section-title">Вимоги перед відправкою на погодження</div>
   <p class="muted" style="margin-top:0">Перевіряються лише при «Відправити на погодження»: зберегти чернетку можна й без них.</p>
@@ -46,7 +76,7 @@
   </label>
   <label class="mode-option">
     <input type="checkbox" name="req_lines_required" value="1" {{ 'checked' if req_lines_required }}>
-    <span><strong>Рядки рахунків обов'язкові</strong><span class="muted"> — для «Оплата підряднику» в усіх відділах, хоча б один:
+    <span><strong>Рядки рахунків обов'язкові</strong><span class="muted"> — для прямої витрати в усіх відділах, хоча б один:
       номер рахунку й сума (окремо по відділах — «Адміністрування → Відділи»)</span></span>
   </label>
 

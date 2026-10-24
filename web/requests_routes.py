@@ -26,7 +26,7 @@ import workflow as wf
 
 from web.auth import _home, _load_visible, login_required, requires
 from web.listing import _filtered, _page, _parse_date, _ref_keys
-from web.request_helpers import INLINE_EXT, _parse_amount, add_workdays, contractor_items, invoices_on, lines_required, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
+from web.request_helpers import INLINE_EXT, _parse_amount, add_workdays, contractor_items, derive_kind, invoices_on, kind_question_on, lines_block_on, lines_required, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
 
 
 bp = Blueprint("requests", __name__)
@@ -132,6 +132,8 @@ def route_preview(request_id=None, *, context):
            "payment_kind": a.get("payment_kind") if a.get("payment_kind") in wf.PAYMENT_KINDS else None,
            "pay_date": _parse_date(a.get("pay_date")),
            "lines": [None] * min(int(a.get("lines")) if (a.get("lines") or "").isdigit() else 0, 200)}
+    if invoices_on() and not kind_question_on():
+        req["payment_kind"] = derive_kind(req["expense_code"], dept)
     rs = _route_settings(req)
     steps, notes = [], []
     if rs["head_mode"] == "approve":
@@ -183,7 +185,7 @@ def request_card(request_id=None, *, context):
             "history": [],
             "attachments": [],
         }
-        if invoices_on() and not dept_settings.direct_allowed(existing["department"]):
+        if kind_question_on() and not dept_settings.direct_allowed(existing["department"]):
             existing["payment_kind"] = "indirect"  # відділ без прямих витрат — кроку «Що оплачуємо» немає
     else:
         existing = _load_visible(request_id)
@@ -195,6 +197,7 @@ def request_card(request_id=None, *, context):
     contractor_lists = {d: contractor_items(d) for d in set(dept_list) | {existing.get("department")} if d}
     contractor_lists[""] = contractor_items(None)  # заявка без відділу — статті за замовчуванням
     use_invoices = invoices_on()
+    ask_kind = kind_question_on()  # без питання список — статті користувача, тип визначає стаття
 
     errors = {}
     req = existing
@@ -211,6 +214,8 @@ def request_card(request_id=None, *, context):
         legacy = "payment_kind_sent" not in request.form  # форма без перемикача (старі сторінки, API) — як раніше
         if legacy:
             kind = existing.get("payment_kind")
+        elif not ask_kind:
+            kind = None  # визначить вибрана стаття (нижче)
         elif use_invoices and not dept_settings.direct_allowed(dept):
             kind = "indirect"  # відділ без прямих витрат — лише непрямі, що б не прийшло з форми
         contractor = use_invoices and kind == "contractor"
@@ -220,7 +225,11 @@ def request_card(request_id=None, *, context):
         data, errors = parse_request_form(request.form, existing if same_list else {**existing, "expense_code": None},
                                           {i["code"] for i in allowed}, contractor=contractor)
         req = {**existing, **data, "department": dept}
-        if use_invoices and not legacy:
+        if use_invoices and not legacy and not ask_kind:
+            req["payment_kind"] = derive_kind(req.get("expense_code"), dept)
+            if not lines_block_on(req):
+                req["lines"] = []  # блоку рахунків немає (налаштування «Блок «Рахунки»»)
+        elif use_invoices and not legacy:
             req["payment_kind"] = kind
             if not kind:
                 errors["payment_kind"] = "Виберіть, що оплачуємо: оплата підряднику чи непрямі витрати"
@@ -282,7 +291,7 @@ def request_card(request_id=None, *, context):
         user_name=user["name"],
         req=req,
         errors=errors,
-        expense_items=(contractor_lists.get(req.get("department") or "", []) if use_invoices
+        expense_items=(contractor_lists.get(req.get("department") or "", []) if ask_kind
                        and req.get("payment_kind") == "contractor" else budget_items),
         any_expense_items=bool(budget_items or any(contractor_lists.values())),
         KIND_LABELS=expense_items.KIND_LABELS,
@@ -318,13 +327,17 @@ def request_card(request_id=None, *, context):
         head_approves=dept_settings.head_approves(req.get("department")),
         lines_required=lines_required(req),
         invoices_on=use_invoices,
+        ask_kind=ask_kind,
+        lines_mode="kind" if ask_kind else (app_settings.get("invoices_block") if use_invoices else "hide"),
+        lines_block=lines_block_on(req),
         PAYMENT_KINDS=wf.PAYMENT_KINDS,
         PAYMENT_KIND_HINTS=wf.PAYMENT_KIND_HINTS,
         PAYMENT_KIND_CHOSEN=wf.PAYMENT_KIND_CHOSEN,
         ACCOUNTANT_TILES=wf.ACCOUNTANT_TILES,
         PAYER_TILES=wf.PAYER_TILES,
-        kind_forced=use_invoices and not dept_settings.direct_allowed(req.get("department")),
+        kind_forced=ask_kind and not dept_settings.direct_allowed(req.get("department")),
         expense_lists={"budget": budget_items, "contractor": contractor_lists, "current": req.get("department") or "",
+                       "ask": ask_kind, "block": app_settings.get("invoices_block"),
                        "direct": {d: dept_settings.direct_allowed(d or None) for d in contractor_lists},
                        "kinds": {k: {"label": v, "chosen": wf.PAYMENT_KIND_CHOSEN[k]} for k, v in wf.PAYMENT_KINDS.items()},
                        "required": {d: dept_settings.invoices_required(d) or bool(app_settings.get("req_lines_required"))

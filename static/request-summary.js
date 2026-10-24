@@ -17,9 +17,22 @@
   const listsEl = $('expense-lists');
   const LISTS = listsEl ? JSON.parse(listsEl.textContent) : null;
   let lastList = null;
+  // Без питання «Що оплачуємо»: статті — бюджет користувача, блок «Рахунки» — за налаштуванням (auto — за статтею)
+  function applyNoKind(dept) {
+    const block = $('block-lines');
+    if (!block) return;
+    const code = val('expense_code');
+    const direct = LISTS.direct[dept] !== false && (LISTS.contractor[dept] || LISTS.contractor[''] || []).some(i => i.code === code);
+    block.hidden = LISTS.block === 'show' ? false : (LISTS.block === 'auto' ? !direct : true) && !lineRows().length;
+    const mark = block.querySelector('.req-mark'), need = direct && LISTS.required && LISTS.required[dept];
+    if (need && !mark) block.querySelector('.req-step').insertAdjacentHTML('beforeend', ' <span class="req-mark" title="Обов’язково">*</span>');
+    if (!need && mark) mark.remove();
+  }
+
   function applyKind() {
     if (!LISTS) return;
     const dept0 = val('department') || LISTS.current || '';
+    if (LISTS.ask === false) { applyNoKind(dept0); return; }
     // Відділ без прямих витрат — кроку немає, заявка непряма
     const forced = LISTS.direct && LISTS.direct[dept0] === false;
     if ($('kind-choice')) {

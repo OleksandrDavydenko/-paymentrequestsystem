@@ -77,6 +77,11 @@ def _invoices_modes():
     return {"on": "Увімкнено: тип оплати й підбір рахунків з 1С", "off": "Вимкнено: без рахунків у заявці"}
 
 
+def _invoices_block_modes():
+    return {"show": "Показувати: рахунки — за бажанням ініціатора", "hide": "Не показувати",
+            "auto": "За статтею: для прямої статті відділу — показувати"}
+
+
 def _data_modes():
     return {"work": "Робоча база", "test": "Тестові дані"}
 
@@ -156,6 +161,10 @@ _LIST = [
             ["pdf", "jpg", "jpeg", "png", "doc", "docx", "xls", "xlsx"], _doc_formats),
     Setting("doc_max_mb", "Максимальний розмір файлу, МБ", "request", "int", 10, min=1, max=25),
     Setting("invoices_mode", "Рахунки в заявці", "request", "choice", "on", _invoices_modes),
+    # Без питання ініціатор бачить свої статті, а тип заявки визначає стаття (пряма стаття відділу — пряма витрата)
+    Setting("kind_question", "Питання «Що оплачуємо?» у заявці", "request", "bool", True),
+    Setting("invoices_block", "Блок «Рахунки», коли питання «Що оплачуємо?» вимкнено", "request", "choice", "show",
+            _invoices_block_modes),
     # Статті для «Оплата підряднику» у відділах без власного списку («Адміністрування → Відділи»)
     Setting("contractor_expense_codes", "Статті оплати підряднику за замовчуванням", "request", "json", ["CR000065"],
             managed=True, fmt=_fmt_codes),

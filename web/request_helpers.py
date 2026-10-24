@@ -204,6 +204,28 @@ def invoices_on():
     return app_settings.get("invoices_mode") != "off"
 
 
+def kind_question_on():
+    """Ініціатор сам вибирає «Що оплачуємо?» (рахунки ввімкнено й питання не вимкнено в «Налаштування → Заявка»)."""
+    return invoices_on() and app_settings.get("kind_question") is not False
+
+
+def derive_kind(code, department):
+    """Тип заявки без питання «Що оплачуємо?»: пряма стаття відділу з прямими витратами — пряма витрата."""
+    if department and not dept_settings.direct_allowed(department):
+        return "indirect"
+    return "contractor" if code and code in dept_settings.contractor_codes(department) else "indirect"
+
+
+def lines_block_on(req):
+    """Чи є в заявці блок «Рахунки»: з питанням — для прямої витрати, без питання — за налаштуванням."""
+    if not invoices_on():
+        return False
+    if kind_question_on():
+        return req.get("payment_kind") == "contractor"
+    mode = app_settings.get("invoices_block")
+    return mode == "show" or (mode == "auto" and req.get("payment_kind") == "contractor")
+
+
 def contractor_items(department):
     """Статті «Оплата підряднику» для відділу (ті, що є в довіднику)."""
     by_code = expense_items.get_map()
@@ -212,7 +234,7 @@ def contractor_items(department):
 
 def lines_required(req):
     """Рахунки обов'язкові: оплата підряднику й (загальне налаштування або налаштування відділу заявки)."""
-    return invoices_on() and req.get("payment_kind") == "contractor" and (
+    return lines_block_on(req) and req.get("payment_kind") == "contractor" and (
         bool(app_settings.get("req_lines_required")) or dept_settings.invoices_required(req.get("department")))
 
 

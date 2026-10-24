@@ -112,7 +112,7 @@
   {% endif %}
 </div>
 
-<form method="post" class="card req-form {{ 'kind-pending' if invoices_on and editable and not req.payment_kind and not kind_forced }}" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
+<form method="post" class="card req-form {{ 'kind-pending' if ask_kind and editable and not req.payment_kind and not kind_forced }}" id="request-form" novalidate autocomplete="off"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
   {% if errors %}<div class="flash error">Перевірте виділені поля.</div>{% endif %}
   {% if errors.documents %}<div class="flash error">{{ errors.documents }}</div>{% endif %}
   <div class="req-layout">
@@ -121,9 +121,9 @@
 
   <section class="req-block" id="block-who">
     <h2 class="req-step"><span class="uc-num">1</span>Кому і за що</h2>
-    {% if invoices_on %}
+    {% if invoices_on %}<input type="hidden" name="payment_kind_sent" value="1">{% endif %}
+    {% if ask_kind %}
     <div class="field kind-field" id="kind-field">
-      <input type="hidden" name="payment_kind_sent" value="1">
       <div id="kind-choice" {{ 'hidden' if kind_forced }}>
         <label class="req" id="kind-label">Що оплачуємо?</label>
         <div class="segmented {{ 'invalid' if errors.payment_kind }}" role="radiogroup" aria-labelledby="kind-label">
@@ -211,7 +211,7 @@
     <div class="req-fields">
     {% if org_mode == 'accountant' %}
     <div class="field full">
-      <label class="req">Хто перевірить і оплатить</label>
+      <label class="req">Бухгалтер</label>
       {{ choice_tiles('accountant_type', ACCOUNTANT_TILES, req.accountant_type, 'Бухгалтер') }}
       {{ err('accountant_type') }}
       {% if req.accountant_hint and not errors %}<span class="route-hint">{{ req.accountant_hint | capitalize }} — можна змінити</span>{% endif %}
@@ -235,9 +235,9 @@
     </div>
   </section>
 
-  {% set show_lines = req.lines or (invoices_on and editable) %}
+  {% set show_lines = req.lines or (invoices_on and editable and lines_mode != 'hide') %}
   {% if show_lines %}
-  <section class="req-block section" id="block-lines" {{ 'hidden' if invoices_on and req.payment_kind != 'contractor' and not req.lines }}>
+  <section class="req-block section" id="block-lines" {{ 'hidden' if invoices_on and not lines_block and not req.lines }}>
     <div class="section-head">
       <h2 class="req-step"><span class="uc-num">4</span>Рахунки{% if lines_required %} <span class="req-mark" title="Обов'язково">*</span>{% endif %}</h2>
       {% if editable %}
@@ -289,7 +289,7 @@
     <div class="sum-title">Підсумок</div>
     <div class="sum-amount" id="sum-amount">{{ ((req.amount | money) ~ ' ' ~ req.currency) if req.amount else '—' }}</div>
     <dl class="sum-list">
-      {% if invoices_on %}<dt>Тип</dt><dd id="sum-kind">{{ PAYMENT_KINDS.get(req.payment_kind, '—') }}</dd>{% endif %}
+      {% if ask_kind or (invoices_on and not editable and req.payment_kind) %}<dt>Тип</dt><dd id="sum-kind">{{ PAYMENT_KINDS.get(req.payment_kind, '—') }}</dd>{% endif %}
       <dt>Контрагент</dt><dd id="sum-cp">{{ cp.name if cp else '—' }}</dd>
       <dt>Стаття</dt><dd id="sum-exp">{{ (req.expense_code ~ ' · ' ~ (expense_title(req.expense_code) or '')) if req.expense_code else '—' }}</dd>
       <dt>Відділ</dt><dd id="sum-dept">{{ dept_name(req.department) if req.department else '—' }}</dd>
