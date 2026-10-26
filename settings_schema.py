@@ -215,7 +215,7 @@ _LIST = [
     # ---- Сповіщення (пошта — власна форма)
     Setting("mail_enabled", "Розсилка увімкнена", "notify", "bool", False, managed=True),
     Setting("mail_sender", "Пошта відправника", "notify", "text", "", managed=True),
-    Setting("mail_sender_name", "Ім'я відправника", "notify", "text", "Система заявок на оплату", managed=True),
+    Setting("mail_sender_name", "Ім'я відправника", "notify", "text", "PayDesk", managed=True),
     Setting("smtp_host", "SMTP-сервер", "notify", "text", "smtp.gmail.com", managed=True),
     Setting("smtp_port", "SMTP-порт", "notify", "int", 587, min=1, max=65535, managed=True),
     Setting("smtp_security", "Шифрування SMTP", "notify", "choice", "starttls", _security, managed=True),

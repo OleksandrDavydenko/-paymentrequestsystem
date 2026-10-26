@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>{% block title %}Заявки на оплату{% endblock %}</title>
+  <title>{% block title %}Заявки на оплату{% endblock %} · PayDesk</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="icon" href="{{ url_for('static', filename='favicon-32.png') }}" sizes="32x32" type="image/png">
@@ -15,7 +15,7 @@
 </head>
 <body>
   <header>
-    <a class="brand" href="/"><svg class="brand-logo" viewBox="0 0 80 80" width="28" height="28" aria-hidden="true"><rect width="80" height="80" rx="18" fill="#fff"/><path class="logo-doc" d="M24 16h22l12 12v36a4 4 0 0 1-4 4H24a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4z"/><path class="logo-fold" d="M46 16v10a2 2 0 0 0 2 2h10"/><path d="M29 47l7 7 14-15" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>Система заявок на оплату</a>
+    <a class="brand" href="/"><svg class="brand-logo" viewBox="0 0 80 80" width="28" height="28" aria-hidden="true"><rect width="80" height="80" rx="18" fill="#fff"/><path class="logo-doc" d="M24 16h22l12 12v36a4 4 0 0 1-4 4H24a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4z"/><path class="logo-fold" d="M46 16v10a2 2 0 0 0 2 2h10"/><path d="M29 47l7 7 14-15" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="brand-text"><span class="brand-name">PayDesk</span><span class="brand-sub">заявки на оплату</span></span></a>
     <nav>
       {% if 'initiator' in roles or participating_count %}
       <a href="{{ url_for('requests.requests_list') }}" class="{{ 'active' if request.endpoint == 'requests.requests_list' }}">Мої заявки</a>

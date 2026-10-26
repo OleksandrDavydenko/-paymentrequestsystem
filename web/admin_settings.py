@@ -321,7 +321,7 @@ def admin_settings(*, context):
 @login_required
 @requires("admin")
 def admin_settings_export(*, context):
-    data = {"system": "Система заявок на оплату", "exported_at": clock.today().isoformat(),
+    data = {"system": "PayDesk", "exported_at": clock.today().isoformat(),
             "exported_by": g.user["email"],
             "settings": {s.key: app_settings.get(s.key) for s in schema.exportable()}}
     body = json.dumps(data, ensure_ascii=False, indent=1, default=str)

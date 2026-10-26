@@ -113,7 +113,7 @@ def admin_mail_test(*, context):
         error = "Збережений пароль не вдалося розшифрувати (змінився FLASK_SECRET_KEY?) — введіть пароль заново"
     else:
         html = render_template("email/test.html", user_name=g.user["name"], sender=cfg["sender"], host=cfg["host"])
-        error = mailer.deliver(cfg, to, "Тестовий лист — Система заявок на оплату", html, {"event": "test"})
+        error = mailer.deliver(cfg, to, "Тестовий лист — PayDesk", html, {"event": "test"})
     if error:
         flash("Тестовий лист не надіслано: " + error, "error")
     else:
@@ -584,7 +584,7 @@ def admin_telegram_test(*, context):
     if not telegram_notify.enabled():
         flash("Telegram-бот не підключено: у налаштуваннях App Service немає TELEGRAM_BOT_KEY", "error")
     else:
-        msg_id = telegram_notify.enqueue(g.user["email"], "✅ <b>Тестове повідомлення</b> системи заявок на оплату.\n"
+        msg_id = telegram_notify.enqueue(g.user["email"], "✅ <b>Тестове повідомлення</b> PayDesk.\n"
                                          "Якщо ви його бачите — сповіщення в Telegram працюють.", request.host_url)
         notify_log.record("telegram", g.user["email"], "queued", "Тестове повідомлення", event="test", ref=f"tg:{msg_id}")
         flash("Тестове повідомлення поставлено в чергу — бот забере його протягом ~30 секунд", "success")
