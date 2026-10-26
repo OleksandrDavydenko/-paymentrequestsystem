@@ -1,4 +1,6 @@
-"""API для Telegram-бота (захищене ключем X-Api-Key), /health і /favicon.ico."""
+"""API для Telegram-бота (захищене ключем X-Api-Key), /health, /favicon.ico і manifest для ярлика на телефоні."""
+import json
+
 from flask import Blueprint, abort, current_app, request
 
 import db_sql
@@ -40,6 +42,18 @@ def telegram_linked():
     _bot_guard()
     data = request.get_json(silent=True) or {}
     return {"linked": telegram_notify.set_linked(data.get("emails") or [])}
+
+
+@bp.route("/site.webmanifest")
+def webmanifest():
+    """Ярлик на головному екрані телефона: назва — з «Налаштування → Дизайн»."""
+    from web.context import app_name
+    name = app_name()
+    body = {"name": f"{name} — заявки на оплату", "short_name": name,
+            "icons": [{"src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                      {"src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png"}],
+            "theme_color": "#0f6cbd", "background_color": "#ffffff", "display": "standalone", "start_url": "/"}
+    return current_app.response_class(json.dumps(body, ensure_ascii=False), mimetype="application/manifest+json")
 
 
 @bp.route("/favicon.ico")

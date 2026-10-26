@@ -2,6 +2,15 @@
   <input type="hidden" name="tab" value="design">
   <div class="toolbar"><h2 style="margin:0">Дизайн</h2></div>
 
+  <div class="budget-section-title">Назва системи</div>
+  <label class="mode-option">
+    <span><strong>Назва</strong>
+      <input type="text" name="app_name" id="app-name" value="{{ app_name_value }}" maxlength="40" class="inline-select" aria-label="Назва системи">
+      <span class="mode-hint">У шапці (під нею — «заявки на оплату»), у заголовку вкладки браузера, на сторінці входу, у листах і в назві
+        ярлика на телефоні. Поки вводите, назва змінюється в шапці цієї сторінки. Ім'я відправника листів — окремо:
+        «Сповіщення → Ім'я відправника».</span></span>
+  </label>
+
   <div class="budget-section-title">Дизайн картки заявки</div>
   <p class="muted" style="margin-top:0">Поля, правила й кнопки ті самі — змінюється, як ініціатор заповнює заявку. Погоджувачі
     в новому дизайні бачать заявку коротким переглядом (сума, контрагент, факти, рахунки), у класичному — як зараз.
@@ -99,6 +108,9 @@ document.querySelectorAll('.theme-try').forEach(b => b.addEventListener('click',
   if (radio) radio.checked = true;
   document.getElementById('theme-trying').hidden = b.dataset.theme === '{{ color_theme }}';
 }));
+// Назва системи: одразу в шапці цієї сторінки (для всіх — після «Зберегти»)
+const nameInput = document.getElementById('app-name'), brandName = document.querySelector('header .brand-name');
+if (nameInput && brandName) nameInput.addEventListener('input', () => { brandName.textContent = nameInput.value.trim() || 'PayDesk'; });
 // «Спробувати» свято: оформлення на цій сторінці (шапка), до збереження нічого не змінюється
 const savedHoliday = document.documentElement.dataset.holiday || '';
 document.querySelectorAll('.holiday-try').forEach(b => b.addEventListener('click', e => {

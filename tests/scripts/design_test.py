@@ -135,4 +135,22 @@ check("preview saves nothing, settings unchanged", db.last_id() == n and app_set
 login("a@ftpua.com")
 check("preview: admin only", c.get("/admin/settings/design/preview").status_code in (302, 403))
 app_settings.set("card_design", "classic", "t")
+
+# ---------- назва системи
+login("adm@ftpua.com")
+check("design tab: system name field", 'name="app_name"' in page("/admin/settings?tab=design") and app_settings.get("app_name") == "PayDesk")
+c.post("/admin/settings", data={"tab": "design", "app_name": "  "})
+check("empty name refused", app_settings.get("app_name") == "PayDesk")
+c.post("/admin/settings", data={"tab": "design", "app_name": "x" * 41})
+check("too long name refused", app_settings.get("app_name") == "PayDesk")
+c.post("/admin/settings", data={"tab": "design", "app_name": "FTP PayDesk"})
+login("a@ftpua.com")
+html = page("/requests/new")
+check("name in header and tab title", app_settings.get("app_name") == "FTP PayDesk" and 'class="brand-name">FTP PayDesk<' in html
+      and "· FTP PayDesk</title>" in html)
+man = c.get("/site.webmanifest")
+check("phone shortcut name", man.status_code == 200 and man.get_json()["short_name"] == "FTP PayDesk")
+claims.clear()
+check("login page", "<h1>FTP PayDesk</h1>" in page("/login"))
+app_settings.set("app_name", "PayDesk", "t")
 print("ALL OK" if ok else "SOME FAILED")

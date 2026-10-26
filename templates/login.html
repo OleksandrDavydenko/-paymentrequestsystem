@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Вхід · PayDesk</title>
+  <title>Вхід · {{ app_name or 'PayDesk' }}</title>
   <link rel="icon" href="{{ url_for('static', filename='favicon.svg') }}" type="image/svg+xml">
   <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" sizes="any">
   <style>
@@ -31,7 +31,7 @@
 <body>
   <div class="box">
     <img class="logo" src="{{ url_for('static', filename='favicon.svg') }}" alt="">
-    <h1>PayDesk</h1>
+    <h1>{{ app_name or 'PayDesk' }}</h1>
     <p class="sub">Заявки на оплату</p>
     <p>{% if google_url %}Увійдіть своїм робочим акаунтом Google — тим самим, що й у пошті.{% else %}Увійдіть робочим обліковим записом.{% endif %}</p>
     {% if error %}<div class="error">{{ error }}</div>{% endif %}

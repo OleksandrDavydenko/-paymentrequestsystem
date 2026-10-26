@@ -43,9 +43,15 @@ def inject_refs():
         # У режимі «Бухгалтер» організацію не вказують — колонки й фільтра «Організація» немає
         "show_org": app_settings.get("org_field_mode") != "accountant",
         **theme_context(app_settings.get("color_theme")),
+        "app_name": app_name(),
         # Святкове оформлення (<html data-holiday>): ввімкнене свято у свої дні або вибране вручну
         "holiday": holidays.active(clock.today(), app_settings.get("holidays"), app_settings.get("holiday_now")),
     }
+
+
+def app_name():
+    """Назва системи («Налаштування → Дизайн»): шапка, заголовки сторінок, вхід, листи, ярлик на телефоні."""
+    return (app_settings.get("app_name") or "").strip() or "PayDesk"
 
 
 def theme_context(theme):

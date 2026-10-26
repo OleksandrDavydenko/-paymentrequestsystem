@@ -163,7 +163,8 @@ def _context(tab):
     elif tab == "design":
         today, enabled = clock.today(), app_settings.get("holidays") or []
         upcoming = holidays.next_up(today, enabled)
-        ctx.update(color_theme=app_settings.get("color_theme"), COLOR_THEMES=schema.COLOR_THEMES,
+        ctx.update(app_name_value=app_settings.get("app_name"), color_theme=app_settings.get("color_theme"),
+                   COLOR_THEMES=schema.COLOR_THEMES,
                    card_design=app_settings.get("card_design"), CARD_DESIGNS=schema.CARD_DESIGNS,
                    holiday_list=[{"code": code, "name": name, "greet": greet, "when": holidays.when(code, today),
                                   "on": code in enabled} for code, (name, greet) in holidays.HOLIDAYS.items()],
@@ -301,6 +302,10 @@ def admin_settings(*, context):
         errors["cfo_threshold_usd"] = "Вкажіть поріг фіндиректора — суму в USD, більшу за 0"
     if tab == "approval" and "cfo_rules_sent" in request.form:
         _parse_cfo_rules(request.form, changes, errors)
+    if "app_name" in changes and not changes["app_name"]:
+        errors["app_name"] = "Вкажіть назву системи"
+    elif len(changes.get("app_name") or "") > 40:
+        errors["app_name"] = "Назва системи — не довше 40 символів"
     if changes.get("doc_extensions") == []:
         errors["doc_extensions"] = "Залиште дозволеним хоча б один формат документів"
     back = url_for("admin.admin_settings", tab="approval" if legacy else tab)
@@ -321,7 +326,8 @@ def admin_settings(*, context):
 @login_required
 @requires("admin")
 def admin_settings_export(*, context):
-    data = {"system": "PayDesk", "exported_at": clock.today().isoformat(),
+    from web.context import app_name
+    data = {"system": app_name(), "exported_at": clock.today().isoformat(),
             "exported_by": g.user["email"],
             "settings": {s.key: app_settings.get(s.key) for s in schema.exportable()}}
     body = json.dumps(data, ensure_ascii=False, indent=1, default=str)

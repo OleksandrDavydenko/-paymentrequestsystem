@@ -229,6 +229,7 @@ _LIST = [
     Setting("approver_remind_cfo_copy", "Копія нагадування фіндиректору, якщо заявка чекає бухгалтера", "notify",
             "bool", False),
     # ---- Дизайн
+    Setting("app_name", "Назва системи", "design", "text", "PayDesk"),
     Setting("card_design", "Дизайн картки заявки", "design", "choice", "classic", _card_designs),
     Setting("color_theme", "Кольорова тема", "design", "choice", "blue", _color_themes),
     # Святкове оформлення: відмічені свята — самі у свої дні; «Показати зараз» — будь-яке вручну

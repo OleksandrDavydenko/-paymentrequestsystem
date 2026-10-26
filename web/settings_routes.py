@@ -67,7 +67,8 @@ def _send_address_confirmation(email, alt_email):
     html = render_template("email/confirm_address.html", user_name=g.user["name"], login_email=email,
                            alt_email=alt_email, link=link,
                            hours=int(user_prefs.CONFIRM_TTL.total_seconds() // 3600))
-    return mailer.deliver(notifications.smtp_config(), alt_email, "Підтвердіть адресу для сповіщень — PayDesk",
+    from web.context import app_name
+    return mailer.deliver(notifications.smtp_config(), alt_email, f"Підтвердіть адресу для сповіщень — {app_name()}",
                           html, {"event": "confirm_email", "recipient": email})
 
 
