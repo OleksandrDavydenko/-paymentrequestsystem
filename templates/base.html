@@ -76,6 +76,27 @@
   </main>
   <script src="{{ url_for('static', filename='table-tools.js') }}"></script>
   <script>
+    // Шапка: тінь, коли сторінку прокручено; на телефоні ховається при гортанні вниз і з'являється при гортанні вгору
+    (function () {
+      const root = document.documentElement, phone = matchMedia('(max-width: 760px)');
+      let last = scrollY, queued = false;
+      addEventListener('scroll', () => {
+        if (queued) return;
+        queued = true;
+        requestAnimationFrame(() => {
+          const y = scrollY;
+          root.classList.toggle('is-scrolled', y > 4);
+          if (!phone.matches || y < 80 || document.querySelector('details.user-menu[open]')) {
+            root.classList.remove('header-hidden');
+            last = y;
+          } else if (Math.abs(y - last) > 12) {  // повільне гортання накопичується, дрібне тремтіння — ні
+            root.classList.toggle('header-hidden', y > last);
+            last = y;
+          }
+          queued = false;
+        });
+      }, {passive: true});
+    })();
     // Закрити меню користувача кліком поза ним
     document.addEventListener('click', e => {
       document.querySelectorAll('details.user-menu[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
