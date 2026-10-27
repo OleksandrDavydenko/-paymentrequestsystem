@@ -1,4 +1,5 @@
-"""Фонові задачі: нагадування про передачу готівки, щоденне обслуговування, синхронізація налаштувань."""
+"""Фонові задачі: нагадування про передачу готівки, щоденне обслуговування, синхронізація налаштувань,
+звірка з платежами 1С (кожні 10 хвилин)."""
 import logging
 import os
 import threading
@@ -112,6 +113,46 @@ def _reminder_loop():
         time.sleep(REMINDER_INTERVAL)
 
 
+def run_payments_sync():
+    """Платежі з 1С → копія PayDesk → зіставлення з заявками (листи про «Оплачено» — з контекстом сайту)."""
+    import payments
+    docstore.sync()
+    with _app.test_request_context(base_url=_public_base_url()):
+        return payments.sync()
+
+
+def _payments_loop():
+    """Звірка з платежами 1С частіше за інші задачі; виконує один процес (оренда в базі)."""
+    import payments
+    time.sleep(90)
+    while True:
+        try:
+            jobs.run("payments_sync", payments.SYNC_EVERY - timedelta(minutes=1), run_payments_sync)
+        except Exception as e:
+            logging.getLogger(__name__).exception("Помилка звірки з платежами 1С")
+            alerts.report(e, "фонова задача «payments_sync»", base_url=_public_base_url())
+        time.sleep(payments.SYNC_EVERY.total_seconds())
+
+
+_kick_lock = threading.Lock()
+
+
+def kick_payments_sync():
+    """Відкрили «До оплати» чи «Звірку», а сайт довго спав (F1) — синхронізувати у фоні, не чекаючи."""
+    import payments
+    if not _reminders_started or not payments.sync_due() or not _kick_lock.acquire(blocking=False):
+        return
+
+    def run():
+        try:
+            jobs.run("payments_sync", payments.SYNC_EVERY - timedelta(minutes=1), run_payments_sync)
+        except Exception:
+            logging.getLogger(__name__).exception("Помилка звірки з платежами 1С")
+        finally:
+            _kick_lock.release()
+    threading.Thread(target=run, name="payments-sync-kick", daemon=True).start()
+
+
 def _start_background():
     global _last_base_url, _reminders_started
     _last_base_url = request.host_url.rstrip("/")
@@ -122,6 +163,7 @@ def _start_background():
         if not _reminders_started:
             _reminders_started = True
             threading.Thread(target=_reminder_loop, name="background-jobs", daemon=True).start()
+            threading.Thread(target=_payments_loop, name="payments-sync", daemon=True).start()
             mailer.start_worker()  # листи, що лишилися в черзі після перезапуску
 
 

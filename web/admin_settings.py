@@ -5,7 +5,7 @@
 """
 import json
 from copy import deepcopy
-from datetime import timedelta
+from datetime import date as date_cls, timedelta
 from decimal import Decimal
 
 from flask import Response, flash, g, redirect, render_template, request, session, url_for
@@ -160,6 +160,12 @@ def _context(tab):
                    mail_password=app_settings.info("smtp_password"), SMTP_PRESETS=mailer.PRESETS,
                    SMTP_SECURITY=mailer.SECURITY, telegram=telegram_notify.status(),
                    mail_problems=len(notify_log.query(200, status="problems")))
+    elif tab == "reconcile":
+        import payments
+        ctx.update(payments_since=app_settings.get("payments_since"), PAY_MODES=schema.SETTINGS["pay_mode_acc_cash"].choices(),
+                   pay_modes={r: payments.pay_mode(r) for r in wf.ACCOUNTANT_ROLES},
+                   ACCOUNTANT_ROLE_LIST=[(r, wf.ROLES[r]) for r in ("acc_cash", "acc_resident", "acc_nonresident")],
+                   sync_state=payments.status())
     elif tab == "design":
         today, enabled = clock.today(), app_settings.get("holidays") or []
         upcoming = holidays.next_up(today, enabled)
@@ -302,6 +308,11 @@ def admin_settings(*, context):
         errors["cfo_threshold_usd"] = "Вкажіть поріг фіндиректора — суму в USD, більшу за 0"
     if tab == "approval" and "cfo_rules_sent" in request.form:
         _parse_cfo_rules(request.form, changes, errors)
+    if "payments_since" in changes:
+        try:
+            changes["payments_since"] = date_cls.fromisoformat(changes["payments_since"]).isoformat()
+        except ValueError:
+            errors["payments_since"] = "«Звіряти платежі з 1С від дати»: вкажіть дату"
     if "app_name" in changes and not changes["app_name"]:
         errors["app_name"] = "Вкажіть назву системи"
     elif len(changes.get("app_name") or "") > 40:
@@ -321,6 +332,25 @@ def admin_settings(*, context):
 
 
 # ---------------------------------------------------------------- експорт / імпорт
+
+@bp.route("/admin/payments/sync", methods=["POST"])
+@login_required
+@requires("admin")
+def payments_sync_now(*, context):
+    """«Синхронізувати зараз»: забрати платежі з 1С, перевірити видалені й зіставити з заявками."""
+    import payments
+    state = payments.sync(check_keys=True)
+    if state.get("busy"):
+        flash("Синхронізація вже йде — оновіть сторінку за хвилину", "success")
+    elif state.get("error"):
+        flash("Не вдалося забрати платежі з 1С: " + state["error"], "error")
+    else:
+        paid = state.get("paid_last") or []
+        flash(f"Платежі з 1С синхронізовано: рядків у копії {state.get('rows', 0)}, нових або змінених "
+              f"{state.get('loaded_last', 0)}, прив'язано платежів {state.get('linked_last', 0)}"
+              + (f", позначено оплаченими: {', '.join('№ ' + n for n in paid)}" if paid else ""), "success")
+    return redirect(url_for("admin.admin_settings", tab="reconcile"))
+
 
 @bp.route("/admin/settings/export")
 @login_required

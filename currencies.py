@@ -54,6 +54,12 @@ def full_names():
     return {c["name"]: c["full_name"] for c in _table.items()}
 
 
+def code_by_guid(guid):
+    """Буквений код валюти за GUID з 1С (платежі) або None."""
+    guid = str(guid or "").strip().upper()
+    return next((c["name"] for c in _table.items() if c["guid"] and c["guid"].upper() == guid), None) if guid else None
+
+
 def is_valid(code):
     return code in codes()
 

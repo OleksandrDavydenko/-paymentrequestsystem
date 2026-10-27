@@ -19,6 +19,7 @@ import notifications
 import org_structure
 import organizations
 import payment_accounts
+import payments
 import settings_schema
 import storage as db
 import user_budget
@@ -332,7 +333,12 @@ def _render_card(req, existing, errors, user, roles, budget_items, contractor_li
                          for code, forms in organizations.accountant_overrides().items()},
         editable=wf.can_edit(req, roles, user["email"]),
         can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
-        actions=[a for a in available if a != "submit"],
+        # «Оплачено» вручну — лише якщо для бухгалтера заявки не ввімкнено режим «Автоматично» (звірка з 1С)
+        actions=[a for a in available if a != "submit" and (a != "pay" or payments.manual_pay_allowed(req))],
+        pay_marker=f"#{int(req['number'])}" if req.get("number") and req["status"] == "to_pay"
+        and wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES else None,
+        pay_auto=payments.pay_mode(wf.accountant_role(req)) if req.get("id") else "manual",
+        payment_links=payments.links_of_request(req["id"]) if req.get("id") and req["status"] in ("to_pay", "paid") else [],
         author_actions=wf.author_actions(req, roles, user["email"]) if req["id"] else [],
         doc=doc_limits(),
         acting_role=wf.acting_role(req, roles, user["email"]) or (
@@ -602,6 +608,8 @@ def request_action(request_id, *, context):
     action = request.form.get("action")
     try:
         _apply_payment_account(req, request.form.get("payment_account_id"), g.user, g.roles)
+        if action == "pay" and not payments.manual_pay_allowed(req):
+            raise wf.WorkflowError("«Оплачено» для цього бухгалтера ставиться автоматично, щойно платіж з'явиться в 1С")
         if action == "pay" and _try_live_link(req, g.user, wf.history_role(req, g.roles, g.user["email"])):
             flash("Контрагента знайдено в 1С і прив'язано автоматично", "success")
         wf.apply_action(req, action, g.roles, g.user, request.form.get("comment"), **_route_settings(req),

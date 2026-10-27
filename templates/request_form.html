@@ -126,6 +126,23 @@
   адміністратор заборонив погоджувати власні заявки («Розподіл обов'язків»).</div>
 {% endif %}
 
+{% if pay_marker or payment_links %}
+{% set MATCH_LABELS = {"number": "за #номером у призначенні", "auto": "за сумою й контрагентом", "manual": "прив'язано вручну"} %}
+<div class="card pay-match" id="pay-match">
+  {% for p in payment_links %}
+  <div class="pm-link"><span class="badge green">платіж з 1С</span>
+    {{ 'Каса' if p.kind == 'Cash' else 'Банк' }}, № {{ p.number }} від {{ p.date | d }} — <strong>{{ p.amount | money }} {{ p.currency }}</strong>
+    <span class="muted">· {{ MATCH_LABELS.get(p.match, '') }}</span></div>
+  {% endfor %}
+  {% if pay_marker and not payment_links %}
+  <div class="pm-hint">У призначенні платежу вкажіть <strong class="pm-marker">{{ pay_marker }}</strong>
+    <button type="button" class="btn-link cp-copy" data-copy="{{ pay_marker }}" title="Скопіювати" aria-label="Скопіювати {{ pay_marker }}">⧉</button>
+    — тоді платіж з 1С сам знайде цю заявку{{ ' і позначить її оплаченою' if pay_auto in ('auto', 'both') }}.
+    {% if pay_auto == 'auto' %}<span class="muted">Кнопки «Оплачено» немає: статус ставиться автоматично.</span>{% endif %}</div>
+  {% endif %}
+</div>
+{% endif %}
+
 {% if actions %}
 
 

@@ -1,0 +1,63 @@
+<div class="card process-settings">
+  <div class="toolbar"><h2 style="margin:0">Звірка з платежами 1С</h2></div>
+  <p class="muted" style="margin-top:0">PayDesk забирає з 1С документи списання (банк і каса) з таблиці Power BI
+    <code>{{ sync_state.table }}</code> і шукає для кожного платежу заявку: спершу <strong>#номер</strong> у призначенні
+    платежу (<code>#5</code> → заявка 000000005, якщо збігаються сума, валюта й — для безготівки — контрагент), потім за
+    реквізитами (сума, валюта, контрагент або одержувач готівки — автор заявки, вид оплати, дата). Знайдений платіж
+    прив'язується до заявки; позначати її оплаченою чи ні — за режимом нижче.</p>
+  <div class="sync-state">
+    {% if not sync_state.live %}<span class="badge amber">демо-платежі</span>
+      <span class="muted">Power BI не підключено або ввімкнено тестові дані — звірка працює на прикладах.</span>
+    {% elif sync_state.error %}<span class="badge red">помилка</span> <span>{{ sync_state.error }}</span>
+    {% elif sync_state.synced_at %}<span class="badge green">працює</span>
+    {% else %}<span class="badge grey">ще не синхронізовано</span>{% endif %}
+    <dl class="sync-facts">
+      <div><dt>Остання синхронізація</dt><dd>{{ sync_state.synced_at[:16].replace('T', ' ') if sync_state.synced_at else '—' }}</dd></div>
+      <div><dt>Рядків у копії</dt><dd>{{ sync_state.rows or 0 }}</dd></div>
+      <div><dt>Останнім разом нових / змінених</dt><dd>{{ sync_state.loaded_last or 0 }}</dd></div>
+      <div><dt>Прив'язано платежів</dt><dd>{{ sync_state.linked_last or 0 }}</dd></div>
+      <div><dt>Розбіжностей</dt><dd>{{ sync_state.issues or 0 }}</dd></div>
+    </dl>
+    <form method="post" action="{{ url_for('admin.payments_sync_now') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit" class="btn btn-sm">⟳ Синхронізувати зараз</button>
+      <span class="muted">Сама синхронізація — кожні 10 хвилин; видалені в 1С платежі — раз на добу.</span>
+    </form>
+  </div>
+</div>
+
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="process-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="reconcile">
+  <div class="budget-section-title">«Оплачено» для кожного бухгалтера</div>
+  <div class="table-wrap">
+  <table class="stack pay-modes">
+    <thead><tr><th>Бухгалтер</th>{% for code, label in PAY_MODES.items() %}<th>{{ label.split(':')[0] }}</th>{% endfor %}</tr></thead>
+    <tbody>
+      {% for role, title in ACCOUNTANT_ROLE_LIST %}
+      <tr>
+        <td data-label="Бухгалтер"><strong>{{ title }}</strong></td>
+        {% for code, label in PAY_MODES.items() %}
+        <td data-label="{{ label.split(':')[0] }}" class="c">
+          <input type="radio" name="pay_mode_{{ role }}" value="{{ code }}" {{ 'checked' if pay_modes[role] == code }}
+                 aria-label="{{ title }}: {{ label.split(':')[0] }}"></td>
+        {% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <ul class="mode-legend muted">
+    {% for code, label in PAY_MODES.items() %}<li><strong>{{ label.split(':')[0] }}</strong> — {{ label.split(':', 1)[1].strip() }}</li>{% endfor %}
+  </ul>
+  <p class="muted">У режимах «Автоматично» й «Обидва» бухгалтер у картці заявки бачить підказку, що вписати в
+    призначення платежу (наприклад, <code>#5</code>). У режимі «Вручну» платіж лише прив'язується до заявки, щоб у звірці
+    було видно, що його зроблено за заявкою.</p>
+
+  <div class="budget-section-title">Звідки звіряти</div>
+  <label class="mode-option">
+    <span><strong>Звіряти платежі з 1С від дати</strong>
+      <input type="date" name="payments_since" value="{{ payments_since }}" class="inline-select" aria-label="Звіряти платежі від дати">
+      <span class="mode-hint">Платежі раніше цієї дати не забираються й не зіставляються. Зміна дати перезавантажує копію
+        платежів (прив'язки до заявок лишаються).</span></span>
+  </label>
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+</form>

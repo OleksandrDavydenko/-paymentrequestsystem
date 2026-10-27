@@ -225,6 +225,51 @@ settings_log_t = sa.Table(
 )
 sa.Index("ix_settings_log_key", settings_log_t.c.key, settings_log_t.c.id)
 
+# Платежі з 1С (таблиця Power BI «Payments», див. payments.py): копія рядків розшифровки документів списання
+payments_t = sa.Table(
+    "payments", metadata,
+    sa.Column("payment_guid", sa.Unicode(32), primary_key=True),
+    sa.Column("line_no", sa.Integer, primary_key=True, autoincrement=False),
+    sa.Column("kind", sa.Unicode(10)),                 # Bank / Cash / Other
+    sa.Column("doc_number", sa.Unicode(50)),
+    sa.Column("pay_date", sa.Date),
+    sa.Column("payment_type", sa.Unicode(64)),         # вид оплати (GUID 1С)
+    sa.Column("counterparty", sa.Unicode(64)),
+    sa.Column("amount", sa.Numeric(18, 2)),
+    sa.Column("currency", sa.Unicode(3)),
+    sa.Column("item_code", sa.Unicode(64)),
+    sa.Column("department", sa.Unicode(64)),           # GUID підрозділу 1С
+    sa.Column("purpose", sa.UnicodeText),
+    sa.Column("posted", sa.Boolean, nullable=False, server_default=sa.text("1")),
+    sa.Column("deleted", sa.Boolean, nullable=False, server_default=sa.text("0")),   # помічено на видалення в 1С
+    sa.Column("operation", sa.Unicode(150)),
+    sa.Column("recipient", sa.Unicode(64)),            # кому видано готівку (GUID співробітника)
+    sa.Column("row_version", sa.BigInteger),
+    sa.Column("invoice", sa.Unicode(64)),
+    sa.Column("removed", sa.Boolean, nullable=False, server_default=sa.text("0")),   # зник із 1С
+    sa.Column("synced_at", sa.DateTime),
+)
+sa.Index("ix_payments_date", payments_t.c.pay_date)
+sa.Index("ix_payments_rv", payments_t.c.row_version)
+
+payment_links_t = sa.Table(
+    "payment_links", metadata,  # який платіж оплатив яку заявку
+    sa.Column("payment_guid", sa.Unicode(32), primary_key=True),
+    sa.Column("request_id", sa.Integer, primary_key=True, autoincrement=False),
+    sa.Column("match", sa.Unicode(20)),                # number / auto / manual
+    sa.Column("at", sa.DateTime),
+    sa.Column("by_name", sa.Unicode(200)),
+)
+sa.Index("ix_payment_links_request", payment_links_t.c.request_id)
+
+payment_issues_t = sa.Table(
+    "payment_issues", metadata,  # розбіжність зіставлення платежу (останній результат)
+    sa.Column("payment_guid", sa.Unicode(32), primary_key=True),
+    sa.Column("issue", sa.Unicode(40), nullable=False),
+    sa.Column("detail", sa.UnicodeText),
+    sa.Column("at", sa.DateTime),
+)
+
 sessions_t = sa.Table(
     "web_sessions", metadata,  # сеанси входу (спільні для всіх процесів сайту)
     sa.Column("id", sa.Unicode(255), primary_key=True),

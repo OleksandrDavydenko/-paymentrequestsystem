@@ -405,6 +405,24 @@ def paid_entry(req):
                  if h.get("to_status") == "paid"), None)
 
 
+PAYMENT_USER = {"name": "1С (платіж)", "email": ""}  # автор запису, коли «Оплачено» ставить звірка з платежами
+
+
+def mark_paid_by_payment(req, payment_label, payment_type=None, handover=False, user=None):
+    """«Оплачено» за платежем з 1С (payments.py): автоматично — від імені 1С, вручну прив'язаний — від user.
+    Порожній «Вид оплати» заявки береться з платежу. Кидає WorkflowError, якщо заявка не «До оплати»."""
+    if req["status"] != "to_pay":
+        raise WorkflowError("Оплаченою можна позначити лише заявку «До оплати»")
+    if payment_type and not req.get("payment_account_id"):
+        req["payment_account_id"] = payment_type
+    old = req["status"]
+    req["status"] = "paid"
+    start_handover(req, handover)
+    how = "прив'язано платіж" if user else "автоматично за платежем"
+    add_history(req, "pay", user or PAYMENT_USER, accountant_role(req) or "acc_resident",
+                f"Оплачено — {how} 1С: {payment_label}", old, "paid")
+
+
 def admin_set_status(req, new_status, user, comment, handover=False):
     """Адміністратор вручну змінює статус будь-якої заявки. Коментар обов'язковий.
     handover — чи ввімкнено підтвердження передачі готівки (для переходу в «Оплачено»)."""

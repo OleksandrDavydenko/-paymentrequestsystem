@@ -7,9 +7,11 @@ import app_settings
 import clock
 import notifications
 import payment_accounts
+import payments
 import storage as db
 import workflow as wf
 
+from web import background
 from web.auth import login_required, requires
 from web.listing import _date_filter, _filtered, _in_period, _page, _ref_keys, currency_totals, date_presets, payment_plan, recent_presets
 from web.request_helpers import _pay_guard, _try_live_link
@@ -50,6 +52,8 @@ def to_pay(*, context):
     rows, page = _page(found)
     blocked = {r["id"] for r in rows if _pay_guard(r)["cp_pending"] and _pay_guard(r)["block_pending"]}
     no_account = {r["id"] for r in rows if not r.get("payment_account_id")}
+    auto = {r["id"] for r in rows if not payments.manual_pay_allowed(r)}
+    background.kick_payments_sync()
 
     return render_template(
         "to_pay.html",
@@ -75,12 +79,14 @@ def to_pay(*, context):
         presets=recent_presets(today) if view == "paid" else date_presets(today),
         recent_default=view == "paid",
         payable={r["id"] for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
-                 and r["id"] not in blocked and r["id"] not in no_account},
+                 and r["id"] not in blocked and r["id"] not in no_account and r["id"] not in auto},
         # Мої заявки до оплати, які зараз не можна оплатити, — з причиною
         locked={r["id"]: ("Контрагента ще немає в 1С — оплату заблоковано" if r["id"] in blocked
+                          else f"«Оплачено» поставиться автоматично за платежем з 1С — у призначенні вкажіть #{int(r['number'])}"
+                          if r["id"] in auto
                           else "Не вибрано «Вид оплати» — відкрийте заявку й виберіть рахунок або касу")
                 for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
-                and (r["id"] in blocked or r["id"] in no_account)},
+                and (r["id"] in blocked or r["id"] in no_account or r["id"] in auto)},
     )
 
 
@@ -138,6 +144,9 @@ def to_pay_bulk(*, context):
     for raw in request.form.getlist("ids"):
         req = db.get_request(int(raw)) if raw.isdigit() else None
         if not req:
+            continue
+        if not payments.manual_pay_allowed(req):  # режим «Автоматично» — «Оплачено» ставить звірка з 1С
+            skipped.append(req["number"])
             continue
         try:
             _try_live_link(req, g.user, wf.history_role(req, g.roles, g.user["email"]))

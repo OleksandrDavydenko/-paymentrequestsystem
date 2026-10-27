@@ -22,6 +22,7 @@ TABS = [
     ("approval", "Погодження"),
     ("request", "Заявка"),
     ("payment", "Оплата й готівка"),
+    ("reconcile", "Звірка з 1С"),
     ("notify", "Сповіщення"),
     ("design", "Дизайн"),
     ("data", "Дані й система"),
@@ -112,6 +113,12 @@ def _holiday_now():
 
 def _color_themes():
     return COLOR_THEMES
+
+
+def _pay_modes():
+    return {"manual": "Вручну: «Оплачено» ставить бухгалтер, як зараз",
+            "auto": "Автоматично: «Оплачено» ставить система, щойно платіж з'явиться в 1С",
+            "both": "Обидва: система ставить сама, бухгалтер може й вручну"}
 
 
 def _data_modes():
@@ -212,6 +219,11 @@ _LIST = [
             _wf("CP_OWNER_MODES")),
     Setting("disabled_organizations", "Організації, недоступні для вибору", "payment", "json", [], managed=True),
     Setting("org_accountants", "Бухгалтери організацій", "payment", "json", {}, managed=True),
+    # ---- Звірка з платежами 1С (payments.py)
+    Setting("payments_since", "Звіряти платежі з 1С від дати", "reconcile", "text", "2026-09-01"),
+    Setting("pay_mode_acc_cash", "«Оплачено»: бухгалтер по готівці", "reconcile", "choice", "manual", _pay_modes),
+    Setting("pay_mode_acc_resident", "«Оплачено»: бухгалтер резидентів", "reconcile", "choice", "manual", _pay_modes),
+    Setting("pay_mode_acc_nonresident", "«Оплачено»: бухгалтер нерезидентів", "reconcile", "choice", "manual", _pay_modes),
     # ---- Сповіщення (пошта — власна форма)
     Setting("mail_enabled", "Розсилка увімкнена", "notify", "bool", False, managed=True),
     Setting("mail_sender", "Пошта відправника", "notify", "text", "", managed=True),

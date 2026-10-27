@@ -68,6 +68,16 @@ def first_request_with_counterparty(cp_id):
     return _store().first_request_with_counterparty(cp_id)
 
 
+def ids_by_numbers(numbers):
+    """{номер заявки: id} — для «#номер» у призначенні платежу."""
+    return _store().ids_by_numbers(list(numbers))
+
+
+def payment_candidate_ids(paid_since):
+    """Заявки, з якими зіставляються платежі 1С: «До оплати» й оплачені починаючи з paid_since."""
+    return _store().payment_candidate_ids(paid_since)
+
+
 def invoice_usage(cp_id, numbers, exclude_id=None):
     """У яких заявках у роботі (не відхилених і не скасованих) уже є рахунки цього контрагента: {рахунок: [№ заявок]}."""
     return _store().invoice_usage(cp_id, list(numbers), exclude_id)

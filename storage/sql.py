@@ -348,6 +348,21 @@ def ids_with_departments(codes):
     return _ids(R.c.department.in_(sorted(codes))) if codes else []
 
 
+def ids_by_numbers(numbers):
+    """{номер заявки: id} для зіставлення з платежами 1С (#номер у призначенні)."""
+    numbers = sorted(set(numbers))
+    if not numbers:
+        return {}
+    with _engine().connect() as c:
+        return {n: i for i, n in c.execute(sa.select(R.c.id, R.c.number).where(R.c.number.in_(numbers)))}
+
+
+def payment_candidate_ids(paid_since):
+    """Заявки «До оплати» й оплачені з дати paid_since — кандидати на зіставлення з платежами 1С."""
+    return _ids(sa.or_(R.c.status == "to_pay",
+                       sa.and_(R.c.status == "paid", R.c.paid_at >= datetime.combine(paid_since, time.min))))
+
+
 def last_accountant_type(email):
     stmt = (sa.select(R.c.accountant_type)
             .where(R.c.author_lc == (email or "").lower(), R.c.accountant_type.in_(sorted(wf.ACCOUNTANT_CHOICES)))

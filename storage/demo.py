@@ -51,6 +51,32 @@ _AUTHOR_DEPARTMENT = {_ME[0]: "BA", _OTHER[0]: "LOG"}
 # ---------------------------------------------------------------- заявки
 
 # Типові кроки процесу для мокової історії: (дата-час, користувач, роль, дія, коментар)
+def _payment(n, kind, number, day, ptype, cp, amount, cur, purpose, operation, item=None, recipient=None):
+    """Демо-платіж з 1С у форматі таблиці Power BI «Payments» (звірка в тестовому режимі, payments.py)."""
+    return {"PaymentGUID": f"D{n:031d}", "LineNo": 1, "DocumentKind": kind, "DocumentNumber": number, "PaymentDate": day,
+            "PaymentTypeGUID": ptype, "CounterpartyGUID": cp, "Amount": amount, "Currency": cur, "ExpenseItemCode": item,
+            "DepartmentGUID": None, "Purpose": purpose, "IsPosted": True, "IsDeleted": False, "OperationKind": operation,
+            "RecipientEmployeeGUID": recipient, "RowVersion": 1000 + n, "InvoiceGUID": None}
+
+
+# Демо-платежі: оплачена вручну заявка 1, «#3» до заявки 3, «#12» з іншою сумою, готівка під заявку 14 без номера,
+# комісія банку й податок (дозволені без заявки) і платіж постачальнику без заявки
+PAYMENTS = [
+    _payment(1, "Bank", "ОТП-000101", "2026-09-05", "1", "1", 12450.00, "UAH", "Оплата за рах. №1045", "Оплата постачальнику", "01.001"),
+    _payment(2, "Bank", "ОТП-000128", "2026-09-27", "6", "3", 23999.99, "UAH", "Оплата за обладнання згідно рах. 77, #3",
+             "Оплата постачальнику", "03.001"),
+    _payment(3, "Bank", "ОТП-000141", "2026-10-07", "6", "4", 1200.00, "USD", "Payment for invoice INV-2207 #12",
+             "Оплата постачальнику", "04.001"),
+    _payment(4, "Cash", "КО-000057", "2026-10-08", "9", "6", 2400.00, "UAH", "Видача готівки на оплату послуг", "Видача підзвітній особі",
+             "05.001"),
+    _payment(5, "Bank", "SAL4498696", "2026-10-15", "1", None, 3.43, "UAH", "Комісії за обслуг. з/п договорів", "Комісія банку"),
+    _payment(6, "Bank", "000074", "2026-10-15", "1", None, 1952.88, "UAH", "101 1952.88 грн. ПДФО за вересень 2026 р.",
+             "Перерахування податків"),
+    _payment(7, "Bank", "ОТП-000163", "2026-10-21", "1", "2", 7300.00, "UAH", "Оплата за консультаційні послуги",
+             "Оплата постачальнику", "02.001"),
+]
+
+
 def _route(day, *steps):
     return [(f"2026-09-{day + i:02d}T{9 + i:02d}:15:00", *step) for i, step in enumerate(steps)]
 

@@ -71,6 +71,20 @@ def ids_with_departments(codes):
     return _ids_where(lambda r: r.get("department") in codes)
 
 
+def ids_by_numbers(numbers):
+    wanted = set(numbers)
+    return {r["number"]: r["id"] for r in _REQUESTS.values() if r["number"] in wanted}
+
+
+def payment_candidate_ids(paid_since):
+    def ok(r):
+        if r["status"] == "to_pay":
+            return True
+        paid = wf.paid_entry(r) if r["status"] == "paid" else None
+        return bool(paid and paid["at"].date() >= paid_since)
+    return _ids_where(ok)
+
+
 def last_accountant_type(email):
     rows = sorted((r for r in _REQUESTS.values() if wf.is_author(r, email)), key=lambda r: r["id"])
     rows.sort(key=lambda r: r["created_at"], reverse=True)
