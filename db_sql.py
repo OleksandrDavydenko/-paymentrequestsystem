@@ -236,7 +236,7 @@ payments_t = sa.Table(
     sa.Column("payment_type", sa.Unicode(64)),         # вид оплати (GUID 1С)
     sa.Column("counterparty", sa.Unicode(64)),
     sa.Column("amount", sa.Numeric(18, 2)),
-    sa.Column("currency", sa.Unicode(3)),
+    sa.Column("currency", sa.Unicode(10)),             # буквений код з 1С (бувають і довші за 3 символи)
     sa.Column("item_code", sa.Unicode(64)),
     sa.Column("department", sa.Unicode(64)),           # GUID підрозділу 1С
     sa.Column("purpose", sa.UnicodeText),

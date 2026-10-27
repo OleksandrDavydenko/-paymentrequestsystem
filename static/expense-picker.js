@@ -94,6 +94,8 @@
     picker.classList.toggle('has-value', !!item);
     picker.classList.remove('invalid', 'unmatched');
     if (item && save) remember(item.code);
+    const hint = document.getElementById('exp-note');  // «оберіть іншу статтю» — уже обрано
+    if (item && hint && ITEMS.length) hint.hidden = true;
     closeSuggest();
   }
 
@@ -256,6 +258,7 @@
   // Інший список статей (тип оплати «підряднику / непрямі» чи відділ заявки змінилися): стаття, якої в ньому немає,
   // очищується з поясненням
   const note = document.getElementById('exp-note');
+  let clearNote = '';  // пояснення після clear() — показується, коли прийде новий список
   window.expensePicker = {
     setItems(list, emptyText) {
       ITEMS = list || [];
@@ -266,9 +269,17 @@
       input.disabled = !ITEMS.length;
       input.placeholder = ITEMS.length ? 'Код або назва статті…' : (emptyText || 'Немає статей');
       if (note) {
-        note.textContent = !ITEMS.length ? (emptyText || '') : cleared ? 'Попередню статтю прибрано: її немає в цьому списку — оберіть іншу' : '';
+        note.textContent = !ITEMS.length ? (emptyText || '') : cleared ? 'Попередню статтю прибрано: її немає в цьому списку — оберіть іншу' : clearNote;
         note.hidden = !note.textContent;
       }
+      clearNote = '';
+    },
+    // Очистити вибрану статтю (змінили «Що оплачуємо?» — статтю обирають заново, нічого не підставляється)
+    clear(text) {
+      if (!hidden.value) return;
+      select(null);
+      clearNote = text || '';
+      if (note && ITEMS.length) { note.textContent = clearNote; note.hidden = !clearNote; }
     },
   };
 

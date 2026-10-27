@@ -145,7 +145,7 @@ def _date_of(value):
 def _currency(r):
     code = currencies.code_by_guid(r.get("CurrencyGUID")) if r.get("CurrencyGUID") else None
     raw = str(r.get("Currency") or r.get("CurrencyGUID") or "").strip().upper()
-    return code or (raw if len(raw) == 3 else None)
+    return (code or (raw if len(raw) == 3 else None) or "")[:10] or None
 
 
 def parse(r):

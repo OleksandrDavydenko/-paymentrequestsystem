@@ -182,6 +182,12 @@
     timer = setTimeout(() => loadRoute(key), 350);
   }
 
+  // Змінили «Що оплачуємо?» — стаття попереднього типу не переноситься: поле порожнє, статтю обирають заново
+  form.querySelectorAll('input[name=payment_kind]').forEach(r => r.addEventListener('change', () => {
+    if (window.expensePicker && window.expensePicker.clear)
+      window.expensePicker.clear('Тип змінено — оберіть статтю зі списку');
+  }));
+
   // «Що оплачуємо» — перший крок: доки не вибрано, решта форми прихована (і сервер заявку без нього не прийме)
   form.querySelectorAll('input[name=payment_kind]').forEach(r => r.addEventListener('change', () => {
     if (!form.classList.contains('kind-pending')) return;

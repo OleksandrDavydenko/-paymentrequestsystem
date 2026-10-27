@@ -29,6 +29,7 @@ def inject_refs():
         "cp_pending": counterparties.is_pending,
         "pay_account_label": payment_accounts.label,
         "payment_docs": _payment_docs,
+        "SETTINGS_TABS": settings_schema.TABS,
         "expense_name": expense_label,
         "expense_title": expense_items.get_name,
         "CURRENCIES": currencies.codes(),

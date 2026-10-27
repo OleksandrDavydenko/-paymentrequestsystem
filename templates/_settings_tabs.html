@@ -1,0 +1,7 @@
+{# Розділи «Налаштування» (зокрема «Відділи» — окрема сторінка /admin/departments, але це теж налаштування) #}
+<nav class="tabs settings-tabs" aria-label="Налаштування">
+  {% for code, title in SETTINGS_TABS %}
+  {% if code == 'log' %}<a href="{{ url_for('admin.admin_departments') }}" class="tab {{ 'active' if request.endpoint == 'admin.admin_departments' }}">Відділи</a>{% endif %}
+  <a href="{{ url_for('admin.admin_settings', tab=code) }}" class="tab {{ 'active' if request.endpoint == 'admin.admin_settings' and tab == code }}">{{ title }}</a>
+  {% endfor %}
+</nav>

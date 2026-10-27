@@ -193,7 +193,7 @@ def request_card(request_id=None, *, context):
         existing = _load_visible(request_id)
 
     # Статті, які може вибрати автор (редагує заявку лише автор, тож беремо поточного користувача): непрямі витрати —
-    # з його бюджету, оплата підряднику — статті відділу заявки («Адміністрування → Відділи»)
+    # з його бюджету, оплата підряднику — статті відділу заявки («Налаштування → Відділи»)
     budget_items = user_budget.allowed_items(user_budget.get(user["oid"]), expense_items.get_items())
     dept_list = org_structure.request_departments_of(user["oid"])
     contractor_lists = {d: contractor_items(d) for d in set(dept_list) | {existing.get("department")} if d}

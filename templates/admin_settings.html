@@ -4,11 +4,7 @@
 
 {% block content %}
 {% include "_admin_tabs.html" %}
-<nav class="tabs settings-tabs" aria-label="Налаштування">
-  {% for code, title in TABS %}
-  <a href="{{ url_for('admin.admin_settings', tab=code) }}" class="tab {{ 'active' if tab == code }}">{{ title }}</a>
-  {% endfor %}
-</nav>
+{% include "_settings_tabs.html" %}
 
 {% if tab == 'log' %}
 <div class="card">

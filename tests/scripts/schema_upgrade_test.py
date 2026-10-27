@@ -32,6 +32,9 @@ sa.Table("request_history", old,
          sa.Column("comment", sa.UnicodeText))
 sa.Table("documents", old, sa.Column("name", sa.Unicode(100), primary_key=True),
          sa.Column("data", sa.UnicodeText, nullable=False), sa.Column("updated_at", sa.DateTime))
+# Перша версія копії платежів з 1С: валюта — 3 символи (у 1С бувають довші коди)
+sa.Table("payments", old, sa.Column("payment_guid", sa.Unicode(32), primary_key=True),
+         sa.Column("line_no", sa.Integer, primary_key=True, autoincrement=False), sa.Column("currency", sa.Unicode(3)))
 eng = sa.create_engine(url)
 old.create_all(eng)
 created = datetime(2026, 10, 1, 9, 30, 15, 123456)
@@ -62,9 +65,15 @@ idx = {i["name"] for i in insp.get_indexes("requests")}
 check("indexes created", {"ix_requests_active", "ix_requests_author_lc", "ix_requests_created"} <= idx)
 check("new tables", all(insp.has_table(t) for t in ("request_rev", "request_seq", "schema_meta", "mail_outbox",
                                                      "job_lease", "web_sessions", "request_participants", "request_files")))
+pay_cols = {c["name"].lower(): c["type"] for c in insp.get_columns("payments")}
+check("payments: new columns added to the first version", {"amount", "purpose", "removed"} <= set(pay_cols))
 if db_sql.engine().dialect.name == "mssql":
     check("SQL Server: created_at widened to DATETIME2", cols["created_at"] == "DATETIME2"
           and type({c["name"]: c["type"] for c in insp.get_columns("request_history")}["at"]).__name__ == "DATETIME2")
+    check("SQL Server: payments.currency widened to 10", pay_cols["currency"].length == 10)
+    with db_sql.engine().begin() as c:
+        c.execute(db_sql.payments_t.insert().values(payment_guid="A" * 32, line_no=1, currency="TUSDT"))
+    check("SQL Server: long currency code stored", True)
 
 # ---------- стара заявка працює
 r = dbs.get_request(7)

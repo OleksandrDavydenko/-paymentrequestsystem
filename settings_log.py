@@ -48,7 +48,7 @@ def query(limit=300, key=None):
     for r in rows:
         old, new = json.loads(r["old"]) if r["old"] else None, json.loads(r["new"]) if r["new"] else None
         s = settings_schema.SETTINGS.get(r["key"])
-        if r["key"].startswith("dept:"):  # налаштування відділу («Адміністрування → Відділи»)
+        if r["key"].startswith("dept:"):  # налаштування відділу («Налаштування → Відділи»)
             import dept_settings
             out.append({**r, "label": dept_settings.log_label(r["key"]) or r["key"], "tab": "Відділи",
                         "old_label": dept_settings.log_value(r["key"], old),

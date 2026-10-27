@@ -3,11 +3,11 @@
 Таблиці описані в db_sql.py. metadata.create_all створює відсутні таблиці, але не чіпає наявні, тож тут:
   • відсутні колонки додаються ALTER TABLE … ADD (лише нові колонки з nullable або значенням за замовчуванням);
   • SQL Server: колонки дати, описані як DATETIME2, а в старій базі — DATETIME (округлення до ~3 мс),
-    розширюються (індекси з цією колонкою перестворюються);
+    розширюються (індекси з цією колонкою перестворюються); так само — текстові колонки, які в db_sql.py зробили довшими;
   • відсутні індекси створюються;
   • службові рядки: request_rev (лічильник змін) і зсув нумерації заявок (schema_meta).
 Кожен крок можна повторювати: якщо два процеси оновлюють схему одночасно, другий побачить, що все вже є.
-Колонки ніколи не видаляються й не змінюються автоматично.
+Колонки ніколи не видаляються й не звужуються автоматично.
 """
 import logging
 
@@ -62,6 +62,32 @@ def _widen_datetimes(eng):
             existing = {i["name"] for i in sa.inspect(eng).get_indexes(table.name) if i.get("name")}
 
 
+def _widen_strings(eng):
+    """SQL Server: текстова колонка, яку в db_sql.py зробили довшою (напр. payments.currency — у 1С бувають коди валют
+    довші за 3 символи), розширюється. Лише розширення, не ключі; індекси з колонкою перестворюються."""
+    if eng.dialect.name != "mssql":
+        return
+    insp = sa.inspect(eng)
+    for table in db_sql.metadata.sorted_tables:
+        if not insp.has_table(table.name):
+            continue
+        actual = {c["name"].lower(): getattr(c["type"], "length", None) for c in insp.get_columns(table.name)}
+        existing = {i["name"] for i in insp.get_indexes(table.name) if i.get("name")}
+        for col in table.columns:
+            want, have = getattr(col.type, "length", None), actual.get(col.name.lower())
+            if col.primary_key or not want or not have or have >= want or not isinstance(col.type, sa.String):
+                continue
+            ddl = col.type.compile(dialect=eng.dialect)
+            with eng.begin() as c:
+                for idx in table.indexes:
+                    if col.name in [x.name for x in idx.columns] and idx.name in existing:
+                        c.execute(sa.text(f"DROP INDEX {idx.name} ON {table.name}"))
+                c.execute(sa.text(f"ALTER TABLE {table.name} ALTER COLUMN {col.name} {ddl} "
+                                  + ("NULL" if col.nullable else "NOT NULL")))
+            logger.info("Колонку %s.%s розширено до %s", table.name, col.name, ddl)
+            existing = {i["name"] for i in sa.inspect(eng).get_indexes(table.name) if i.get("name")}
+
+
 def _add_missing_indexes(eng):
     insp = sa.inspect(eng)
     for table in db_sql.metadata.sorted_tables:
@@ -109,5 +135,6 @@ def upgrade(eng):
     db_sql.metadata.create_all(eng)
     _add_missing_columns(eng)
     _widen_datetimes(eng)
+    _widen_strings(eng)
     _add_missing_indexes(eng)  # зокрема ті, що перестворюються після розширення колонок
     _init_rows(eng)

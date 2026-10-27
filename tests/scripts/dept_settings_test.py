@@ -56,6 +56,12 @@ login("adm@ftpua.com")
 html = page("/admin/departments")
 check("departments page: tab, settings per department", 'name="head_mode-LOG"' in html and 'name="deputy_approve-LOG"' in html
       and ">Відділи</a>" in html and "Логістика" in html)
+settings_nav = html.split('class="tabs settings-tabs"')[1].split("</nav>")[0] if 'class="tabs settings-tabs"' in html else ""
+check("«Відділи» — розділ «Налаштування», не окрема вкладка адмінки", 'class="tab active">Відділи</a>' in settings_nav
+      and "Відділи" not in html.split('class="tabs admin-tabs"')[1].split("</nav>")[0]
+      and 'class="tab active">Налаштування</a>' in html)
+check("settings page links to «Відділи»", 'href="/admin/departments"' in page("/admin/settings?tab=approval")
+      .split('class="tabs settings-tabs"')[1].split("</nav>")[0])
 c.post("/admin/departments", data={"head_mode-LOG": "approve", "head_threshold-LOG": "abc", "cfo-LOG": "always"})
 check("bad threshold -> nothing saved", dept_settings.get("LOG")["head_mode"] == "default")
 r_ = c.post("/admin/departments", data={"head_mode-LOG": "approve", "head_threshold-LOG": "1 000", "cfo-LOG": "always",

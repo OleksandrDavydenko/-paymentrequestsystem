@@ -1,9 +1,10 @@
 {% extends "base.html" %}
 
-{% block title %}Адміністрування — відділи{% endblock %}
+{% block title %}Налаштування — Відділи{% endblock %}
 
 {% block content %}
 {% include "_admin_tabs.html" %}
+{% include "_settings_tabs.html" %}
 <form method="post" class="card" id="departments"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="toolbar">
     <h1 style="margin:0">Відділи</h1>
