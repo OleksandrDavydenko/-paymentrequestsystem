@@ -57,6 +57,14 @@ def seed_roles(email, groups, name=None, uid=None):
 
 
 import flask  # noqa: E402
+import clock  # noqa: E402
+from datetime import datetime, time  # noqa: E402
+
+# «Сьогодні» — день запуску сценарію. CI іноді йде через північ за Києвом (22:00 UTC), і дати, які сценарій
+# порахував на початку (clock.today() ± дні), посеред нього ставали «вчорашніми». Час іде, але не далі кінця дня.
+_day_end = datetime.combine(clock.today(), time(23, 59, 59, 999999))
+_real_now = clock.now
+clock.now = lambda: min(_real_now(), _day_end)
 
 _preprocess = flask.Flask.preprocess_request
 
