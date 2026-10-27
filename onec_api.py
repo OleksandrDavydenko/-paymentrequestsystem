@@ -17,6 +17,7 @@ import clock
 import counterparties
 import currencies
 import departments
+import employees
 import expense_items
 import organizations
 import payment_accounts
@@ -121,6 +122,7 @@ def order(req, base_url=""):
     pt = payment_types.get(req.get("payment_account_id")) if payment_accounts.use_types() else None
     dep = req.get("department")
     approved = next((h["at"] for h in reversed(req.get("history") or []) if h.get("to_status") == "to_pay"), None)
+    emp = employees.by_email(req.get("author_email"))  # співробітник 1С — кому видають готівку
     o = req.get("onec_order") or {}
     return {
         "request_id": req["id"], "number": req["number"], "marker": f"#{int(req['number'])}",
@@ -141,7 +143,9 @@ def order(req, base_url=""):
                       "currency": ln.get("currency"), "deal": ln.get("deal") or None} for ln in req.get("lines") or []],
         "purpose": purpose(req),
         "note": req.get("note") or "",
-        "author": {"name": req.get("author_name"), "email": req.get("author_email")},
+        "payment_kind": req.get("payment_kind"),  # contractor — оплата рахунків підрядника, indirect — непряма витрата
+        "author": {"name": req.get("author_name"), "email": req.get("author_email"),
+                   "employee": _ref(emp["guid"], code=emp.get("code"), name=emp.get("name")) if emp else None},
         "approved_at": approved.isoformat(timespec="seconds") if approved else None,
         "url": f"{base_url.rstrip('/')}/requests/{req['id']}" if base_url else None,
         "onec_state": state_of(req),

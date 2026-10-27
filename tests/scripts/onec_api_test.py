@@ -57,6 +57,9 @@ check("order fields", o["marker"] == "#15" and o["amount"] == "6180.00" and o["c
       and o["counterparty"]["name"] == "ПрАТ «Київстар»" and o["counterparty"]["edrpou"] == "21673832"
       and o["expense_item"]["code"] and o["purpose"].endswith("#15") and o["onec_state"] == "new"
       and o["url"].endswith("/requests/15") and o["organization"]["code"])
+check("payment kind and author's 1C employee", o["payment_kind"] in ("contractor", "indirect", None)
+      and o["author"]["email"] == "i.petrenko@ftpua.com" and o["author"]["employee"]["guid"] == "EMP-IP"
+      and o["author"]["employee"]["name"] == "Петренко Ірина")
 check("bank / cash filter", all(i["payment_form"] == "bank" for i in c.get("/api/1c/v1/payment-orders?form=bank", headers=H).get_json()["items"])
       and all(i["payment_form"] == "cash" for i in c.get("/api/1c/v1/payment-orders?form=cash", headers=H).get_json()["items"]))
 check("1C ref from SQL GUID", onec_api.ref_1c("0123456789ABCDEF0123456789ABCDEF") == "89abcdef-4567-0123-0123-456789abcdef"

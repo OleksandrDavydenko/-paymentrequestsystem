@@ -212,7 +212,8 @@ PayDesk зберігається лише SHA-256, новий ключ скас�
 - `organization`, `payment_type`, `counterparty` (`in_1c` — чи вже в 1С), `expense_item`, `department`;
 - `invoices[]`;
 - `purpose` (у кінці `#номер` — для звірки);
-- `note`, `author`, `approved_at`, `url`;
+- `payment_kind` — `contractor` (оплата рахунків підрядника) або `indirect` (непряма витрата);
+- `note`, `author` (`name`, `email`, `employee` — співробітник 1С: `guid`, `ref`, `code`, `name`), `approved_at`, `url`;
 - `onec_state` / `onec_order` — остання відмітка 1С. Вона зберігається в `req["onec_order"]`, видно її в картці заявки
   й у «До оплати», кожна зміна — в історії.
 
