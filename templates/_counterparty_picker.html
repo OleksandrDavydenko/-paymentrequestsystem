@@ -70,7 +70,8 @@
   <div id="cp-new-view" hidden>
     <div class="dlg-body cp-new-body">
       <p class="muted cp-new-intro">Якщо контрагента ще немає в 1С — внесіть його реквізити. Заявку можна відправити одразу;
-        бухгалтер заведе контрагента в 1С{{ ' — до того заявку не можна буде позначити оплаченою' if pending_cp_block }}.</p>
+        бухгалтер заведе контрагента в 1С{{ {'accountant': ' — до того бухгалтер не погодить заявку', 'to_pay': ' — до того заявка не перейде в «До оплати»',
+        'block': ' — до того заявку не можна буде позначити оплаченою'}.get(pending_cp_stage, '') }}.</p>
       <div class="cp-new-kind" role="radiogroup" aria-label="Резидентність">
         <label><input type="radio" name="cp-new-resident" value="1" checked> Резидент України</label>
         <label><input type="radio" name="cp-new-resident" value="0"> Нерезидент</label>

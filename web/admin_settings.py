@@ -81,7 +81,7 @@ def _message(key, value):
     if key == "cp_onec_owner":
         return "Нових контрагентів у 1С заводить: " + ("адміністратор" if value == "admin" else "бухгалтер")
     if key == "pending_cp_payment":
-        return f"Контрагент, якого ще немає в 1С: {schema.PENDING_CP_MODES[value]}"
+        return f"Контрагент, якого ще немає в 1С, має бути в 1С: {schema.PENDING_CP_MODES[value]}"
     if key == "login_methods":
         return "Вхід у систему: " + ("Google і Microsoft" if value == "both" else
                                      "лише Google (адміністратори з ADMIN_EMAILS — ще й через Microsoft)")
@@ -144,7 +144,7 @@ def _context(tab):
                    cash_handover_confirm=app_settings.get("cash_handover_confirm"),
                    cash_handover_remind_days=app_settings.get("cash_handover_remind_days"),
                    handover_max_reminders=wf.handover_max(),
-                   pending_cp=app_settings.info("pending_cp_payment"), PENDING_CP_MODES=schema.PENDING_CP_MODES,
+                   pending_cp=app_settings.info("pending_cp_payment"), PENDING_CP_MODES=schema.PENDING_CP_MODES, PENDING_CP_TITLES=schema.PENDING_CP_TITLES,
                    cp_owner=app_settings.get("cp_onec_owner"), CP_OWNER_MODES=wf.CP_OWNER_MODES,
                    pending_counterparties=pending,
                    pending_cp_requests={c["id"]: db.first_request_with_counterparty(c["id"]) for c in pending},
@@ -171,7 +171,10 @@ def _context(tab):
                    OK_DEPARTMENTS=schema.SETTINGS["payments_ok_departments"].choices(),
                    ok_items=app_settings.get("payments_ok_items") or [], OK_ITEMS=schema.SETTINGS["payments_ok_items"].choices(),
                    ok_operations=app_settings.get("payments_ok_operations") or [],
-                   OK_OPERATIONS=schema.SETTINGS["payments_ok_operations"].choices())
+                   OK_OPERATIONS=schema.SETTINGS["payments_ok_operations"].choices(),
+                   ok_payment_types=app_settings.get("payments_ok_payment_types") or [],
+                   OK_PAYMENT_TYPES=schema.SETTINGS["payments_ok_payment_types"].choices(),
+                   cp_stage=app_settings.get("pending_cp_payment"), PENDING_CP_TITLES=schema.PENDING_CP_TITLES)
     elif tab == "design":
         today, enabled = clock.today(), app_settings.get("holidays") or []
         upcoming = holidays.next_up(today, enabled)

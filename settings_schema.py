@@ -54,10 +54,17 @@ def _wf(name):
     return choices
 
 
+# Коли контрагент, внесений у заявці, уже має бути в 1С (прив'язаний до довідника). Код "block" — історично «до
+# Оплачено»; ранні етапи потрібні для звірки з платежами 1С: «Оплачено» за платежем ставиться лише тоді, коли
+# контрагент заявки — з 1С, тож його краще прив'язати ще до «До оплати».
 PENDING_CP_MODES = {
-    "block": "заборонити позначати «Оплачено», доки контрагента не прив'язано до 1С",
-    "allow": "дозволити оплату з попередженням",
+    "accountant": "до погодження бухгалтером: бухгалтер не погодить заявку, доки контрагента не прив'язано до 1С",
+    "to_pay": "до «До оплати»: заявка не перейде в «До оплати», доки контрагента не прив'язано до 1С",
+    "block": "до «Оплачено»: заявку не можна позначити оплаченою, доки контрагента не прив'язано до 1С",
+    "allow": "не вимагати: оплату можна позначити й без контрагента в 1С (з попередженням)",
 }
+PENDING_CP_TITLES = {"accountant": "До погодження бухгалтером", "to_pay": "До переходу в «До оплати»",
+                     "block": "До «Оплачено»", "allow": "Не вимагати"}
 
 
 def _pending_cp_modes():
@@ -144,6 +151,16 @@ def _ok_operations():
     import app_settings
     import payments
     return {o: o for o in sorted(set(payments.operations()) | set(app_settings.get("payments_ok_operations") or []))}
+
+
+def _ok_payment_types():
+    """Види оплати (рахунки й каси), що трапляються в платежах з 1С, плюс уже вибрані."""
+    import app_settings
+    import payment_accounts
+    import payments
+    used = payments.payment_types_used()
+    chosen = {i: payment_accounts.label(i) for i in app_settings.get("payments_ok_payment_types") or [] if i not in used}
+    return dict(sorted({**used, **chosen}.items(), key=lambda kv: kv[1].lower()))
 
 
 def _data_modes():
@@ -255,6 +272,7 @@ _LIST = [
     Setting("payments_ok_departments", "Без заявки дозволено: відділи статей", "reconcile", "multi", [], _ok_item_departments),
     Setting("payments_ok_items", "Без заявки дозволено: статті витрат", "reconcile", "multi", [], _ok_items),
     Setting("payments_ok_operations", "Без заявки дозволено: види операцій", "reconcile", "multi", [], _ok_operations),
+    Setting("payments_ok_payment_types", "Без заявки дозволено: види оплати", "reconcile", "multi", [], _ok_payment_types),
     # ---- Сповіщення (пошта — власна форма)
     Setting("mail_enabled", "Розсилка увімкнена", "notify", "bool", False, managed=True),
     Setting("mail_sender", "Пошта відправника", "notify", "text", "", managed=True),

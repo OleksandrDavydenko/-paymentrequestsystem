@@ -16,6 +16,7 @@ import workflow as wf
 from web import background
 from web.auth import login_required, requires
 from web.listing import _date_filter, _filtered, _in_period, _page, _ref_keys, currency_totals, date_presets, payment_plan, recent_presets
+from web.formatting import money
 from web.request_helpers import _pay_guard, _try_live_link
 
 
@@ -188,37 +189,78 @@ def _parse_day(raw, default):
 @login_required
 @requires("cfo", "admin")
 def reconcile(*, context):
-    """Платежі з 1С без заявки, розбіжності зіставлення й дозволені без заявки (фіндиректор і адміністратор)."""
+    """Платежі з 1С за період: без заявки, розбіжності, зіставлені з заявками, дозволені без заявки
+    (фіндиректор і адміністратор)."""
     today = clock.today()
     a = request.args
     tab = a.get("tab") if a.get("tab") in payments.REPORT_TABS else "unlinked"
     d_to = _parse_day(a.get("to"), today)
     d_from = _parse_day(a.get("from"), today - timedelta(days=payments.REPORT_DAYS))
-    kind, q = a.get("kind") if a.get("kind") in ("Bank", "Cash") else "", (a.get("q") or "").strip().lower()
+    pt, q = (a.get("pt") or "").strip(), (a.get("q") or "").strip().lower()
     background.kick_payments_sync()
     data = payments.report(d_from, d_to)
-
-    def name(cp):
-        c = counterparties.get(cp)
-        return c["name"] if c else cp
+    period_types = {d["payment_type"] for v in data.values() for d in v if d.get("payment_type")}
 
     def keep(d):
-        if kind and d["kind"] != kind:
+        if pt in ("kind:Bank", "kind:Cash"):
+            if d["kind"] != pt[5:]:
+                return False
+        elif pt and d.get("payment_type") != pt:
             return False
         if not q:
             return True
-        hay = " ".join([d["number"] or "", d["purpose"] or "", d.get("operation") or ""] + [name(c) for c in d["counterparties"]])
+        hay = " ".join([d["number"] or "", d["purpose"] or "", d.get("operation") or ""]
+                       + [counterparties.name(c) for c in d["counterparties"]]
+                       + [f"{r['number']} {r['counterparty']}" for r in d.get("requests") or []])
         return q in hay.lower()
 
-    rows = [d for d in data[tab] if keep(d)]
+    shown = {k: [d for d in v if keep(d)] for k, v in data.items()}
+    rows = shown[tab]
     totals = {}
     for d in rows:
         totals[d["currency"] or "—"] = totals.get(d["currency"] or "—", Decimal(0)) + d["amount"]
     return render_template(
         "payments_reconcile.html", user_name=g.user["name"], tab=tab, TABS=payments.REPORT_TABS,
-        counts={k: len([d for d in v if keep(d)]) for k, v in data.items()}, rows=rows[:500], total_rows=len(rows),
-        totals=sorted(totals.items()), d_from=d_from, d_to=d_to, kind=kind, q=a.get("q") or "", cp_name=name,
-        item_departments=payments.item_departments(), can_link=payments.can_link_any(g.roles), sync=payments.status())
+        counts={k: len(v) for k, v in shown.items()}, rows=rows[:500], total_rows=len(rows),
+        totals=sorted(totals.items()), d_from=d_from, d_to=d_to, pt=pt, q=a.get("q") or "",
+        period_types=sorted(((i, payment_accounts.label(i)) for i in period_types), key=lambda kv: kv[1].lower()),
+        item_departments=payments.item_departments(), can_link=payments.can_link_any(g.roles),
+        can_allow="admin" in g.roles, sync=payments.status())
+
+
+@bp.route("/payments/link-candidates")
+@login_required
+@requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
+def payment_link_candidates(*, context):
+    """Заявки для вікна «Знайти заявку» у звірці (JSON): спершу з #номером у призначенні, далі той самий контрагент і сума."""
+    doc, found = payments.request_candidates((request.args.get("guid") or "").strip().upper(), g.roles, request.args.get("q", ""))
+    if not doc:
+        abort(404)
+    fmt = lambda d: d.strftime("%d.%m.%Y") if d else ""
+    return {"items": [{"id": b["id"], "number": b["number"], "status": b["status_label"], "status_color": b["status_color"],
+                       "counterparty": b["counterparty"], "amount": money(b["amount"]), "currency": b["currency"],
+                       "author": b["author"], "pay_date": fmt(b["pay_date"]), "by_number": b["by_number"],
+                       "same_cp": b["same_cp"], "same_amount": b["same_amount"],
+                       "url": url_for("requests.request_card", request_id=b["id"])} for b in found]}
+
+
+@bp.route("/payments/allow", methods=["POST"])
+@login_required
+@requires("admin")
+def payment_allow(*, context):
+    """Зі звірки: такі платежі не вважати помилкою («Дозволені без заявки») — додати виняток у налаштуваннях."""
+    key, value = request.form.get("key", ""), request.form.get("value", "")
+    try:
+        payments.allow(key, value, g.user)
+    except wf.WorkflowError as e:
+        flash(str(e), "error")
+    else:
+        what = {"operation": "вид операції", "payment_type": "вид оплати", "item": "стаття",
+                "department": "відділ статті"}.get(key, "")
+        shown = payment_accounts.label(value) if key == "payment_type" else value
+        flash(f"Тепер платежі без заявки ({what} «{shown}») — «Дозволені без заявки». Змінити: «Налаштування → Звірка з 1С».",
+              "success")
+    return redirect(_next_url(url_for("payments.reconcile")))
 
 
 def _next_url(default):

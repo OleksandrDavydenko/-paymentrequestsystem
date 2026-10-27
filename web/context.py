@@ -28,6 +28,7 @@ def inject_refs():
         "cp_name": counterparties.name,
         "cp_pending": counterparties.is_pending,
         "pay_account_label": payment_accounts.label,
+        "payment_docs": _payment_docs,
         "expense_name": expense_label,
         "expense_title": expense_items.get_name,
         "CURRENCIES": currencies.codes(),
@@ -58,6 +59,12 @@ def theme_context(theme):
     """Кольорова тема для <html data-theme> і колір рядка браузера («Налаштування → Дизайн»)."""
     theme = theme if theme in settings_schema.COLOR_THEMES else "blue"
     return {"color_theme": theme, "theme_color": settings_schema.THEME_COLORS[theme]}
+
+
+def _payment_docs(rows):
+    """{id заявки: [платіж з 1С]} для оплачених заявок сторінки списку — «платіж № …» під статусом."""
+    import payments
+    return payments.docs_by_request([r["id"] for r in rows if r.get("status") == "paid"])
 
 
 def _reconcile_count(roles):

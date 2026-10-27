@@ -122,6 +122,7 @@
       </tr>
     </thead>
     <tbody>
+      {% set pdocs = payment_docs(requests) %}
       {% for r in requests %}
       {% set overdue = view == 'to_pay' and r.pay_date < today %}
       {% set due_today = view == 'to_pay' and r.pay_date == today %}
@@ -154,7 +155,7 @@
         {% if view == 'paid' %}
         {% set p = paid_entry(r) %}
         <td data-label="Оплачено" data-sort="{{ p.at.isoformat() if p }}">
-          {% if p %}{{ p.at | d }} <span class="muted time">{{ p.user_name }}{{ ' · ' + p.comment if p.comment }}</span>{% endif %}
+          {% if p %}{{ p.at | d }} <span class="muted time">{{ p.user_name }}{{ ' · ' + p.comment if p.comment }}</span>{% endif %}{% include "_paid_docs.html" %}
         </td>
         {% endif %}
       </tr>

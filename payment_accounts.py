@@ -49,11 +49,19 @@ def mock_options_for(req):
 
 # ---------------------------------------------------------------- спільне
 
+def _demo_shown():
+    """Показано демо-дані (тестовий режим): у демо-заявках і демо-платежах — коди мокових рахунків."""
+    import storage
+    return not storage.work_mode()
+
+
 def get(account_id):
     """Вид оплати за id: {"id", "name", ...} або None."""
     if use_types():
         t = payment_types.get(account_id)
-        return {"id": t["id"], "name": t["name"], "currency": "", "iban": ""} if t else None
+        if t:
+            return {"id": t["id"], "name": t["name"], "currency": "", "iban": ""}
+        return _mock_get(account_id) if _demo_shown() else None
     return _mock_get(account_id)
 
 
@@ -61,7 +69,7 @@ def label(account_id):
     """Назва виду оплати для показу: «НАЛ» або «ПриватБанк, поточний · UAH · …0101»."""
     if not account_id:
         return ""
-    if use_types():
+    if use_types() and (payment_types.get(account_id) or not _demo_shown()):
         return payment_types.name(account_id)
     a = _mock_get(account_id)
     if not a:

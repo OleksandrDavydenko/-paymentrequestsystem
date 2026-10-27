@@ -404,6 +404,9 @@ def _render_card(req, existing, errors, user, roles, budget_items, contractor_li
         cp_suggested=next((m for p_, m in counterparties.auto_link_candidates(only_id=req.get("counterparty_id"))), None)
         if counterparties.is_pending(req.get("counterparty_id")) else None,
         pay_blocked=_pay_guard(req)["cp_pending"] and _pay_guard(req)["block_pending"],
+        # Контрагента ще немає в 1С, а за налаштуванням він має бути в 1С уже на цьому погодженні
+        approve_blocked=_pay_guard(req)["cp_pending"] and wf.cp_stage_blocks(
+            req, wf.acting_role(req, roles, user["email"]), app_settings.get("pending_cp_payment")),
         handover_enabled=bool(app_settings.get("cash_handover_confirm")),
         org_mode=app_settings.get("org_field_mode"),
         PAYERS=wf.PAYERS,
@@ -415,7 +418,8 @@ def _render_card(req, existing, errors, user, roles, budget_items, contractor_li
         handover_days=wf.handover_days(req),
         can_confirm_handover=wf.can_confirm_handover(req, roles, user["email"]),
         today=clock.today(),
-        pending_cp_block=app_settings.get("pending_cp_payment") == "block",
+        pending_cp_block=app_settings.get("pending_cp_payment") != "allow",
+        pending_cp_stage=app_settings.get("pending_cp_payment"),
         can_manage_participants=wf.can_manage_participants(req, roles, user["email"]),
         approvals=req.get("approvals") or {},
         pending_roles=wf.pending_roles(req) if req["status"] == "approval" else [],

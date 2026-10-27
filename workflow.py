@@ -797,6 +797,7 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
     заявки в процесі. heads — пошта керівника відділу заявки, deputies — заступників, що можуть погодити замість
     нього (для submit); head_note — чому крок керівника пропущено (поріг керівника відділу).
     guard — {"cp_pending": контрагента ще немає в 1С, "block_pending": тоді не можна оплатити,
+             "cp_stage": з якого етапу контрагент уже має бути в 1С — accountant / to_pay / block / allow,
              "account_required": чи обов'язковий «Вид оплати» (є рахунки / каси організації в довіднику),
              "handover": чи ввімкнено підтвердження передачі готівки підряднику (для pay)}.
     """
@@ -818,6 +819,8 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
         if guard and guard.get("cp_pending") and guard.get("block_pending"):
             raise WorkflowError("Контрагента ще немає в 1С — заведіть його в 1С і прив'яжіть у заявці, "
                                 "тоді заявку можна буде позначити оплаченою")
+    if action == "approve" and guard and guard.get("cp_pending"):
+        _check_cp_stage(req, role, guard.get("cp_stage"))
     old = req["status"]
     new = WORKFLOW[old][1][action]
     if action == "submit":
@@ -838,6 +841,30 @@ def apply_action(req, action, roles, user, comment="", mode="sequential", head_m
     if action == "pay":
         start_handover(req, (guard or {}).get("handover", False))
     add_history(req, action, user, role, comment, old, new)
+
+
+def approve_leads_to_pay(req, role):
+    """Чи переведе погодження цієї ролі заявку в «До оплати» (останній погоджувач)."""
+    status = req["status"]
+    if status == "accountant":
+        return not has_cfo_step(req)
+    if status == "approval":
+        return not [r for r in pending_roles(req) if r != role]
+    return WORKFLOW.get(status, (None, {}))[1].get("approve") == "to_pay"
+
+
+def cp_stage_blocks(req, role, stage):
+    """Чи не можна погодити заявку з контрагентом, якого ще немає в 1С («Контрагент … має бути в 1С» в адмінці)."""
+    if stage == "accountant" and role in ACCOUNTANT_ROLES:
+        return True
+    return stage in ("accountant", "to_pay") and approve_leads_to_pay(req, role)
+
+
+def _check_cp_stage(req, role, stage):
+    if cp_stage_blocks(req, role, stage):
+        raise WorkflowError("Контрагента ще немає в 1С — його мають завести в 1С і прив'язати в заявці (блок нижче), "
+                            "тоді заявку можна буде погодити"
+                            + (" й передати до оплати" if approve_leads_to_pay(req, role) else ""))
 
 
 def _after_head(req):

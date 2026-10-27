@@ -150,8 +150,10 @@ def _can_link_cp(roles):
 
 def _pay_guard(req):
     """Чи можна оплатити заявку з контрагентом, якого ще немає в 1С (параметр в адмінці)."""
+    stage = app_settings.get("pending_cp_payment")
     return {"cp_pending": counterparties.is_pending(req.get("counterparty_id")),
-            "block_pending": app_settings.get("pending_cp_payment") == "block",
+            "cp_stage": stage,
+            "block_pending": stage != "allow",
             "handover": bool(app_settings.get("cash_handover_confirm")),
             "account_required": bool(app_settings.get("require_payment_account")) and bool(
                 payment_accounts.options_for(req, getattr(g, "user", None), getattr(g, "roles", frozenset())))}

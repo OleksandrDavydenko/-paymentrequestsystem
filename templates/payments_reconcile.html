@@ -3,37 +3,61 @@
 {% block title %}Звірка платежів{% endblock %}
 
 {% block content %}
-<nav class="tabs" aria-label="Звірка платежів">
-  {% for code, title in TABS.items() %}
-  <a href="{{ url_for('payments.reconcile', tab=code, **{'from': d_from.isoformat(), 'to': d_to.isoformat(), 'kind': kind, 'q': q}) }}"
-     class="tab {{ 'active' if tab == code }}">{{ title }}{% if counts[code] %} <span class="count {{ 'muted-count' if code == 'allowed' }}">{{ counts[code] }}</span>{% endif %}</a>
-  {% endfor %}
-</nav>
+{% set qs = {'from': d_from.isoformat(), 'to': d_to.isoformat(), 'pt': pt, 'q': q} %}
+{% set TILE_HINTS = {
+  'unlinked': 'Платіж є в 1С, а заявки під нього не знайдено. Знайдіть заявку або дозвольте такі платежі.',
+  'issues': 'Платіж вказує на заявку, але щось не збігається. Заявка сама не закривається — перевірте.',
+  'linked': 'Платіж знайшов свою заявку. Тут видно, як саме і чи поставив PayDesk «Оплачено».',
+  'allowed': 'Платежі, яким заявка не потрібна (комісії, податки…) — за винятками в налаштуваннях.'} %}
+{% set TILE_COLORS = {'unlinked': 'amber', 'issues': 'red', 'linked': 'green', 'allowed': 'grey'} %}
 
 <div class="card">
   <div class="toolbar">
-    <h1 style="margin:0">{{ TABS[tab] }}</h1>
+    <h1 style="margin:0">Звірка платежів з 1С</h1>
     <span class="spacer"></span>
-    <span class="muted">Платежі з 1С: {{ sync.synced_at[:16].replace('T', ' ') if sync.synced_at else 'ще не синхронізовано' }}{% if sync.error %} · <span class="err">помилка: {{ sync.error }}</span>{% endif %}</span>
+    <span class="muted">Оновлено: {{ sync.synced_at[:16].replace('T', ' ') if sync.synced_at else 'ще не синхронізовано' }}{% if sync.error %} · <span class="err">помилка: {{ sync.error }}</span>{% endif %}</span>
   </div>
-  <p class="muted" style="margin-top:0">
-    {% if tab == 'unlinked' %}Списання з рахунків і каси, для яких PayDesk не знайшов заявки й які не підпадають під винятки
-      («Налаштування → Звірка з 1С»). Платежі, оплачені за заявками, тут не показуються.
-    {% elif tab == 'issues' %}У призначенні є #номер заявки, але сума, валюта чи контрагент не збігаються; кілька заявок з
-      однаковими реквізитами; або прив'язаний платіж видалено в 1С. Заявка в таких випадках автоматично не закривається.
-    {% else %}Платежі без заявки, які дозволено проводити так: за видом операції, статтею або відділом статті («Налаштування →
-      Звірка з 1С»).{% endif %}</p>
+
+  <details class="rc-how">
+    <summary>Як працює звірка</summary>
+    <ol>
+      <li>Кожні 10 хвилин PayDesk забирає з 1С документи списання — з банку й каси.</li>
+      <li>Для кожного платежу шукає заявку: спершу за <strong>#номером у призначенні</strong> (<code>#15</code> → заявка
+        000000015), потім за сумою, валютою, контрагентом (для готівки — кому видано), видом оплати й датою.</li>
+      <li><strong>Знайшов</strong> — платіж прив'язується до заявки (вкладка «Зіставлені»). Якщо для бухгалтера заявки
+        ввімкнено автоматичне «Оплачено», заявка стає оплаченою.</li>
+      <li><strong>Не знайшов</strong> — платіж у «Без заявки». Натисніть «Знайти заявку…» і виберіть її зі списку або, якщо
+        заявка таким платежам не потрібна, «Дозволити без заявки…».</li>
+      <li><strong>Знайшов, але щось не збігається</strong> (інша сума чи контрагент) — «Розбіжності». Заявку видно в рядку;
+        якщо все гаразд — прив'яжіть вручну.</li>
+    </ol>
+    <p class="muted">Режими «Оплачено», винятки й хто може прив'язувати — «Налаштування → Звірка з 1С».</p>
+  </details>
+
+  <nav class="rc-tiles" aria-label="Звірка платежів">
+    {% for code, title in TABS.items() %}
+    <a href="{{ url_for('payments.reconcile', tab=code, **qs) }}" class="rc-tile rc-{{ TILE_COLORS[code] }} {{ 'active' if tab == code }}"
+       {{ 'aria-current=page' if tab == code }}>
+      <span class="rc-tile-n">{{ counts[code] }}</span>
+      <span class="rc-tile-title">{{ title }}</span>
+      <span class="rc-tile-hint">{{ TILE_HINTS[code] }}</span>
+    </a>
+    {% endfor %}
+  </nav>
 
   <form method="get" class="filters reconcile-filters">
     <input type="hidden" name="tab" value="{{ tab }}">
     <label>З <input type="date" name="from" value="{{ d_from.isoformat() }}"></label>
     <label>по <input type="date" name="to" value="{{ d_to.isoformat() }}"></label>
-    <select name="kind" aria-label="Банк чи каса" class="{{ 'is-active' if kind }}">
-      <option value="">Банк і каса</option>
-      <option value="Bank" {{ 'selected' if kind == 'Bank' }}>Лише банк</option>
-      <option value="Cash" {{ 'selected' if kind == 'Cash' }}>Лише каса</option>
+    <select name="pt" aria-label="Вид оплати" class="{{ 'is-active' if pt }}">
+      <option value="">Усі види оплати</option>
+      <option value="kind:Bank" {{ 'selected' if pt == 'kind:Bank' }}>Лише банк</option>
+      <option value="kind:Cash" {{ 'selected' if pt == 'kind:Cash' }}>Лише каса</option>
+      {% if period_types %}<optgroup label="Рахунок або каса">
+        {% for code, label in period_types %}<option value="{{ code }}" {{ 'selected' if pt == code }}>{{ label }}</option>{% endfor %}
+      </optgroup>{% endif %}
     </select>
-    <input type="search" name="q" value="{{ q }}" placeholder="Пошук: контрагент, № документа, призначення" aria-label="Пошук">
+    <input type="search" name="q" value="{{ q }}" placeholder="Пошук: контрагент, № документа, № заявки, призначення" aria-label="Пошук">
     <button type="submit" class="btn btn-sm">Показати</button>
   </form>
 
@@ -44,39 +68,173 @@
 
   <div class="table-wrap">
   <table class="stack reconcile-table">
-    <thead><tr><th>Дата</th><th>Документ</th><th>Контрагент</th><th class="num">Сума</th><th>Стаття</th><th>Операція</th>
-      <th>Призначення</th>{% if tab != 'unlinked' %}<th>Причина</th>{% endif %}{% if can_link and tab != 'allowed' %}<th>Прив'язати до заявки</th>{% endif %}</tr></thead>
+    <thead><tr><th>Дата</th><th>Платіж</th><th>Контрагент</th><th class="num">Сума</th><th>Призначення</th>
+      {% if tab == 'linked' %}<th>Заявка</th>
+      {% elif tab == 'issues' %}<th>Що не так</th>
+      {% elif tab == 'allowed' %}<th>Чому дозволено</th>
+      {% else %}<th>Стаття · операція</th>{% endif %}
+      {% if tab in ('unlinked', 'issues') and (can_link or can_allow) %}<th></th>{% endif %}</tr></thead>
     <tbody>
     {% for d in rows %}
       <tr>
         <td data-label="Дата">{{ d.date | d }}</td>
-        <td data-label="Документ"><strong>{{ d.number }}</strong><div class="muted">{{ 'каса' if d.kind == 'Cash' else 'банк' }} · {{ pay_account_label(d.payment_type) if d.payment_type else '—' }}</div></td>
+        <td data-label="Платіж"><strong>{{ d.number }}</strong>
+          <div class="muted">{{ 'каса' if d.kind == 'Cash' else 'банк' }}{% if d.payment_type %} · {{ pay_account_label(d.payment_type) }}{% endif %}</div></td>
         <td data-label="Контрагент">{% for cp in d.counterparties %}{{ cp_name(cp) }}{{ ', ' if not loop.last }}{% else %}<span class="muted">—</span>{% endfor %}</td>
         <td data-label="Сума" class="num"><strong>{{ d.amount | money }}</strong> {{ d.currency }}</td>
-        <td data-label="Стаття">{% for code in d['items'] %}<div>{{ code }} <span class="muted">{{ expense_title(code) or '' }}</span>
-          {% if item_departments.get(code) %}<div class="muted">{{ item_departments[code] | sort | join(', ') }}</div>{% endif %}</div>{% else %}<span class="muted">—</span>{% endfor %}</td>
-        <td data-label="Операція">{{ d.operation or '—' }}</td>
         <td data-label="Призначення" class="reconcile-purpose" title="{{ d.purpose }}">{{ d.purpose | truncate(140) }}</td>
-        {% if tab != 'unlinked' %}<td data-label="Причина">{% if d.issue %}<span class="badge amber">{{ d.issue_label }}</span>{% if d.issue_detail %}<div class="muted">{{ d.issue_detail }}</div>{% endif %}
-          {% elif d.allowed %}<span class="badge grey">{{ d.allowed }}</span>{% endif %}</td>{% endif %}
-        {% if can_link and tab != 'allowed' %}
-        <td data-label="Прив'язати до заявки">
-          {% if d.issue != 'removed' %}
-          <form method="post" action="{{ url_for('payments.payment_link') }}" class="reconcile-link"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-            <input type="hidden" name="payment_guid" value="{{ d.guid }}">
-            <input type="hidden" name="next" value="{{ request.full_path }}">
-            <input type="text" name="request_number" inputmode="numeric" placeholder="№ заявки" aria-label="Номер заявки для платежу {{ d.number }}" required>
-            <button type="submit" class="btn btn-sm" title="Прив'язати платіж до заявки">OK</button>
-          </form>
+
+        {% if tab == 'linked' %}
+        <td data-label="Заявка">{% for r in d.requests %}
+          <div class="rc-req"><a href="{{ url_for('requests.request_card', request_id=r.id) }}"><strong>№ {{ r.number }}</strong></a>
+            <span class="badge {{ r.status_color }}">{{ r.status_label }}</span>
+            <div class="muted">{{ r.match_label }}{{ ' — ' ~ r.by_name if r.match == 'manual' and r.by_name }}</div>
+            {% if r.paid_here %}<div class="rc-ok">✓ «Оплачено» поставив PayDesk за цим платежем</div>
+            {% elif r.status == 'paid' %}<div class="muted">заявку вже позначив оплаченою бухгалтер — платіж лише прив'язано</div>
+            {% else %}<div class="muted">статус ставить бухгалтер (режим «Вручну»)</div>{% endif %}</div>
+          {% endfor %}</td>
+
+        {% elif tab == 'issues' %}
+        <td data-label="Що не так"><span class="badge amber rc-issue">{{ d.issue_label }}</span>
+          {% for r in d.requests %}
+          <div class="rc-req"><a href="{{ url_for('requests.request_card', request_id=r.id) }}"><strong>№ {{ r.number }}</strong></a>
+            <span class="badge {{ r.status_color }}">{{ r.status_label }}</span>
+            <div class="rc-compare">у заявці: <strong>{{ r.amount | money }} {{ r.currency }}</strong> · {{ r.counterparty or '—' }}</div>
+            <div class="rc-compare muted">у платежі: {{ d.amount | money }} {{ d.currency }} · {% for cp in d.counterparties %}{{ cp_name(cp) }}{{ ', ' if not loop.last }}{% else %}—{% endfor %}</div></div>
+          {% endfor %}
+          {% for n in d.missing_numbers %}<div class="muted">Заявки № {{ n }} немає в PayDesk</div>{% endfor %}</td>
+
+        {% elif tab == 'allowed' %}
+        <td data-label="Чому дозволено"><span class="badge grey">{{ d.allowed }}</span></td>
+
+        {% else %}
+        <td data-label="Стаття · операція">{% for code in d['items'] %}<div>{{ code }} <span class="muted">{{ expense_title(code) or '' }}</span></div>{% endfor %}
+          {% if d.operation %}<div class="muted">{{ d.operation }}</div>{% endif %}{% if not d['items'] and not d.operation %}<span class="muted">—</span>{% endif %}</td>
+        {% endif %}
+
+        {% if tab in ('unlinked', 'issues') and (can_link or can_allow) %}
+        <td data-label="Дії" class="rc-actions">
+          {% if can_link and d.issue != 'removed' %}
+          <button type="button" class="btn btn-sm rc-find" data-guid="{{ d.guid }}"
+                  data-summary="{{ d.number }} · {{ d.date | d }} · {{ d.amount | money }} {{ d.currency }}{% for cp in d.counterparties %} · {{ cp_name(cp) }}{% endfor %}">Знайти заявку…</button>
+          {% endif %}
+          {% if can_allow and tab == 'unlinked' %}
+          {% set opts = [] %}
+          {% if d.operation %}{% set _ = opts.append(('operation', d.operation, 'вид операції «' ~ d.operation ~ '»')) %}{% endif %}
+          {% if d.payment_type %}{% set _ = opts.append(('payment_type', d.payment_type, 'вид оплати «' ~ pay_account_label(d.payment_type) ~ '»')) %}{% endif %}
+          {% for code in d['items'] %}{% set _ = opts.append(('item', code, 'стаття ' ~ code ~ ' ' ~ (expense_title(code) or ''))) %}
+            {% for dep in item_departments.get(code, []) | sort %}{% set _ = opts.append(('department', dep, 'відділ статті «' ~ dep ~ '»')) %}{% endfor %}{% endfor %}
+          {% if opts %}
+          <details class="rc-allow">
+            <summary class="btn-link">Дозволити без заявки…</summary>
+            <div class="rc-allow-menu">
+              <span class="muted">Не вважати помилкою платежі без заявки, у яких:</span>
+              {% for key, value, text in opts %}
+              <form method="post" action="{{ url_for('payments.payment_allow') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="key" value="{{ key }}"><input type="hidden" name="value" value="{{ value }}">
+                <input type="hidden" name="next" value="{{ request.full_path }}">
+                <button type="submit" class="btn btn-sm">{{ text }}</button>
+              </form>
+              {% endfor %}
+            </div>
+          </details>
+          {% endif %}
           {% endif %}
         </td>
         {% endif %}
       </tr>
     {% else %}
-      <tr><td colspan="9" class="empty">{{ 'Платежів без заявки за період немає' if tab == 'unlinked' else ('Розбіжностей немає' if tab == 'issues' else 'Немає') }}</td></tr>
+      <tr><td colspan="7" class="empty">{{ {'unlinked': 'Платежів без заявки за період немає', 'issues': 'Розбіжностей немає',
+        'linked': 'За період жоден платіж ще не зіставлено з заявкою', 'allowed': 'Немає'}[tab] }}</td></tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
 </div>
+
+{% if can_link %}
+<dialog id="rc-pick" class="exp-dialog rc-dialog" aria-labelledby="rc-pick-title"
+        data-url="{{ url_for('payments.payment_link_candidates') }}">
+  <form method="post" action="{{ url_for('payments.payment_link') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="payment_guid" id="rc-guid">
+    <input type="hidden" name="next" value="{{ request.full_path }}">
+    <div class="dlg-head">
+      <span id="rc-pick-title">Знайти заявку для платежу</span>
+      <button type="button" class="exp-dialog-close" data-close aria-label="Закрити">✕</button>
+    </div>
+    <div class="rc-pay" id="rc-pay"></div>
+    <div class="exp-dialog-search">
+      <input type="search" id="rc-q" autocomplete="off" spellcheck="false" placeholder="№ заявки, контрагент, автор, сума…"
+             aria-controls="rc-list" aria-label="Пошук заявки">
+    </div>
+    <div class="dlg-body exp-dialog-body">
+      <p class="muted rc-note">Заявки «До оплати» та оплачені за 60 днів у валюті платежу, до яких ще не прив'язано платіж
+        і які вам дозволено прив'язувати. Угорі — та, чий #номер є в призначенні, далі з тим самим контрагентом і сумою.</p>
+      <div class="rc-list" id="rc-list" role="radiogroup" aria-label="Заявки"></div>
+    </div>
+    <div class="dlg-foot exp-dialog-foot">
+      <span class="muted">Заявка «До оплати» стане оплаченою.</span>
+      <span class="rc-foot-btns">
+        <button type="button" class="btn" data-close>Скасувати</button>
+        <button type="submit" class="btn btn-primary" id="rc-submit" disabled>Прив'язати</button>
+      </span>
+    </div>
+  </form>
+</dialog>
+<script>
+(() => {
+  const dlg = document.getElementById('rc-pick');
+  const list = document.getElementById('rc-list'), q = document.getElementById('rc-q'), submit = document.getElementById('rc-submit');
+  let guid = '', timer = null, seq = 0;
+  const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
+  async function load() {
+    const my = ++seq;
+    list.replaceChildren(el('p', 'muted', 'Завантаження…'));
+    submit.disabled = true;
+    try {
+      const r = await fetch(`${dlg.dataset.url}?guid=${encodeURIComponent(guid)}&q=${encodeURIComponent(q.value.trim())}`);
+      const data = await r.json();
+      if (my !== seq) return;
+      list.replaceChildren();
+      if (!data.items.length) {
+        list.append(el('p', 'muted', q.value.trim() ? 'Нічого не знайдено — змініть пошук.'
+          : 'Немає заявок «До оплати» чи оплачених за 60 днів у цій валюті без платежу. Перевірте, чи заявку створено й погоджено.'));
+        return;
+      }
+      for (const it of data.items) {
+        const row = el('label', 'rc-opt' + (it.by_number || (it.same_cp && it.same_amount) ? ' is-best' : ''));
+        const radio = el('input'); radio.type = 'radio'; radio.name = 'request_id'; radio.value = it.id;
+        radio.addEventListener('change', () => { submit.disabled = false; });
+        const main = el('span', 'rc-opt-main');
+        const num = el('a', null, `№ ${it.number}`); num.href = it.url; num.target = '_blank'; num.rel = 'noopener';
+        main.append(num, ' ', el('span', `badge ${it.status_color}`, it.status), ' ', el('span', 'rc-opt-cp', it.counterparty),
+                    ' ', el('strong', null, `${it.amount} ${it.currency}`));
+        const meta = el('span', 'muted rc-opt-meta', [it.author, it.pay_date && `оплата ${it.pay_date}`].filter(Boolean).join(' · '));
+        const tags = el('span', 'rc-opt-tags');
+        if (it.by_number) tags.append(el('span', 'badge blue', '#номер у призначенні'));
+        if (it.same_cp) tags.append(el('span', 'badge green', 'той самий контрагент'));
+        if (it.same_amount) tags.append(el('span', 'badge green', 'та сама сума'));
+        const body = el('span', 'rc-opt-body'); body.append(main, meta, tags);
+        row.append(radio, body);
+        list.append(row);
+      }
+    } catch (e) {
+      if (my === seq) list.replaceChildren(el('p', 'err', 'Не вдалося завантажити заявки — оновіть сторінку.'));
+    }
+  }
+  document.querySelectorAll('.rc-find').forEach(b => b.addEventListener('click', () => {
+    guid = b.dataset.guid;
+    document.getElementById('rc-guid').value = guid;
+    document.getElementById('rc-pay').textContent = `Платіж: ${b.dataset.summary}`;
+    q.value = '';
+    dlg.showModal();
+    load();
+    q.focus();
+  }));
+  q.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(load, 250); });
+  q.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+  dlg.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => dlg.close()));
+})();
+</script>
+{% endif %}
 {% endblock %}

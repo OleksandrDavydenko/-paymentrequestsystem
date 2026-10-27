@@ -1,0 +1,2 @@
+{# «платіж № …» під статусом оплаченої заявки, якщо її зв'язано з платежем з 1С (pdocs — payment_docs(requests)) #}
+{% for p in pdocs.get(r.id, []) %}<div class="pm-doc" title="Платіж з 1С: {{ 'каса' if p.kind == 'Cash' else 'банк' }}, {{ p.date | d }}, {{ p.amount | money }} {{ p.currency }}">платіж № {{ p.number }}</div>{% endfor %}

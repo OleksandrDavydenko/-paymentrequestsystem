@@ -70,7 +70,7 @@ check("re-sync: no duplicates", payments.status()["rows"] == 7 and len(payments.
 login("res@ftpua.com")
 html = page("/requests/15")
 check("card: #number hint for the accountant", 'class="pm-marker">#15<' in html and 'value="pay"' in html)
-check("card: linked payment shown", "платіж з 1С" in page("/requests/3") and "ОТП-000128" in page("/requests/3"))
+check("card: linked payment shown", 'pm-doc-no">№ ОТП-000128' in page("/requests/3"))
 
 # ---------- режим «Автоматично» для бухгалтера резидентів
 app_settings.set("pay_mode_acc_resident", "auto", "t")

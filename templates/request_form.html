@@ -130,8 +130,8 @@
 {% set MATCH_LABELS = {"number": "за #номером у призначенні", "auto": "за сумою й контрагентом", "manual": "прив'язано вручну"} %}
 <div class="card pay-match" id="pay-match">
   {% for p in payment_links %}
-  <div class="pm-link"><span class="badge green">платіж з 1С</span>
-    {{ 'Каса' if p.kind == 'Cash' else 'Банк' }}, № {{ p.number }} від {{ p.date | d }} — <strong>{{ p.amount | money }} {{ p.currency }}</strong>
+  <div class="pm-link"><span class="pm-title">Платіж з 1С <strong class="pm-doc-no">№ {{ p.number }}</strong></span>
+    {{ 'каса' if p.kind == 'Cash' else 'банк' }} від {{ p.date | d }} — <strong>{{ p.amount | money }} {{ p.currency }}</strong>
     <span class="muted">· {{ MATCH_LABELS.get(p.match, '') }}{{ ' (' ~ p.by_name ~ ')' if p.match == 'manual' and p.by_name }}</span>
     {% if can_unlink_payment %}
     <form method="post" action="{{ url_for('payments.payment_unlink', request_id=req.id) }}" class="pm-unlink"
@@ -160,6 +160,7 @@
         <label class="pm-option {{ 'is-best' if p.score == 3 }}">
           <input type="radio" name="payment_guid" value="{{ p.guid }}" required>
           <span><strong>{{ p.amount | money }} {{ p.currency }}</strong> · {{ p.date | d }} · {{ 'каса' if p.kind == 'Cash' else 'банк' }} № {{ p.number }}
+            {% for cp in p.counterparties %} · {{ cp_name(cp) }}{% endfor %}
             {% if p.score >= 2 %}<span class="badge green">той самий контрагент</span>{% endif %}
             <span class="muted pm-purpose">{{ p.purpose | truncate(120) }}</span></span>
         </label>
@@ -191,6 +192,11 @@
     {% if not account_options %}<span class="err">{{ account_empty_hint }}</span>{% endif %}
   </div>
   {% endif %}
+  {% if 'approve' in actions and approve_blocked %}
+  <div class="callout red" id="cp-approve-blocked">Контрагента ще немає в 1С — погодити заявку{{ ' й передати до оплати' if pending_cp_stage == 'to_pay' or req.status in ('cfo', 'approval') }}
+    не можна, доки його не заведуть у 1С і не прив'яжуть нижче. Так налаштовано, щоб звірка з платежами 1С могла сама
+    знайти цю заявку (параметр «Контрагент, якого ще немає в 1С» в адмінці). Повернути чи відхилити заявку можна.</div>
+  {% endif %}
   {% if 'pay' in actions and pay_blocked %}
   <div class="callout red">Контрагента ще немає в 1С — заявку не можна позначити оплаченою, доки його не заведуть у 1С
     і не прив'яжуть нижче (параметр «Контрагент, якого ще немає в 1С» в адмінці).</div>
@@ -205,7 +211,7 @@
   <div class="decision-buttons">
     {% for a in actions %}
     <button type="submit" name="action" value="{{ a }}" class="btn btn-{{ ACTIONS[a][2] }}"
-            {{ 'disabled' if a == 'pay' and pay_blocked }}>{{ ACTIONS[a][0] }}</button>
+            {{ 'disabled' if (a == 'pay' and pay_blocked) or (a == 'approve' and approve_blocked) }}>{{ ACTIONS[a][0] }}</button>
     {% endfor %}
   </div>
 </form>

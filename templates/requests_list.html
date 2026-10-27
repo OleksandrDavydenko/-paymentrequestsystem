@@ -48,6 +48,7 @@
       </tr>
     </thead>
     <tbody>
+      {% set pdocs = payment_docs(requests) %}
       {% for r in requests %}
       {% set st = STATUSES[r.status] %}
       <tr class="clickable" onclick="location.href='{{ url_for('requests.request_card', request_id=r.id) }}'">
@@ -61,10 +62,10 @@
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}">{{ r.amount | money }} {{ r.currency }}</td>
         {% if as_paid %}
         {% set p = paid_entry(r) %}
-        <td data-label="Оплачено" data-sort="{{ p.at.isoformat() if p }}">{% if p %}{{ p.at | d }}<div class="muted">{{ p.user_name }}</div>{% else %}<span class="badge {{ st[1] }}">{{ st[0] }}</span>{% endif %}
+        <td data-label="Оплачено" data-sort="{{ p.at.isoformat() if p }}">{% if p %}{{ p.at | d }}<div class="muted">{{ p.user_name }}</div>{% else %}<span class="badge {{ st[1] }}">{{ st[0] }}</span>{% endif %}{% include "_paid_docs.html" %}
           {% if needs_handover(r) %}<a href="{{ url_for('requests.request_card', request_id=r.id) }}#handover" class="badge amber">⏳ підтвердіть передачу</a>{% endif %}</td>
         {% else %}
-        <td data-label="Статус"><span class="badge {{ st[1] }}">{{ st[0] }}</span>{% if needs_handover(r) %} <span class="badge amber">⏳ передачу не підтверджено</span>{% endif %}</td>
+        <td data-label="Статус"><span class="badge {{ st[1] }}">{{ st[0] }}</span>{% if needs_handover(r) %} <span class="badge amber">⏳ передачу не підтверджено</span>{% endif %}{% include "_paid_docs.html" %}</td>
         {% endif %}
       </tr>
       {% else %}

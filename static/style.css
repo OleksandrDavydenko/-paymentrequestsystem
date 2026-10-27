@@ -938,6 +938,8 @@ a.badge { text-decoration: none; }
 .mode-legend { padding-left: 18px; font-size: 13px; }
 .pay-match { display: grid; gap: 8px; border-left: 4px solid var(--primary); }
 .pm-link, .pm-hint { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
+.pm-title { font-weight: 600; }
+.pm-doc-no { font-size: 17px; }
 .pm-marker { font-size: 17px; color: var(--primary-ink); background: var(--primary-50); border-radius: 4px; padding: 0 6px; }
 .pm-unlink { display: inline; margin-left: auto; }
 .pm-pick summary { list-style: none; display: inline-flex; cursor: pointer; }
@@ -951,13 +953,57 @@ a.badge { text-decoration: none; }
 /* Звіт «Звірка» */
 .reconcile-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
 .reconcile-filters input[type=date] { width: auto; }
+.reconcile-filters select { width: auto; max-width: 280px; }
 .reconcile-filters input[type=search] { flex: 1 1 240px; width: auto; }
 .reconcile-totals { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
 .reconcile-purpose { max-width: 320px; font-size: 13px; }
-.reconcile-link { display: flex; gap: 6px; }
-.reconcile-link input { width: 92px; }
 .reconcile-table td { vertical-align: top; }
-.reconcile-table .badge { white-space: normal; max-width: 220px; }
+.reconcile-table .badge { white-space: normal; max-width: 240px; }
+.rc-how { margin: 4px 0 14px; font-size: 14px; }
+.rc-how summary { cursor: pointer; color: var(--primary-dark); font-weight: 600; }
+.rc-how ol { margin: 8px 0 4px; padding-left: 22px; display: grid; gap: 4px; }
+.rc-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.rc-tile { display: grid; gap: 2px; align-content: start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  border-top: 4px solid var(--line); color: var(--text); text-decoration: none; background: var(--card); }
+.rc-tile:hover { background: var(--hover); }
+.rc-tile.active { box-shadow: 0 0 0 2px var(--primary); }
+.rc-tile.rc-amber { border-top-color: var(--warn); }
+.rc-tile.rc-red { border-top-color: var(--bad); }
+.rc-tile.rc-green { border-top-color: var(--ok); }
+.rc-tile-n { font-size: 24px; font-weight: 700; line-height: 1.1; }
+.rc-tile-title { font-weight: 600; }
+.rc-tile-hint { font-size: 12px; color: var(--muted); }
+.rc-req { margin-top: 4px; }
+.rc-req + .rc-req { border-top: 1px dashed var(--line); padding-top: 4px; }
+.rc-ok { color: var(--ok-ink); font-size: 13px; }
+.rc-compare { font-size: 13px; }
+.rc-actions { white-space: nowrap; }
+.rc-allow { margin-top: 6px; }
+.rc-allow summary { list-style: none; cursor: pointer; color: var(--primary-dark); font-size: 13px; }
+.rc-allow summary::-webkit-details-marker { display: none; }
+.rc-allow-menu { display: grid; gap: 4px; margin-top: 6px; white-space: normal; max-width: 260px; }
+.rc-allow-menu .btn { text-align: left; white-space: normal; width: 100%; }
+.rc-dialog form { display: contents; }
+.rc-pay { padding: 10px 20px; background: var(--surface); border-bottom: 1px solid var(--line); font-weight: 600; }
+.rc-note { margin: 0 0 8px; font-size: 13px; }
+.rc-list { display: grid; gap: 6px; }
+.rc-opt { display: flex; gap: 10px; align-items: flex-start; padding: 8px 10px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.rc-opt:hover { background: var(--hover); }
+.rc-opt.is-best { border-color: var(--ok); background: var(--ok-softer); }
+.rc-opt:has(input:checked) { box-shadow: 0 0 0 2px var(--primary); }
+.rc-opt input { width: auto; margin-top: 4px; }
+.rc-opt-body { display: grid; gap: 2px; }
+.rc-opt-main { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.rc-opt-meta { font-size: 13px; }
+.rc-opt-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+.rc-foot-btns { display: flex; gap: 8px; }
+.pm-doc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+@media (max-width: 900px) { .rc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 760px) {
+  .rc-tile-hint { display: none; }
+  .rc-actions { white-space: normal; }
+  .rc-dialog .exp-dialog-foot { flex-wrap: wrap; }
+}
 .ok-picker { margin: 8px 0; }
 
 /* Тип оплати й підбір рахунків */

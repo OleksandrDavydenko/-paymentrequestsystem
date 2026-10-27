@@ -48,6 +48,15 @@
   <ul class="mode-legend muted">
     {% for code, label in PAY_MODES.items() %}<li><strong>{{ label.split(':')[0] }}</strong> — {{ label.split(':', 1)[1].strip() }}</li>{% endfor %}
   </ul>
+  {% set auto_on = pay_modes.values() | select('in', ['auto', 'both']) | list %}
+  <div class="callout {{ 'orange' if auto_on and cp_stage in ('block', 'allow') else 'blue' }} cp-stage-note">
+    <strong>Новий контрагент має бути в 1С: {{ PENDING_CP_TITLES[cp_stage] | lower }}.</strong>
+    {% if cp_stage in ('accountant', 'to_pay') %}Заявки доходять до «До оплати» вже з контрагентом з 1С — звірка може сама
+      поставити «Оплачено».
+    {% else %}Заявка з контрагентом, якого ще немає в 1С, може дійти до «До оплати»; звірка її сама не закриє (буде
+      розбіжність «контрагента заявки ще немає в 1С»).{% if auto_on %} Для автоматичного «Оплачено» краще вимагати
+      контрагента з 1С ще до погодження.{% endif %}{% endif %}
+    <a href="{{ url_for('admin.admin_settings', tab='payment') }}">Змінити в «Оплата й готівка»</a></div>
   <p class="muted">У режимах «Автоматично» й «Обидва» бухгалтер у картці заявки бачить підказку, що вписати в
     призначення платежу (наприклад, <code>#5</code>). У режимі «Вручну» платіж лише прив'язується до заявки, щоб у звірці
     було видно, що його зроблено за заявкою.</p>
@@ -63,11 +72,13 @@
 
   <div class="budget-section-title">Платежі без заявки, які не вважаються помилкою</div>
   <p class="muted" style="margin-top:0">Такі платежі у звіті «Звірка» йдуть окремою вкладкою «Дозволені без заявки», а не в
-    «Без заявки». Досить збігу за одним із трьох. Відділ — той, до якого в довіднику 1С прив'язано статтю витрат платежу:
-    поки відділ не працює через PayDesk, позначте його тут, а коли підключиться — зніміть.</p>
+    «Без заявки». Досить збігу за одним із чотирьох. Відділ — той, до якого в довіднику 1С прив'язано статтю витрат платежу:
+    поки відділ не працює через PayDesk, позначте його тут, а коли підключиться — зніміть. Додати виняток можна й одразу
+    зі звіту «Звірка»: «Дозволити без заявки…» в рядку платежу.</p>
   {% for title, name, options, chosen in [('Відділи статей витрат', 'payments_ok_departments', OK_DEPARTMENTS, ok_departments),
                                           ('Статті витрат', 'payments_ok_items', OK_ITEMS, ok_items),
-                                          ('Види операцій 1С', 'payments_ok_operations', OK_OPERATIONS, ok_operations)] %}
+                                          ('Види операцій 1С', 'payments_ok_operations', OK_OPERATIONS, ok_operations),
+                                          ('Види оплати (рахунки й каси)', 'payments_ok_payment_types', OK_PAYMENT_TYPES, ok_payment_types)] %}
   <details class="cfo-codes ok-picker" {{ 'open' if chosen }}>
     <summary><strong>{{ title }}</strong> <span class="muted ok-count">— вибрано {{ chosen | length }}</span></summary>
     {% if options | length > 12 %}<input type="search" class="cfo-codes-search ok-search" placeholder="Пошук…" autocomplete="off" aria-label="Пошук: {{ title }}">{% endif %}
@@ -75,7 +86,7 @@
       {% for code, label in options.items() %}
       <label class="cfo-code"><input type="checkbox" name="{{ name }}" value="{{ code }}" {{ 'checked' if code in chosen }}> <span>{{ label }}</span></label>
       {% else %}
-      <span class="muted">{{ 'Ще немає синхронізованих платежів' if name == 'payments_ok_operations' else 'Довідник порожній' }}</span>
+      <span class="muted">{{ 'Ще немає синхронізованих платежів' if name in ('payments_ok_operations', 'payments_ok_payment_types') else 'Довідник порожній' }}</span>
       {% endfor %}
     </div>
   </details>

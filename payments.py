@@ -218,6 +218,18 @@ class _MemoryStore:
     def operations(self):
         return {ln["operation"] for ln in self.lines.values() if ln.get("operation")}
 
+    def payment_types(self):
+        return {ln["payment_type"] for ln in self.lines.values() if ln.get("payment_type")}
+
+    def links_for_requests(self, ids):
+        ids = set(ids)
+        out = {}
+        for g, v in self.links.items():
+            for rid in v:
+                if rid in ids:
+                    out.setdefault(rid, []).append(g)
+        return out
+
     def get_state(self):
         return dict(self.state)
 
@@ -312,6 +324,18 @@ class _SqlStore:
     def operations(self):
         with self._eng().connect() as c:
             return {o for o in c.execute(sa.select(self.P.c.operation).distinct()).scalars() if o}
+
+    def payment_types(self):
+        with self._eng().connect() as c:
+            return {o for o in c.execute(sa.select(self.P.c.payment_type).distinct()).scalars() if o}
+
+    def links_for_requests(self, ids):
+        out = {}
+        with self._eng().connect() as c:
+            for part in self._chunks(sorted(set(ids))):
+                for r in c.execute(sa.select(self.LK.c.request_id, self.LK.c.payment_guid).where(self.LK.c.request_id.in_(part))):
+                    out.setdefault(r.request_id, []).append(r.payment_guid)
+        return out
 
     def get_state(self):
         import db_schema
@@ -564,6 +588,22 @@ def links_of_request(request_id):
     return [{**docs[g], **links[g][request_id]} for g in guids if g in docs]
 
 
+def docs_by_request(ids):
+    """{id заявки: [документ платежу]} — № платіжного документа біля оплачених заявок у списках."""
+    ids = [i for i in ids if i]
+    if not ids:
+        return {}
+    try:
+        by_req = store().links_for_requests(ids)
+        guids = {g for v in by_req.values() for g in v}
+        docs = documents(store().lines_of(guids)) if guids else {}
+    except Exception:  # списки заявок мають відкриватися й без копії платежів
+        logger.exception("payments: docs_by_request")
+        return {}
+    return {rid: sorted((docs[g] for g in v if g in docs), key=lambda d: (d["date"] or date.min, d["number"]))
+            for rid, v in by_req.items()}
+
+
 # ---------------------------------------------------------------- винятки «можна без заявки» й звіт «Звірка»
 
 def operations():
@@ -574,6 +614,16 @@ def operations():
         return []
 
 
+def payment_types_used():
+    """{id виду оплати: назва} — види оплати, що трапляються в платежах (варіанти для винятків і фільтра звіту)."""
+    import payment_accounts
+    try:
+        ids = store().payment_types()
+    except Exception:
+        ids = set()
+    return {i: payment_accounts.label(i) for i in sorted(ids)}
+
+
 def item_departments():
     """{код статті: {відділи статті}} — з довідника статей 1С (відділ статті, а не документа платежу)."""
     return {i["code"]: set(i.get("departments") or []) for i in expense_items.get_items()}
@@ -581,6 +631,7 @@ def item_departments():
 
 def exclusions():
     return {"operations": set(app_settings.get("payments_ok_operations") or []),
+            "payment_types": set(app_settings.get("payments_ok_payment_types") or []),
             "items": set(app_settings.get("payments_ok_items") or []),
             "departments": set(app_settings.get("payments_ok_departments") or [])}
 
@@ -591,6 +642,9 @@ def allowed_reason(doc, ok=None, item_deps=None):
     item_deps = item_deps if item_deps is not None else item_departments()
     if doc.get("operation") and doc["operation"] in ok["operations"]:
         return f"вид операції «{doc['operation']}»"
+    if doc.get("payment_type") and doc["payment_type"] in ok.get("payment_types", ()):
+        import payment_accounts
+        return f"вид оплати «{payment_accounts.label(doc['payment_type'])}»"
     for code in doc.get("items") or []:
         if code in ok["items"]:
             return f"стаття {code}"
@@ -600,12 +654,32 @@ def allowed_reason(doc, ok=None, item_deps=None):
     return None
 
 
-REPORT_TABS = {"unlinked": "Без заявки", "issues": "Розбіжності", "allowed": "Дозволені без заявки"}
+REPORT_TABS = {"unlinked": "Без заявки", "issues": "Розбіжності", "linked": "Зіставлені з заявками",
+               "allowed": "Дозволені без заявки"}
+MATCH_LABELS = {"number": "за #номером у призначенні", "auto": "за сумою й контрагентом", "manual": "прив'язано вручну"}
+
+
+def paid_by_payment(req, doc):
+    """Чи «Оплачено» в заявці поставив PayDesk за цим платежем (а не бухгалтер вручну ще до платежу)."""
+    e = wf.paid_entry(req) if req and req.get("status") == "paid" else None
+    comment = (e or {}).get("comment") or ""
+    return bool(comment.startswith("Оплачено — ") and " 1С: " in comment and f"№ {doc['number']} " in comment)
+
+
+def _brief(req):
+    """Коротко про заявку для звіту й вікна вибору."""
+    return {"id": req["id"], "number": req["number"], "status": req["status"],
+            "status_label": wf.STATUSES.get(req["status"], (req["status"], "grey"))[0],
+            "status_color": wf.STATUSES.get(req["status"], ("", "grey"))[1],
+            "counterparty_id": req.get("counterparty_id"), "counterparty": counterparties.name(req.get("counterparty_id")),
+            "amount": Decimal(str(req.get("amount") or 0)), "currency": req.get("currency") or "",
+            "author": req.get("author_name") or req.get("author_email") or "", "pay_date": req.get("pay_date"),
+            "expense_code": req.get("expense_code") or ""}
 
 
 def report(d_from, d_to):
-    """Платежі за період для звіту «Звірка»: {вкладка: [документ + «issue» / «allowed»]}, новіші — вгорі.
-    Прив'язані до заявок не показуються (крім тих, що потім зникли з 1С)."""
+    """Платежі за період для звіту «Звірка»: {вкладка: [документ + подробиці]}, новіші — вгорі.
+    «Зіставлені» — з заявками, до яких прив'язано платіж; «Розбіжності» — із заявками, на які вказує #номер."""
     s = store()
     docs = documents([ln for ln in s.lines_since(d_from) if ln["pay_date"] and ln["pay_date"] <= d_to])
     links, issues = s.all_links(), s.all_issues()
@@ -613,16 +687,32 @@ def report(d_from, d_to):
     out = {k: [] for k in REPORT_TABS}
     for d in sorted(docs.values(), key=lambda d: (d["date"] or date.min, d["number"]), reverse=True):
         issue = issues.get(d["guid"])
-        if d["guid"] in links and not issue:
-            continue
         if d["guid"] not in links and not d["active"]:
             continue
         if issue:
+            numbers = (payment_match.numbers_in(d["purpose"]) if issue["issue"].startswith("number_")
+                       else [n.strip() for n in (issue.get("detail") or "").split(",") if n.strip().isdigit()]
+                       if issue["issue"] == "ambiguous" else [])
             out["issues"].append({**d, "issue": issue["issue"], "issue_label": payment_match.ISSUES.get(issue["issue"], ""),
-                                  "issue_detail": issue.get("detail") or ""})
-            continue
-        reason = allowed_reason(d, ok, item_deps)
-        out["allowed" if reason else "unlinked"].append({**d, "allowed": reason})
+                                  "issue_detail": issue.get("detail") or "", "ref_numbers": numbers,
+                                  "linked_ids": sorted(links.get(d["guid"], {}))})
+        elif d["guid"] in links:
+            out["linked"].append({**d, "links": links[d["guid"]]})
+        else:
+            reason = allowed_reason(d, ok, item_deps)
+            out["allowed" if reason else "unlinked"].append({**d, "allowed": reason})
+    # заявки до рядків — одним запитом
+    found = db.ids_by_numbers({n for d in out["issues"] for n in d["ref_numbers"]})
+    ids = set(found.values()) | {rid for d in out["linked"] for rid in d["links"]} | {i for d in out["issues"] for i in d["linked_ids"]}
+    reqs = db.get_many(sorted(ids)) if ids else {}
+    for d in out["linked"]:
+        d["requests"] = [{**_brief(reqs[rid]), "match": v.get("match"), "match_label": MATCH_LABELS.get(v.get("match"), ""),
+                          "by_name": v.get("by_name") or "", "paid_here": paid_by_payment(reqs[rid], d)}
+                         for rid, v in sorted(d.pop("links").items()) if rid in reqs]
+    for d in out["issues"]:
+        refs = [found[n] for n in d["ref_numbers"] if n in found] + d["linked_ids"]
+        d["requests"] = [_brief(reqs[i]) for i in dict.fromkeys(refs) if i in reqs]
+        d["missing_numbers"] = [n for n in d["ref_numbers"] if n not in found]
     return out
 
 
@@ -656,6 +746,50 @@ def link_candidates(req, days=60):
         out.append({**d, "score": score})
     out.sort(key=lambda d: (-d["score"], -(d["date"].toordinal() if d["date"] else 0), d["number"]))
     return out[:80]
+
+
+def request_candidates(guid, roles, q="", days=60, limit=50):
+    """Заявки, до яких можна вручну прив'язати платіж (вікно «Знайти заявку» у звірці): «До оплати» й оплачені за days
+    днів у валюті платежу, ще без платежу. Спершу — з #номером у призначенні, далі той самий контрагент і сума.
+    Повертає (документ або None, [заявка коротко + «by_number», «same_cp», «same_amount»])."""
+    s = store()
+    doc = documents(s.lines_of([guid])).get(guid)
+    if not doc:
+        return None, []
+    taken = {rid for v in s.all_links().values() for rid in v}
+    ids = [i for i in db.payment_candidate_ids(clock.today() - timedelta(days=days)) if i not in taken]
+    wanted = set(payment_match.numbers_in(doc["purpose"]))
+    q = (q or "").strip().lower().lstrip("#")
+    out = []
+    for req in db.get_many(ids).values():
+        if req.get("currency") != doc["currency"] or req["status"] not in ("to_pay", "paid") or not can_link(req, roles):
+            continue
+        b = _brief(req)
+        if q and q not in " ".join([b["number"], str(int(b["number"])), b["counterparty"], b["author"],
+                                    f"{b['amount']:.2f}", b["expense_code"]]).lower():
+            continue
+        b.update(by_number=b["number"] in wanted, same_cp=bool(b["counterparty_id"]) and b["counterparty_id"] in doc["counterparties"],
+                 same_amount=abs(b["amount"] - doc["amount"]) < Decimal("0.01"))
+        b["score"] = 4 * b["by_number"] + 2 * b["same_cp"] + b["same_amount"]
+        out.append(b)
+    out.sort(key=lambda b: (-b["score"], b["status"] != "to_pay", b["number"]))
+    return doc, out[:limit]
+
+
+ALLOW_KEYS = {"operation": "payments_ok_operations", "payment_type": "payments_ok_payment_types",
+              "item": "payments_ok_items", "department": "payments_ok_departments"}
+
+
+def allow(key, value, user):
+    """Адміністратор зі звірки: такі платежі — «Дозволені без заявки» (додає value до винятку key)."""
+    setting = ALLOW_KEYS.get(key)
+    value = (value or "").strip()
+    if not setting or not value:
+        raise wf.WorkflowError("Невідомий виняток")
+    current = list(app_settings.get(setting) or [])
+    if value not in current:
+        app_settings.set(setting, current + [value], user.get("email") or user.get("name") or "")
+    return setting
 
 
 def link_manual(guid, request_id, user, roles):

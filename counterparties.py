@@ -207,8 +207,18 @@ def pending_items(include_linked=False):
 
 # ---------------------------------------------------------------- читання
 
+def _demo_shown():
+    """Показано демо-дані (тестовий режим): демо-заявки й демо-платежі посилаються на коди демо-довідника."""
+    import storage
+    return not storage.work_mode()
+
+
+_mock_index = {}
+
+
 def get(cp_id):
-    """Запис за id: з 1С (зокрема помічений на видалення) або тимчасовий (зокрема прив'язаний)."""
+    """Запис за id: з 1С (зокрема помічений на видалення) або тимчасовий (зокрема прив'язаний). У тестовому режимі
+    код, якого немає в 1С, шукається ще й у демо-довіднику (інакше демо-заявки на сайті показують лише номер)."""
     if cp_id is None or cp_id == "":
         return None
     cp_id = str(cp_id)
@@ -217,7 +227,13 @@ def get(cp_id):
         return c
     with _lock:
         item = _load()["items"].get(cp_id)
-    return dict(item) if item else None
+    if item:
+        return dict(item)
+    if _demo_shown():
+        if not _mock_index:
+            _mock_index.update({c["id"]: c for c in parse(MOCK_ONEC)})
+        return _mock_index.get(cp_id)
+    return None
 
 
 def name(cp_id):
