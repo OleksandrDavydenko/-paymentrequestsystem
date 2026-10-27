@@ -7,7 +7,3 @@ __pycache__/
 uploads/
 data/
 *.csv
-
-# Обробка 1С: зібраний файл і журнал збирання (збирається з integrations/1c/src)
-integrations/1c/*.epf
-integrations/1c/build.log

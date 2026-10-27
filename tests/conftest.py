@@ -21,4 +21,8 @@ def pytest_runtest_logreport(report):
     title = report.nodeid.split("::")[-1].replace(",", " ").replace("::", " ")
     tr = _config.pluginmanager.get_plugin("terminalreporter")
     line = f"::error title={title}::{text}"
-    tr.write_line(line) if tr else print(line, flush=True)
+    if tr:  # команда GitHub розпізнається лише з початку рядка — не в одному рядку з прогресом «..F»
+        tr.write("\n")  # ensure_newline не знає про символи прогресу, які пише xdist
+        tr.write_line(line)
+    else:
+        print("\n" + line, flush=True)
