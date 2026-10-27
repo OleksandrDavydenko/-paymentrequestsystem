@@ -75,3 +75,9 @@ def _preprocess_with_roles(self):
 flask.Flask.preprocess_request = _preprocess_with_roles
 sys.argv = [script]
 runpy.run_path(script, run_name="__main__")
+# Сценарій відпрацював. Звичайне завершення інтерпретатора на Linux іноді падає в драйвері SQL Server (pyodbc,
+# SIGSEGV при прибиранні з'єднань — CI бачив код -11 після «ALL OK»), тож виходимо одразу, без прибирання.
+# Виняток у сценарії сюди не доходить — він, як і раніше, дає traceback і ненульовий код.
+sys.stdout.flush()
+sys.stderr.flush()
+os._exit(0)
