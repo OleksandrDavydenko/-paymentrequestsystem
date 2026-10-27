@@ -126,6 +126,16 @@
   адміністратор заборонив погоджувати власні заявки («Розподіл обов'язків»).</div>
 {% endif %}
 
+{% if onec_order and can_see_onec %}
+{% set o = onec_order %}
+<div class="callout {{ 'red' if o.state == 'failed' else 'blue' }} onec-order" id="onec-order">
+  {% if o.state == 'created' %}<strong>Платіжку створено в 1С: № {{ o.doc_number }}</strong>{% if o.doc_date %} від {{ o.doc_date[8:10] ~ '.' ~ o.doc_date[5:7] ~ '.' ~ o.doc_date[:4] }}{% endif %}
+    <span class="muted">· {{ o.by }}{{ ', ' ~ (o.at | dt) if o.at }}</span>
+    {% if req.status not in ('to_pay', 'paid') %}<span class="badge amber">заявку вже не до оплати — платіжку в 1С варто позначити на видалення</span>{% endif %}
+  {% else %}<strong>1С не створила платіжку:</strong> {{ o.message }} <span class="muted">· {{ o.by }}{{ ', ' ~ (o.at | dt) if o.at }}</span>{% endif %}
+</div>
+{% endif %}
+
 {% if pay_marker or payment_links or link_candidates %}
 {% set MATCH_LABELS = {"number": "за #номером у призначенні", "auto": "за сумою й контрагентом", "manual": "прив'язано вручну"} %}
 <div class="card pay-match" id="pay-match">

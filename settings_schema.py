@@ -23,6 +23,7 @@ TABS = [
     ("request", "Заявка"),
     ("payment", "Оплата й готівка"),
     ("reconcile", "Звірка з 1С"),
+    ("onec_api", "API для 1С"),
     ("notify", "Сповіщення"),
     ("design", "Дизайн"),
     ("data", "Дані й система"),
@@ -273,6 +274,11 @@ _LIST = [
     Setting("payments_ok_items", "Без заявки дозволено: статті витрат", "reconcile", "multi", [], _ok_items),
     Setting("payments_ok_operations", "Без заявки дозволено: види операцій", "reconcile", "multi", [], _ok_operations),
     Setting("payments_ok_payment_types", "Без заявки дозволено: види оплати", "reconcile", "multi", [], _ok_payment_types),
+    # ---- API для обробки 1С «Платіжки із заявок PayDesk» (onec_api.py); ключ — лише SHA-256, створює адміністратор
+    Setting("onec_api_enabled", "API для 1С увімкнено", "onec_api", "bool", False),
+    Setting("onec_api_ips", "API для 1С: дозволені IP", "onec_api", "text", ""),
+    Setting("onec_api_key_hash", "API для 1С: ключ", "onec_api", "secret", "", managed=True),
+    Setting("onec_api_key_info", "API для 1С: про ключ", "onec_api", "internal", None),
     # ---- Сповіщення (пошта — власна форма)
     Setting("mail_enabled", "Розсилка увімкнена", "notify", "bool", False, managed=True),
     Setting("mail_sender", "Пошта відправника", "notify", "text", "", managed=True),

@@ -27,6 +27,7 @@ from web.admin_routes import bp as admin_bp
 from web.api_routes import bp as api_bp
 from web.auth import auth
 from web.lists_routes import bp as lists_bp
+from web.onec_api_routes import bp as onec_api_bp
 from web.login_routes import bp as login_bp
 from web.payments_routes import bp as payments_bp
 from web.requests_routes import bp as requests_bp
@@ -56,9 +57,10 @@ auth.init_app(app)
 context.init_app(app)
 errors.init_app(app)
 background.init_app(app)
-for bp in (login_bp, requests_bp, lists_bp, payments_bp, settings_bp, admin_bp, api_bp):
+for bp in (login_bp, requests_bp, lists_bp, payments_bp, settings_bp, admin_bp, api_bp, onec_api_bp):
     app.register_blueprint(bp)
 csrf.exempt(api_bp)  # бот не має сеансу входу — API захищене ключем X-Api-Key
+csrf.exempt(onec_api_bp)  # обробка 1С — так само, ключ X-Api-Key («Налаштування → API для 1С»)
 
 # Для сценарних тестів і скриптів, що звертаються до функцій як до app.<назва>
 from web.auth import _role_members  # noqa: E402,F401

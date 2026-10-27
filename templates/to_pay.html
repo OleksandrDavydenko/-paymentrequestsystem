@@ -147,7 +147,7 @@
           <span class="badge amber" title="Контрагента ще немає в 1С{{ ' — оплату заблоковано' if pending_cp_mode == 'block' }}">новий</span>{% endif %}</td>
         <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
-        <td data-label="Вид оплати">{% if r.payment_account_id %}{{ pay_account_label(r.payment_account_id) }}{% else %}<span class="badge red">не вибрано</span>{% endif %}</td>
+        <td data-label="Вид оплати">{% if r.payment_account_id %}{{ pay_account_label(r.payment_account_id) }}{% else %}<span class="badge red">не вибрано</span>{% endif %}{% set oo = (onec_orders or {}).get(r.id) %}{% if oo %}<div class="{{ 'err' if oo.state == 'failed' else 'pm-doc' }}" title="{{ oo.message if oo.state == 'failed' else 'Платіжку створено в 1С' }}">{{ '⚠ помилка 1С' if oo.state == 'failed' else '1С: платіжка № ' ~ oo.doc_number }}</div>{% endif %}</td>
         {% set po = pay_org(r) %}
         <td data-label="Платимо з">{{ po.name if po else '—' }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>

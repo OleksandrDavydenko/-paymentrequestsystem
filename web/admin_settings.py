@@ -160,6 +160,11 @@ def _context(tab):
                    mail_password=app_settings.info("smtp_password"), SMTP_PRESETS=mailer.PRESETS,
                    SMTP_SECURITY=mailer.SECURITY, telegram=telegram_notify.status(),
                    mail_problems=len(notify_log.query(200, status="problems")))
+    elif tab == "onec_api":
+        import onec_api
+        ctx.update(api_enabled=bool(app_settings.get("onec_api_enabled")), api_ips=app_settings.get("onec_api_ips") or "",
+                   api_key_info=app_settings.get("onec_api_key_info") if app_settings.get("onec_api_key_hash") else None,
+                   api_last=onec_api.last_access(), api_base=request.host_url.rstrip("/"))
     elif tab == "reconcile":
         import payments
         ctx.update(payments_since=app_settings.get("payments_since"), PAY_MODES=schema.SETTINGS["pay_mode_acc_cash"].choices(),
@@ -341,6 +346,16 @@ def admin_settings(*, context):
 
 
 # ---------------------------------------------------------------- експорт / імпорт
+
+@bp.route("/admin/onec-api/key", methods=["POST"])
+@login_required
+@requires("admin")
+def onec_api_key(*, context):
+    """Створити новий ключ API для 1С (старий перестає діяти); ключ показується один раз — на цій сторінці."""
+    import onec_api
+    key = onec_api.new_key(g.user)
+    return render_template("admin_settings.html", user_name=g.user["name"], **_context("onec_api"), new_api_key=key)
+
 
 @bp.route("/admin/payments/sync", methods=["POST"])
 @login_required

@@ -343,6 +343,9 @@ def _render_card(req, existing, errors, user, roles, budget_items, contractor_li
         link_candidates=payments.link_candidates(req) if req.get("id") and req["status"] == "to_pay"
         and payments.pay_mode(wf.accountant_role(req)) in ("auto", "both") and payments.can_link(req, roles) else [],
         can_unlink_payment="admin" in roles,
+        # Відмітка обробки 1С «Платіжки із заявок PayDesk» (onec_api.py) — бачать ті, хто бачить «Вид оплати»
+        onec_order=req.get("onec_order"),
+        can_see_onec=wf.can_see_payment_account(roles),
         author_actions=wf.author_actions(req, roles, user["email"]) if req["id"] else [],
         doc=doc_limits(),
         acting_role=wf.acting_role(req, roles, user["email"]) or (

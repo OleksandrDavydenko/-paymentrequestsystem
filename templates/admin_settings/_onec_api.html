@@ -1,0 +1,67 @@
+<div class="card process-settings">
+  <div class="toolbar"><h2 style="margin:0">API для обробки 1С «Платіжки із заявок PayDesk»</h2></div>
+  <p class="muted" style="margin-top:0">Бухгалтер у 1С відкриває обробку, бачить заявки «До оплати», позначає потрібні й
+    натискає «Створити платіжки». Обробка створює в 1С чернетки платіжних доручень (у призначенні — <code>#номер</code>
+    заявки, тож звірка з платежами потім сама закриє заявку) і повідомляє PayDesk номер документа. У картці заявки
+    з'являється «Платіжку створено в 1С № …». PayDesk у 1С нічого не пише — 1С сама звертається сюди по HTTPS.</p>
+
+  {% if new_api_key %}
+  <div class="callout green api-key-new" id="api-key-new">
+    <strong>Новий ключ API — скопіюйте його зараз, він показується лише один раз:</strong>
+    <div class="api-key-box"><code id="api-key-value">{{ new_api_key }}</code>
+      <button type="button" class="btn btn-sm cp-copy" data-copy="{{ new_api_key }}">⧉ Скопіювати</button></div>
+    <span class="muted">Вставте його в обробку 1С (поле «Ключ API»). Попередній ключ більше не діє. Не пересилайте ключ
+      поштою чи в месенджерах.</span>
+  </div>
+  {% endif %}
+
+  <dl class="sync-facts api-facts">
+    <div><dt>Адреса для обробки</dt><dd><code>{{ api_base }}</code></dd></div>
+    <div><dt>Ключ</dt><dd>{% if api_key_info %}{{ api_key_info.prefix }}… — створено {{ api_key_info.created_at[:16].replace('T', ' ') }}, {{ api_key_info.by }}{% else %}<span class="err">ще не створено</span>{% endif %}</dd></div>
+    <div><dt>Останнє звернення 1С</dt><dd>{% if api_last.at %}{{ api_last.at | dt }} · {{ api_last.ip }} · <code>{{ api_last.path }}</code>{% else %}—{% endif %}</dd></div>
+  </dl>
+  <form method="post" action="{{ url_for('admin.onec_api_key') }}" class="api-key-form"
+        {% if api_key_info %}onsubmit="return confirm('Створити новий ключ? Поточний ключ перестане діяти — його доведеться замінити в обробці 1С.')"{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn-sm">🔑 {{ 'Створити новий ключ' if api_key_info else 'Створити ключ' }}</button>
+  </form>
+</div>
+
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="onec_api">
+  <label class="mode-option">
+    <input type="checkbox" name="onec_api_enabled" value="1" {{ 'checked' if api_enabled }}>
+    <span><strong>API для 1С увімкнено</strong>
+      <span class="mode-hint">Вимкнено — обробка 1С отримує відмову (403), навіть із правильним ключем.</span></span>
+  </label>
+  <label class="mode-option">
+    <span><strong>Дозволені IP-адреси</strong> <span class="muted">(необов'язково)</span>
+      <input type="text" name="onec_api_ips" value="{{ api_ips }}" placeholder="напр. 91.200.10.5, 91.200.10.6" class="inline-select">
+      <span class="mode-hint">Зовнішні IP, з яких 1С виходить в інтернет (через кому). Порожньо — з будь-яких, лише за ключем.</span></span>
+  </label>
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+</form>
+
+<div class="card process-settings">
+  <div class="budget-section-title">Що вміє API</div>
+  <ul class="api-list">
+    <li><code>GET /api/1c/v1/ping</code> — перевірка зв'язку й ключа</li>
+    <li><code>GET /api/1c/v1/payment-orders?state=new&amp;form=bank</code> — заявки «До оплати», для яких ще немає платіжки
+      (<code>state</code>: new · created · failed · cancelled · all)</li>
+    <li><code>GET /api/1c/v1/payment-orders/&lt;id&gt;</code> — одна заявка</li>
+    <li><code>POST …/&lt;id&gt;/created</code> — 1С створила платіжку (номер, дата, GUID документа)</li>
+    <li><code>POST …/&lt;id&gt;/failed</code> — 1С не змогла створити (текст помилки бачить бухгалтер у картці)</li>
+    <li><code>POST …/&lt;id&gt;/reset</code> — платіжку в 1С видалили, заявка знову «нова»</li>
+  </ul>
+  <p class="muted">Ключ — у заголовку <code>X-Api-Key</code>. Повний опис для програміста 1С і обробка-кістяк —
+    <code>integrations/1c</code> у репозиторії PayDesk. У тестовому режимі API віддає демо-заявки — зручно
+    перевіряти обробку на копії бази 1С.</p>
+</div>
+{% if new_api_key %}
+<script>
+document.querySelectorAll('.api-key-new .cp-copy').forEach(b => b.addEventListener('click', async () => {
+  try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✓ Скопійовано'; }
+  catch (e) { /* без доступу до буфера — виділіть і скопіюйте вручну */ }
+}));
+</script>
+{% endif %}

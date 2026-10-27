@@ -56,6 +56,9 @@ def to_pay(*, context):
     blocked = {r["id"] for r in rows if _pay_guard(r)["cp_pending"] and _pay_guard(r)["block_pending"]}
     no_account = {r["id"] for r in rows if not r.get("payment_account_id")}
     auto = {r["id"] for r in rows if not payments.manual_pay_allowed(r)}
+    # Відмітки обробки 1С про платіжки (лише для «До оплати»: у легких рядках їх немає — беремо повні заявки сторінки)
+    onec_orders = {} if view == "paid" else {i: r["onec_order"] for i, r in db.get_many([r["id"] for r in rows]).items()
+                                             if r.get("onec_order")}
     background.kick_payments_sync()
 
     return render_template(
@@ -71,6 +74,7 @@ def to_pay(*, context):
         user_name=g.user["name"],
         view=view,
         paid_entry=wf.paid_entry,
+        onec_orders=onec_orders,
         requests=rows,
         page=page,
         totals=currency_totals(found, today),

@@ -998,6 +998,13 @@ a.badge { text-decoration: none; }
 .rc-opt-tags { display: flex; flex-wrap: wrap; gap: 4px; }
 .rc-foot-btns { display: flex; gap: 8px; }
 .pm-doc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+/* API для 1С */
+.api-key-box { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 6px 0; }
+.api-key-box code { font-size: 15px; padding: 6px 10px; background: var(--card); border: 1px solid var(--line); border-radius: 6px;
+  word-break: break-all; user-select: all; }
+.api-key-form { margin-top: 10px; }
+.api-list { margin: 4px 0 8px; padding-left: 20px; display: grid; gap: 4px; font-size: 14px; }
+.onec-order { display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
 @media (max-width: 900px) { .rc-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 760px) {
   .rc-tile-hint { display: none; }
