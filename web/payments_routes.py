@@ -1,10 +1,12 @@
 """Оплати: «До оплати», «Оплачені», «Готівка не підтверджена», масова оплата."""
+from datetime import date, timedelta
 from decimal import Decimal
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
 import app_settings
 import clock
+import counterparties
 import notifications
 import payment_accounts
 import payments
@@ -170,3 +172,89 @@ def to_pay_bulk(*, context):
     if not paid and not skipped:
         flash("Оберіть заявки галочками", "error")
     return redirect(url_for("payments.to_pay", **{k: v for k, v in request.args.items()}))
+
+
+
+# ---------------------------------------------------------------- «Звірка»: платежі з 1С без заявок
+
+def _parse_day(raw, default):
+    try:
+        return date.fromisoformat(raw) if raw else default
+    except ValueError:
+        return default
+
+
+@bp.route("/payments/reconcile")
+@login_required
+@requires("cfo", "admin")
+def reconcile(*, context):
+    """Платежі з 1С без заявки, розбіжності зіставлення й дозволені без заявки (фіндиректор і адміністратор)."""
+    today = clock.today()
+    a = request.args
+    tab = a.get("tab") if a.get("tab") in payments.REPORT_TABS else "unlinked"
+    d_to = _parse_day(a.get("to"), today)
+    d_from = _parse_day(a.get("from"), today - timedelta(days=payments.REPORT_DAYS))
+    kind, q = a.get("kind") if a.get("kind") in ("Bank", "Cash") else "", (a.get("q") or "").strip().lower()
+    background.kick_payments_sync()
+    data = payments.report(d_from, d_to)
+
+    def name(cp):
+        c = counterparties.get(cp)
+        return c["name"] if c else cp
+
+    def keep(d):
+        if kind and d["kind"] != kind:
+            return False
+        if not q:
+            return True
+        hay = " ".join([d["number"] or "", d["purpose"] or "", d.get("operation") or ""] + [name(c) for c in d["counterparties"]])
+        return q in hay.lower()
+
+    rows = [d for d in data[tab] if keep(d)]
+    totals = {}
+    for d in rows:
+        totals[d["currency"] or "—"] = totals.get(d["currency"] or "—", Decimal(0)) + d["amount"]
+    return render_template(
+        "payments_reconcile.html", user_name=g.user["name"], tab=tab, TABS=payments.REPORT_TABS,
+        counts={k: len([d for d in v if keep(d)]) for k, v in data.items()}, rows=rows[:500], total_rows=len(rows),
+        totals=sorted(totals.items()), d_from=d_from, d_to=d_to, kind=kind, q=a.get("q") or "", cp_name=name,
+        item_departments=payments.item_departments(), can_link=payments.can_link_any(g.roles), sync=payments.status())
+
+
+def _next_url(default):
+    nxt = request.form.get("next") or ""
+    return nxt if nxt.startswith("/") and not nxt.startswith("//") else default
+
+
+@bp.route("/payments/link", methods=["POST"])
+@login_required
+@requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
+def payment_link(*, context):
+    """Прив'язати платіж з 1С до заявки вручну (з картки заявки або зі звірки за номером заявки)."""
+    guid = (request.form.get("payment_guid") or "").strip().upper()
+    raw = (request.form.get("request_id") or "").strip()
+    number = (request.form.get("request_number") or "").strip().lstrip("#")
+    request_id = int(raw) if raw.isdigit() else None
+    if request_id is None and number.isdigit():
+        request_id = db.ids_by_numbers([f"{int(number):09d}"]).get(f"{int(number):09d}")
+    if not guid or not request_id:
+        flash("Вкажіть платіж і номер заявки", "error")
+        return redirect(_next_url(url_for("payments.reconcile")))
+    try:
+        req = payments.link_manual(guid, request_id, g.user, g.roles)
+    except wf.WorkflowError as e:
+        flash(str(e), "error")
+        return redirect(_next_url(url_for("payments.reconcile")))
+    flash(f"Платіж прив'язано до заявки № {req['number']}" + (" — заявку позначено оплаченою" if req["status"] == "paid" else ""),
+          "success")
+    return redirect(_next_url(url_for("requests.request_card", request_id=request_id)))
+
+
+@bp.route("/requests/<int:request_id>/unlink-payment", methods=["POST"])
+@login_required
+@requires("admin")
+def payment_unlink(request_id, *, context):
+    """Адміністратор відв'язує помилково прив'язаний платіж; статус заявки — окремо, через «Змінити статус»."""
+    payments.unlink((request.form.get("payment_guid") or "").strip().upper(), request_id, g.user)
+    flash("Платіж відв'язано від заявки. Якщо заявку позначено оплаченою помилково — змініть статус нижче.", "success")
+    return redirect(url_for("requests.request_card", request_id=request_id) + "#admin-status")

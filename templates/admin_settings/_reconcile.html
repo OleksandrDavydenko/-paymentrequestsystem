@@ -52,6 +52,35 @@
     призначення платежу (наприклад, <code>#5</code>). У режимі «Вручну» платіж лише прив'язується до заявки, щоб у звірці
     було видно, що його зроблено за заявкою.</p>
 
+  <div class="budget-section-title">Хто може вручну прив'язати платіж</div>
+  <p class="muted" style="margin-top:0">Коли платіж не знайшовся сам (немає #номера, інша сума чи контрагент): у картці заявки
+    «Прив'язати платіж з 1С вручну» (режими «Автоматично» й «Обидва») і у звіті «Звірка». Заявка «До оплати» стає оплаченою.</p>
+  <div class="mode-option doc-formats"><span class="doc-format-list">
+    {% for code, label in LINK_ROLES.items() %}
+    <label class="inline-check"><input type="checkbox" name="payment_link_roles" value="{{ code }}" {{ 'checked' if code in link_roles }}> {{ label }}</label>
+    {% endfor %}
+  </span></div>
+
+  <div class="budget-section-title">Платежі без заявки, які не вважаються помилкою</div>
+  <p class="muted" style="margin-top:0">Такі платежі у звіті «Звірка» йдуть окремою вкладкою «Дозволені без заявки», а не в
+    «Без заявки». Досить збігу за одним із трьох. Відділ — той, до якого в довіднику 1С прив'язано статтю витрат платежу:
+    поки відділ не працює через PayDesk, позначте його тут, а коли підключиться — зніміть.</p>
+  {% for title, name, options, chosen in [('Відділи статей витрат', 'payments_ok_departments', OK_DEPARTMENTS, ok_departments),
+                                          ('Статті витрат', 'payments_ok_items', OK_ITEMS, ok_items),
+                                          ('Види операцій 1С', 'payments_ok_operations', OK_OPERATIONS, ok_operations)] %}
+  <details class="cfo-codes ok-picker" {{ 'open' if chosen }}>
+    <summary><strong>{{ title }}</strong> <span class="muted ok-count">— вибрано {{ chosen | length }}</span></summary>
+    {% if options | length > 12 %}<input type="search" class="cfo-codes-search ok-search" placeholder="Пошук…" autocomplete="off" aria-label="Пошук: {{ title }}">{% endif %}
+    <div class="cfo-codes-list">
+      {% for code, label in options.items() %}
+      <label class="cfo-code"><input type="checkbox" name="{{ name }}" value="{{ code }}" {{ 'checked' if code in chosen }}> <span>{{ label }}</span></label>
+      {% else %}
+      <span class="muted">{{ 'Ще немає синхронізованих платежів' if name == 'payments_ok_operations' else 'Довідник порожній' }}</span>
+      {% endfor %}
+    </div>
+  </details>
+  {% endfor %}
+
   <div class="budget-section-title">Звідки звіряти</div>
   <label class="mode-option">
     <span><strong>Звіряти платежі з 1С від дати</strong>
@@ -61,3 +90,18 @@
   </label>
   <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
 </form>
+<script>
+document.querySelectorAll('.ok-picker').forEach(box => {
+  const search = box.querySelector('.ok-search');
+  if (search) {
+    search.addEventListener('keydown', e => { if (e.key === 'Enter') e.preventDefault(); });
+    search.addEventListener('input', () => {
+      const q = search.value.trim().toLowerCase();
+      box.querySelectorAll('.cfo-code').forEach(l => { l.hidden = q && !l.textContent.toLowerCase().includes(q); });
+    });
+  }
+  box.addEventListener('change', () => {
+    box.querySelector('.ok-count').textContent = `— вибрано ${box.querySelectorAll('input[type=checkbox]:checked').length}`;
+  });
+});
+</script>

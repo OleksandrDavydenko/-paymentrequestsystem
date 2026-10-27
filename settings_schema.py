@@ -121,6 +121,31 @@ def _pay_modes():
             "both": "Обидва: система ставить сама, бухгалтер може й вручну"}
 
 
+def _link_roles():
+    return {"accountant": "Бухгалтер заявки (той, хто її оплачує)", "cfo": "Фіндиректор", "admin": "Адміністратор"}
+
+
+def _ok_item_departments():
+    """Відділи зі статей витрат (довідник 1С) — винятки «платіж без заявки — не помилка»."""
+    import app_settings
+    import expense_items
+    names = {d for i in expense_items.get_items() for d in i.get("departments") or []}
+    return {n: n for n in sorted(names | set(app_settings.get("payments_ok_departments") or []), key=str.lower)}
+
+
+def _ok_items():
+    import app_settings
+    import expense_items
+    items = {i["code"]: f"{i['code']} — {i['name']}" for i in expense_items.get_items()}
+    return {**{c: c for c in app_settings.get("payments_ok_items") or []}, **items}
+
+
+def _ok_operations():
+    import app_settings
+    import payments
+    return {o: o for o in sorted(set(payments.operations()) | set(app_settings.get("payments_ok_operations") or []))}
+
+
 def _data_modes():
     return {"work": "Робоча база", "test": "Тестові дані"}
 
@@ -224,6 +249,12 @@ _LIST = [
     Setting("pay_mode_acc_cash", "«Оплачено»: бухгалтер по готівці", "reconcile", "choice", "manual", _pay_modes),
     Setting("pay_mode_acc_resident", "«Оплачено»: бухгалтер резидентів", "reconcile", "choice", "manual", _pay_modes),
     Setting("pay_mode_acc_nonresident", "«Оплачено»: бухгалтер нерезидентів", "reconcile", "choice", "manual", _pay_modes),
+    Setting("payment_link_roles", "Хто може вручну прив'язати платіж з 1С", "reconcile", "multi", ["accountant", "admin"],
+            _link_roles),
+    # Платіж без заявки — не помилка («Звірка»): відділ статті витрат (відділи підключають поступово), стаття, вид операції
+    Setting("payments_ok_departments", "Без заявки дозволено: відділи статей", "reconcile", "multi", [], _ok_item_departments),
+    Setting("payments_ok_items", "Без заявки дозволено: статті витрат", "reconcile", "multi", [], _ok_items),
+    Setting("payments_ok_operations", "Без заявки дозволено: види операцій", "reconcile", "multi", [], _ok_operations),
     # ---- Сповіщення (пошта — власна форма)
     Setting("mail_enabled", "Розсилка увімкнена", "notify", "bool", False, managed=True),
     Setting("mail_sender", "Пошта відправника", "notify", "text", "", managed=True),

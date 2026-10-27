@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+
+{% block title %}Звірка платежів{% endblock %}
+
+{% block content %}
+<nav class="tabs" aria-label="Звірка платежів">
+  {% for code, title in TABS.items() %}
+  <a href="{{ url_for('payments.reconcile', tab=code, **{'from': d_from.isoformat(), 'to': d_to.isoformat(), 'kind': kind, 'q': q}) }}"
+     class="tab {{ 'active' if tab == code }}">{{ title }}{% if counts[code] %} <span class="count {{ 'muted-count' if code == 'allowed' }}">{{ counts[code] }}</span>{% endif %}</a>
+  {% endfor %}
+</nav>
+
+<div class="card">
+  <div class="toolbar">
+    <h1 style="margin:0">{{ TABS[tab] }}</h1>
+    <span class="spacer"></span>
+    <span class="muted">Платежі з 1С: {{ sync.synced_at[:16].replace('T', ' ') if sync.synced_at else 'ще не синхронізовано' }}{% if sync.error %} · <span class="err">помилка: {{ sync.error }}</span>{% endif %}</span>
+  </div>
+  <p class="muted" style="margin-top:0">
+    {% if tab == 'unlinked' %}Списання з рахунків і каси, для яких PayDesk не знайшов заявки й які не підпадають під винятки
+      («Налаштування → Звірка з 1С»). Платежі, оплачені за заявками, тут не показуються.
+    {% elif tab == 'issues' %}У призначенні є #номер заявки, але сума, валюта чи контрагент не збігаються; кілька заявок з
+      однаковими реквізитами; або прив'язаний платіж видалено в 1С. Заявка в таких випадках автоматично не закривається.
+    {% else %}Платежі без заявки, які дозволено проводити так: за видом операції, статтею або відділом статті («Налаштування →
+      Звірка з 1С»).{% endif %}</p>
+
+  <form method="get" class="filters reconcile-filters">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <label>З <input type="date" name="from" value="{{ d_from.isoformat() }}"></label>
+    <label>по <input type="date" name="to" value="{{ d_to.isoformat() }}"></label>
+    <select name="kind" aria-label="Банк чи каса" class="{{ 'is-active' if kind }}">
+      <option value="">Банк і каса</option>
+      <option value="Bank" {{ 'selected' if kind == 'Bank' }}>Лише банк</option>
+      <option value="Cash" {{ 'selected' if kind == 'Cash' }}>Лише каса</option>
+    </select>
+    <input type="search" name="q" value="{{ q }}" placeholder="Пошук: контрагент, № документа, призначення" aria-label="Пошук">
+    <button type="submit" class="btn btn-sm">Показати</button>
+  </form>
+
+  {% if totals %}
+  <div class="reconcile-totals">{% for cur, amount in totals %}<span class="chip"><strong>{{ amount | money }}</strong> {{ cur }}</span>{% endfor %}
+    <span class="muted">— {{ total_rows }} платеж(ів){% if total_rows > rows | length %}, показано перші {{ rows | length }}{% endif %}</span></div>
+  {% endif %}
+
+  <div class="table-wrap">
+  <table class="stack reconcile-table">
+    <thead><tr><th>Дата</th><th>Документ</th><th>Контрагент</th><th class="num">Сума</th><th>Стаття</th><th>Операція</th>
+      <th>Призначення</th>{% if tab != 'unlinked' %}<th>Причина</th>{% endif %}{% if can_link and tab != 'allowed' %}<th>Прив'язати до заявки</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for d in rows %}
+      <tr>
+        <td data-label="Дата">{{ d.date | d }}</td>
+        <td data-label="Документ"><strong>{{ d.number }}</strong><div class="muted">{{ 'каса' if d.kind == 'Cash' else 'банк' }} · {{ pay_account_label(d.payment_type) if d.payment_type else '—' }}</div></td>
+        <td data-label="Контрагент">{% for cp in d.counterparties %}{{ cp_name(cp) }}{{ ', ' if not loop.last }}{% else %}<span class="muted">—</span>{% endfor %}</td>
+        <td data-label="Сума" class="num"><strong>{{ d.amount | money }}</strong> {{ d.currency }}</td>
+        <td data-label="Стаття">{% for code in d['items'] %}<div>{{ code }} <span class="muted">{{ expense_title(code) or '' }}</span>
+          {% if item_departments.get(code) %}<div class="muted">{{ item_departments[code] | sort | join(', ') }}</div>{% endif %}</div>{% else %}<span class="muted">—</span>{% endfor %}</td>
+        <td data-label="Операція">{{ d.operation or '—' }}</td>
+        <td data-label="Призначення" class="reconcile-purpose" title="{{ d.purpose }}">{{ d.purpose | truncate(140) }}</td>
+        {% if tab != 'unlinked' %}<td data-label="Причина">{% if d.issue %}<span class="badge amber">{{ d.issue_label }}</span>{% if d.issue_detail %}<div class="muted">{{ d.issue_detail }}</div>{% endif %}
+          {% elif d.allowed %}<span class="badge grey">{{ d.allowed }}</span>{% endif %}</td>{% endif %}
+        {% if can_link and tab != 'allowed' %}
+        <td data-label="Прив'язати до заявки">
+          {% if d.issue != 'removed' %}
+          <form method="post" action="{{ url_for('payments.payment_link') }}" class="reconcile-link"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="payment_guid" value="{{ d.guid }}">
+            <input type="hidden" name="next" value="{{ request.full_path }}">
+            <input type="text" name="request_number" inputmode="numeric" placeholder="№ заявки" aria-label="Номер заявки для платежу {{ d.number }}" required>
+            <button type="submit" class="btn btn-sm" title="Прив'язати платіж до заявки">OK</button>
+          </form>
+          {% endif %}
+        </td>
+        {% endif %}
+      </tr>
+    {% else %}
+      <tr><td colspan="9" class="empty">{{ 'Платежів без заявки за період немає' if tab == 'unlinked' else ('Розбіжностей немає' if tab == 'issues' else 'Немає') }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

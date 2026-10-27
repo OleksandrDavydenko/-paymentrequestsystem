@@ -165,7 +165,13 @@ def _context(tab):
         ctx.update(payments_since=app_settings.get("payments_since"), PAY_MODES=schema.SETTINGS["pay_mode_acc_cash"].choices(),
                    pay_modes={r: payments.pay_mode(r) for r in wf.ACCOUNTANT_ROLES},
                    ACCOUNTANT_ROLE_LIST=[(r, wf.ROLES[r]) for r in ("acc_cash", "acc_resident", "acc_nonresident")],
-                   sync_state=payments.status())
+                   sync_state=payments.status(),
+                   link_roles=app_settings.get("payment_link_roles") or [], LINK_ROLES=schema.SETTINGS["payment_link_roles"].choices(),
+                   ok_departments=app_settings.get("payments_ok_departments") or [],
+                   OK_DEPARTMENTS=schema.SETTINGS["payments_ok_departments"].choices(),
+                   ok_items=app_settings.get("payments_ok_items") or [], OK_ITEMS=schema.SETTINGS["payments_ok_items"].choices(),
+                   ok_operations=app_settings.get("payments_ok_operations") or [],
+                   OK_OPERATIONS=schema.SETTINGS["payments_ok_operations"].choices())
     elif tab == "design":
         today, enabled = clock.today(), app_settings.get("holidays") or []
         upcoming = holidays.next_up(today, enabled)

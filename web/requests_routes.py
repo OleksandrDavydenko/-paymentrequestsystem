@@ -339,6 +339,10 @@ def _render_card(req, existing, errors, user, roles, budget_items, contractor_li
         and wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES else None,
         pay_auto=payments.pay_mode(wf.accountant_role(req)) if req.get("id") else "manual",
         payment_links=payments.links_of_request(req["id"]) if req.get("id") and req["status"] in ("to_pay", "paid") else [],
+        # «Автоматично» / «Обидва»: платіж не знайшовся сам — вибрати вручну (хто може — «Звірка з 1С»)
+        link_candidates=payments.link_candidates(req) if req.get("id") and req["status"] == "to_pay"
+        and payments.pay_mode(wf.accountant_role(req)) in ("auto", "both") and payments.can_link(req, roles) else [],
+        can_unlink_payment="admin" in roles,
         author_actions=wf.author_actions(req, roles, user["email"]) if req["id"] else [],
         doc=doc_limits(),
         acting_role=wf.acting_role(req, roles, user["email"]) or (

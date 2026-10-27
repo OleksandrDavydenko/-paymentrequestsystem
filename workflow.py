@@ -216,6 +216,8 @@ ACTIONS = {
     "handover": (None, "Готівку передано підряднику", "green", False),
     "handover_undo": (None, "Підтвердження передачі скасовано", "purple", True),
     "cfo_threshold": (None, "Поріг фіндиректора", "grey", False),
+    "payment_link": (None, "Прив'язано платіж з 1С", "blue", False),
+    "payment_unlink": (None, "Платіж з 1С відв'язано", "purple", False),
     "withdraw": ("Відкликати на редагування", "Відкликано автором на редагування", "orange", False),
     "cancel": ("Скасувати заявку", "Скасовано автором", "grey", True),
 }

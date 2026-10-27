@@ -36,6 +36,12 @@
       {% if sees_all_requests %}
       <a href="{{ url_for('lists.admin_requests') }}" class="{{ 'active' if request.endpoint == 'lists.admin_requests' }}">Усі заявки</a>
       {% endif %}
+      {% if 'cfo' in roles or 'admin' in roles %}
+      <a href="{{ url_for('payments.reconcile') }}" class="{{ 'active' if request.endpoint == 'payments.reconcile' }}"
+         title="Платежі з 1С без заявок і розбіжності">
+        Звірка{% if reconcile_count %} <span class="count">{{ reconcile_count }}</span>{% endif %}
+      </a>
+      {% endif %}
       {% if 'admin' in roles %}
       <a href="{{ url_for('admin.admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}">Адміністрування</a>
       {% endif %}

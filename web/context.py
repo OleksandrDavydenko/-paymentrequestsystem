@@ -60,6 +60,17 @@ def theme_context(theme):
     return {"color_theme": theme, "theme_color": settings_schema.THEME_COLORS[theme]}
 
 
+def _reconcile_count(roles):
+    """Платежі з 1С без заявки за 30 днів — у меню «Звірка» (фіндиректор, адміністратор)."""
+    if not roles & {"cfo", "admin"}:
+        return 0
+    try:
+        import payments
+        return payments.status().get("unlinked") or 0
+    except Exception:
+        return 0
+
+
 def inject_roles():
     roles = getattr(g, "roles", set())
     return {
@@ -73,6 +84,7 @@ def inject_roles():
         "can_see_payments": wf.can_see_payments(roles),
         "sees_all_requests": _sees_all_requests(roles),
         "test_mode": notifications.test_mode(),
+        "reconcile_count": _reconcile_count(roles),
         "test_mail_muted": notifications.muted_by_test_mode(),
         "payments_count": db.count("to_pay", roles) if wf.can_see_payments(roles) else 0,
     }

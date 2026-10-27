@@ -33,6 +33,7 @@ logger = logging.getLogger(__name__)
 PAGE = 5000                 # рядків за один запит змін (з запасом до ліміту Power BI в 1 млн значень)
 KEYS_WINDOW_DAYS = 90       # за скільки днів раз на добу перевіряти, чи не зникли платежі з 1С
 MATCH_WINDOW_DAYS = 120     # платежі за скільки днів зіставляються з заявками
+REPORT_DAYS = 30            # звіт «Звірка» за замовчуванням і лічильник у меню — за останні 30 днів
 SYNC_EVERY = timedelta(minutes=10)
 PAY_MODES = ("manual", "auto", "both")
 DEFAULT_SINCE = date(2026, 9, 1)
@@ -214,6 +215,9 @@ class _MemoryStore:
     def count(self):
         return sum(1 for ln in self.lines.values() if not ln["removed"])
 
+    def operations(self):
+        return {ln["operation"] for ln in self.lines.values() if ln.get("operation")}
+
     def get_state(self):
         return dict(self.state)
 
@@ -304,6 +308,10 @@ class _SqlStore:
     def count(self):
         with self._eng().connect() as c:
             return c.execute(sa.select(sa.func.count()).select_from(self.P).where(self.P.c.removed == sa.false())).scalar()
+
+    def operations(self):
+        with self._eng().connect() as c:
+            return {o for o in c.execute(sa.select(self.P.c.operation).distinct()).scalars() if o}
 
     def get_state(self):
         import db_schema
@@ -457,7 +465,11 @@ def run_matching():
                 if _pay(rid, doc):
                     paid.append(req["number"])
     s.replace_issues(issues)
-    return {"linked": linked, "paid": paid, "issues": len(issues)}
+    links, ok, item_deps = s.all_links(), exclusions(), item_departments()
+    recent = today - timedelta(days=REPORT_DAYS)
+    unlinked = sum(1 for d in docs.values() if d["active"] and d["date"] and d["date"] >= recent and d["guid"] not in links
+                   and d["guid"] not in issues and not allowed_reason(d, ok, item_deps))
+    return {"linked": linked, "paid": paid, "issues": len(issues), "unlinked": unlinked}
 
 
 # ---------------------------------------------------------------- синхронізація
@@ -510,7 +522,8 @@ def sync(check_keys=False):
             state.update(keys_at=now.isoformat(), removed_last=len(gone))
         result = run_matching()
         state.update(synced_at=now.isoformat(), error=None, loaded_last=loaded, rows=s.count(),
-                     linked_last=result["linked"], paid_last=result["paid"][-20:], issues=result["issues"])
+                     linked_last=result["linked"], paid_last=result["paid"][-20:], issues=result["issues"],
+                     unlinked=result["unlinked"])
     except Exception as e:  # Power BI недоступний, немає таблиці тощо — показати в адмінці, спробувати пізніше
         logger.exception("Синхронізація платежів з 1С")
         state.update(error=str(e)[:400], failed_at=now.isoformat())
@@ -549,3 +562,141 @@ def links_of_request(request_id):
     docs = documents(s.lines_of(guids))
     links = s.all_links()
     return [{**docs[g], **links[g][request_id]} for g in guids if g in docs]
+
+
+# ---------------------------------------------------------------- винятки «можна без заявки» й звіт «Звірка»
+
+def operations():
+    """Види операцій, які трапляються в платежах (варіанти для винятків в адмінці)."""
+    try:
+        return sorted(store().operations())
+    except Exception:
+        return []
+
+
+def item_departments():
+    """{код статті: {відділи статті}} — з довідника статей 1С (відділ статті, а не документа платежу)."""
+    return {i["code"]: set(i.get("departments") or []) for i in expense_items.get_items()}
+
+
+def exclusions():
+    return {"operations": set(app_settings.get("payments_ok_operations") or []),
+            "items": set(app_settings.get("payments_ok_items") or []),
+            "departments": set(app_settings.get("payments_ok_departments") or [])}
+
+
+def allowed_reason(doc, ok=None, item_deps=None):
+    """Чому платіж без заявки не вважається помилкою («Звірка з 1С» → винятки) або None."""
+    ok = ok if ok is not None else exclusions()
+    item_deps = item_deps if item_deps is not None else item_departments()
+    if doc.get("operation") and doc["operation"] in ok["operations"]:
+        return f"вид операції «{doc['operation']}»"
+    for code in doc.get("items") or []:
+        if code in ok["items"]:
+            return f"стаття {code}"
+        deps = item_deps.get(code, set()) & ok["departments"]
+        if deps:
+            return f"відділ статті «{sorted(deps)[0]}»"
+    return None
+
+
+REPORT_TABS = {"unlinked": "Без заявки", "issues": "Розбіжності", "allowed": "Дозволені без заявки"}
+
+
+def report(d_from, d_to):
+    """Платежі за період для звіту «Звірка»: {вкладка: [документ + «issue» / «allowed»]}, новіші — вгорі.
+    Прив'язані до заявок не показуються (крім тих, що потім зникли з 1С)."""
+    s = store()
+    docs = documents([ln for ln in s.lines_since(d_from) if ln["pay_date"] and ln["pay_date"] <= d_to])
+    links, issues = s.all_links(), s.all_issues()
+    ok, item_deps = exclusions(), item_departments()
+    out = {k: [] for k in REPORT_TABS}
+    for d in sorted(docs.values(), key=lambda d: (d["date"] or date.min, d["number"]), reverse=True):
+        issue = issues.get(d["guid"])
+        if d["guid"] in links and not issue:
+            continue
+        if d["guid"] not in links and not d["active"]:
+            continue
+        if issue:
+            out["issues"].append({**d, "issue": issue["issue"], "issue_label": payment_match.ISSUES.get(issue["issue"], ""),
+                                  "issue_detail": issue.get("detail") or ""})
+            continue
+        reason = allowed_reason(d, ok, item_deps)
+        out["allowed" if reason else "unlinked"].append({**d, "allowed": reason})
+    return out
+
+
+# ---------------------------------------------------------------- ручна прив'язка й відв'язка
+
+def can_link(req, roles):
+    """Хто може вручну прив'язати платіж до заявки («Звірка з 1С» → «Хто може прив'язати»)."""
+    who = set(app_settings.get("payment_link_roles") or [])
+    return bool(("admin" in who and "admin" in roles) or ("cfo" in who and "cfo" in roles)
+                or ("accountant" in who and wf.accountant_role(req) in roles))
+
+
+def can_link_any(roles):
+    """Чи може користувач прив'язувати платежі хоч до якоїсь заявки (кнопки у звіті «Звірка»)."""
+    who = set(app_settings.get("payment_link_roles") or [])
+    return bool(("admin" in who and "admin" in roles) or ("cfo" in who and "cfo" in roles)
+                or ("accountant" in who and set(roles) & wf.ACCOUNTANT_ROLES))
+
+
+def link_candidates(req, days=60):
+    """Неприв'язані платежі у валюті заявки за останні days днів — для вибору вручну: спершу той самий контрагент
+    і сума, далі новіші."""
+    s = store()
+    docs = documents(s.lines_since(max(since(), clock.today() - timedelta(days=days))))
+    links, amount = s.all_links(), Decimal(req.get("amount") or 0)
+    out = []
+    for d in docs.values():
+        if not d["active"] or d["guid"] in links or d["currency"] != req.get("currency"):
+            continue
+        score = 2 * (req.get("counterparty_id") in d["counterparties"]) + (abs(d["amount"] - amount) < Decimal("0.01"))
+        out.append({**d, "score": score})
+    out.sort(key=lambda d: (-d["score"], -(d["date"].toordinal() if d["date"] else 0), d["number"]))
+    return out[:80]
+
+
+def link_manual(guid, request_id, user, roles):
+    """Прив'язати платіж до заявки вручну: заявка «До оплати» стає оплаченою, в уже оплаченій — запис в історії.
+    Кидає WorkflowError з поясненням."""
+    s = store()
+    if guid in s.all_links():
+        raise wf.WorkflowError("Цей платіж уже прив'язано до заявки")
+    doc = documents(s.lines_of([guid])).get(guid)
+    if not doc or not doc["active"]:
+        raise wf.WorkflowError("Платіж не знайдено серед платежів з 1С (або його видалено)")
+    req = db.get_request(request_id)
+    if not req:
+        raise wf.WorkflowError("Заявку не знайдено")
+    if not can_link(req, roles):
+        raise wf.WorkflowError("Прив'язувати платежі до цієї заявки вам не дозволено («Налаштування → Звірка з 1С»)")
+    if req["status"] not in ("to_pay", "paid"):
+        raise wf.WorkflowError(f"Заявка № {req['number']} не «До оплати» й не оплачена — платіж прив'язати не можна")
+    if req.get("currency") != doc["currency"]:
+        raise wf.WorkflowError(f"Платіж у {doc['currency']}, а заявка № {req['number']} — у {req.get('currency')}")
+    s.add_link(guid, request_id, "manual", user["name"])
+    if req["status"] == "to_pay":
+        if not _pay(request_id, doc, user=user):
+            s.remove_link(guid, request_id)
+            raise wf.WorkflowError("Заявку саме змінили — оновіть сторінку й спробуйте ще раз")
+    else:
+        wf.add_history(req, "payment_link", user, wf.history_role(req, roles, user["email"]), label(doc),
+                       req["status"], req["status"])
+        db.save_request(req)
+    issues = s.all_issues()
+    if issues.pop(guid, None):
+        s.replace_issues({g: (v["issue"], v.get("detail") or "") for g, v in issues.items()})
+    return db.get_request(request_id)
+
+
+def unlink(guid, request_id, user):
+    """Адміністратор відв'язує помилково прив'язаний платіж (статус заявки не змінюється)."""
+    s = store()
+    doc = documents(s.lines_of([guid])).get(guid)
+    s.remove_link(guid, request_id)
+    req = db.get_request(request_id)
+    if req:
+        wf.add_history(req, "payment_unlink", user, "admin", label(doc) if doc else guid, req["status"], req["status"])
+        db.save_request(req)

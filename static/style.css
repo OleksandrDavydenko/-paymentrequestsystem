@@ -939,6 +939,26 @@ a.badge { text-decoration: none; }
 .pay-match { display: grid; gap: 8px; border-left: 4px solid var(--primary); }
 .pm-link, .pm-hint { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 8px; }
 .pm-marker { font-size: 17px; color: var(--primary-ink); background: var(--primary-50); border-radius: 4px; padding: 0 6px; }
+.pm-unlink { display: inline; margin-left: auto; }
+.pm-pick summary { list-style: none; display: inline-flex; cursor: pointer; }
+.pm-pick summary::-webkit-details-marker { display: none; }
+.pm-search { max-width: 420px; margin-bottom: 8px; }
+.pm-list { display: grid; gap: 4px; max-height: 320px; overflow-y: auto; margin-bottom: 10px; }
+.pm-option { display: flex; gap: 8px; align-items: flex-start; padding: 6px 8px; border: 1px solid var(--line); border-radius: 6px; cursor: pointer; }
+.pm-option.is-best { border-color: var(--ok); background: var(--ok-softer); }
+.pm-option input { width: auto; margin-top: 3px; }
+.pm-purpose { display: block; font-size: 12px; }
+/* Звіт «Звірка» */
+.reconcile-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.reconcile-filters input[type=date] { width: auto; }
+.reconcile-filters input[type=search] { flex: 1 1 240px; width: auto; }
+.reconcile-totals { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-bottom: 10px; }
+.reconcile-purpose { max-width: 320px; font-size: 13px; }
+.reconcile-link { display: flex; gap: 6px; }
+.reconcile-link input { width: 92px; }
+.reconcile-table td { vertical-align: top; }
+.reconcile-table .badge { white-space: normal; max-width: 220px; }
+.ok-picker { margin: 8px 0; }
 
 /* Тип оплати й підбір рахунків */
 .kind-field { margin-bottom: 14px; }
