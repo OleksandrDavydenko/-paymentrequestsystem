@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}Налаштування — {{ TABS | selectattr(0, 'equalto', tab) | map(attribute=1) | first }}{% endblock %}
+{% block title %}Налаштування — {{ page_title }}{% endblock %}
 
 {% block content %}
 {% include "_admin_tabs.html" %}
@@ -42,6 +42,8 @@
   </div>
 </div>
 {% else %}
-{% include "admin_settings/_" ~ tab ~ ".html" %}
+{% for section in sections %}
+<section id="s-{{ section }}" class="settings-section">{% include "admin_settings/_" ~ section ~ ".html" %}</section>
+{% endfor %}
 {% endif %}
 {% endblock %}

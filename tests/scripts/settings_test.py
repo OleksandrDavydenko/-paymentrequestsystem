@@ -26,8 +26,15 @@ check("non-admin: 403", c.get("/admin/settings").status_code == 403
 login("admin@ftpua.com", ["g-a"])
 for code, title in settings_schema.TABS:
     r = c.get(f"/admin/settings?tab={code}")
-    check(f"tab '{title}' opens and is active", r.status_code == 200
-          and f'href="/admin/settings?tab={code}" class="tab active"' in r.get_data(as_text=True))
+    page_code, page_title, sections = settings_schema.page_of(code)
+    body = r.get_data(as_text=True)
+    tabs_nav = body.split('class="tabs settings-tabs"')[1].split("</nav>")[0]
+    check(f"section '{title}' opens on tab '{page_title}'", r.status_code == 200
+          and f'href="/admin/settings?tab={sections[0]}" class="tab active"' in tabs_nav and tabs_nav.count('class="tab active"') == 1
+          and f'name="tab" value="{code}"' in body and all(f'id="s-{s}"' in body for s in sections if s != "log"))
+nav = c.get("/admin/settings").get_data(as_text=True).split('class="tabs settings-tabs"')[1].split("</nav>")[0]
+check("settings: 7 tabs (related sections share a tab), «Відділи» next to «Заявка й погодження»",
+      nav.count('class="tab') == 7 and nav.index("Заявка й погодження") < nav.index("Відділи") < nav.index("Оплата й готівка"))
 html = c.get("/admin/settings").get_data(as_text=True)
 check("default tab: approval, admin tabs on top", "Маршрут погодження" in html and "Користувачі й ролі" in html
       and 'name="tab" value="approval"' in html)

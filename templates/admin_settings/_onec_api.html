@@ -58,6 +58,7 @@
 </div>
 {% if new_api_key %}
 <script>
+document.getElementById('api-key-new').scrollIntoView({block: 'center'});
 document.querySelectorAll('.api-key-new .cp-copy').forEach(b => b.addEventListener('click', async () => {
   try { await navigator.clipboard.writeText(b.dataset.copy); b.textContent = '✓ Скопійовано'; }
   catch (e) { /* без доступу до буфера — виділіть і скопіюйте вручну */ }

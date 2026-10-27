@@ -805,7 +805,7 @@ def link_manual(guid, request_id, user, roles):
     if not req:
         raise wf.WorkflowError("Заявку не знайдено")
     if not can_link(req, roles):
-        raise wf.WorkflowError("Прив'язувати платежі до цієї заявки вам не дозволено («Налаштування → Звірка з 1С»)")
+        raise wf.WorkflowError("Прив'язувати платежі до цієї заявки вам не дозволено («Налаштування → Інтеграція з 1С»)")
     if req["status"] not in ("to_pay", "paid"):
         raise wf.WorkflowError(f"Заявка № {req['number']} не «До оплати» й не оплачена — платіж прив'язати не можна")
     if req.get("currency") != doc["currency"]:

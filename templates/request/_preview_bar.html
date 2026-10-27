@@ -1,7 +1,7 @@
 {# Приклад картки в адмінці («Налаштування → Дизайн»): перемикачі дизайну, теми й вигляду; форми нічого не надсилають. #}
 <div class="card preview-bar" id="preview-bar">
   <div class="pv-title"><strong>Приклад картки заявки</strong> <span class="muted">— дані для прикладу, нічого не зберігається</span>
-    <a href="{{ url_for('admin.admin_settings', tab='design') }}" class="btn btn-sm">← До налаштувань «Дизайн»</a></div>
+    <a href="{{ url_for('admin.admin_settings', tab='design') }}#s-design" class="btn btn-sm">← До налаштувань «Дизайн»</a></div>
   <div class="pv-row"><span class="pv-label">Дизайн</span>
     {% for code, label in CARD_DESIGNS.items() %}<a class="chip {{ 'active' if code == card_design }}" href="{{ url_for('admin.design_preview', design=code, theme=color_theme, mode=preview_mode, holiday=preview_holiday) }}">{{ label.split(':')[0] }}</a>{% endfor %}</div>
   <div class="pv-row"><span class="pv-label">Тема</span>

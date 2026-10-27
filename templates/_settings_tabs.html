@@ -1,7 +1,8 @@
-{# Розділи «Налаштування» (зокрема «Відділи» — окрема сторінка /admin/departments, але це теж налаштування) #}
+{# Вкладки «Налаштування» (settings_schema.PAGES; на вкладці може бути кілька розділів). «Відділи» — окрема сторінка
+   /admin/departments, але це теж налаштування заявки — стоїть поруч із «Заявка й погодження». #}
 <nav class="tabs settings-tabs" aria-label="Налаштування">
-  {% for code, title in SETTINGS_TABS %}
-  {% if code == 'log' %}<a href="{{ url_for('admin.admin_departments') }}" class="tab {{ 'active' if request.endpoint == 'admin.admin_departments' }}">Відділи</a>{% endif %}
-  <a href="{{ url_for('admin.admin_settings', tab=code) }}" class="tab {{ 'active' if request.endpoint == 'admin.admin_settings' and tab == code }}">{{ title }}</a>
+  {% for code, title, sections in SETTINGS_PAGES %}
+  <a href="{{ url_for('admin.admin_settings', tab=sections[0]) }}" class="tab {{ 'active' if request.endpoint == 'admin.admin_settings' and tab in sections }}">{{ title }}</a>
+  {% if code == 'process' %}<a href="{{ url_for('admin.admin_departments') }}" class="tab {{ 'active' if request.endpoint == 'admin.admin_departments' }}">Відділи</a>{% endif %}
   {% endfor %}
 </nav>

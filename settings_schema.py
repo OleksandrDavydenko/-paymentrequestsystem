@@ -30,6 +30,22 @@ TABS = [
     ("log", "Журнал змін"),
 ]
 TAB_NAMES = dict(TABS)
+# Вкладки сторінки «Налаштування»: споріднені розділи — на одній вкладці, один під одним. Розділ лишається
+# окремою формою зі своїм кодом (?tab=… відкриває вкладку з ним), тож збереження одного не чіпає сусідній.
+PAGES = [
+    ("process", "Заявка й погодження", ("request", "approval")),
+    ("payment", "Оплата й готівка", ("payment",)),
+    ("notify", "Сповіщення", ("notify",)),
+    ("onec", "Інтеграція з 1С", ("reconcile", "onec_api")),
+    ("system", "Система й дизайн", ("data", "design")),
+    ("log", "Журнал змін", ("log",)),
+]
+assert sorted(t for _, _, sections in PAGES for t in sections) == sorted(TAB_NAMES), "кожен розділ — рівно на одній вкладці"
+
+
+def page_of(tab):
+    """Вкладка (код, назва, розділи), на якій розділ tab."""
+    return next(p for p in PAGES if tab in p[2])
 
 
 @dataclass(frozen=True)

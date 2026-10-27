@@ -212,6 +212,22 @@ def _context(tab):
     return ctx
 
 
+def _page_context(tab):
+    """Вкладка з розділом tab: дані всіх її розділів (назви в них не перетинаються)."""
+    _, title, sections = schema.page_of(tab)
+    ctx = {}
+    for section in sections:
+        ctx.update(_context(section))
+    ctx.update(tab=tab, sections=sections, page_title=title)
+    return ctx
+
+
+def settings_url(tab):
+    """Посилання на розділ: вкладка з ним, а якщо розділів на вкладці кілька — одразу до нього."""
+    url = url_for("admin.admin_settings", tab=tab)
+    return url + "#s-" + tab if len(schema.page_of(tab)[2]) > 1 else url
+
+
 def _parse_cfo_rules(form, changes, errors):
     """Таблиця правил фіндиректора й список статей із форми вкладки «Погодження»."""
     table = {}
@@ -297,7 +313,7 @@ def design_preview(*, context):
     return _render_card(req, req, {}, user, roles, expense_items.get_items(), contractor_lists, design=design, preview={
         "preview_mode": mode, "CARD_DESIGNS": schema.CARD_DESIGNS, "COLOR_THEMES": schema.COLOR_THEMES,
         "holiday": holiday, "preview_holiday": holiday or "none", "HOLIDAYS": holidays.HOLIDAYS,
-        "steps_static": [name for _, name in wf.stage_names(routed)], "back_url": url_for("admin.admin_settings", tab="design"),
+        "steps_static": [name for _, name in wf.stage_names(routed)], "back_url": settings_url("design"),
         **theme_context(theme)})
 
 
@@ -307,7 +323,7 @@ def design_preview(*, context):
 def admin_settings(*, context):
     if request.method == "GET":
         tab = request.args.get("tab") if request.args.get("tab") in schema.TAB_NAMES else "approval"
-        return render_template("admin_settings.html", user_name=g.user["name"], **_context(tab))
+        return render_template("admin_settings.html", user_name=g.user["name"], **_page_context(tab))
     tab = request.form.get("tab")
     legacy = tab not in schema.TAB_NAMES  # стара спільна форма «Налаштування процесу»
     changes, errors = schema.parse_tab(tab, request.form, app_settings.get, legacy=legacy)
@@ -333,7 +349,7 @@ def admin_settings(*, context):
         errors["app_name"] = "Назва системи — не довше 40 символів"
     if changes.get("doc_extensions") == []:
         errors["doc_extensions"] = "Залиште дозволеним хоча б один формат документів"
-    back = url_for("admin.admin_settings", tab="approval" if legacy else tab)
+    back = settings_url("approval" if legacy else tab)
     if not errors and (error := _check_login_switch(changes)):
         errors["login_methods"] = error
     if errors:
@@ -354,7 +370,7 @@ def onec_api_key(*, context):
     """Створити новий ключ API для 1С (старий перестає діяти); ключ показується один раз — на цій сторінці."""
     import onec_api
     key = onec_api.new_key(g.user)
-    return render_template("admin_settings.html", user_name=g.user["name"], **_context("onec_api"), new_api_key=key)
+    return render_template("admin_settings.html", user_name=g.user["name"], **_page_context("onec_api"), new_api_key=key)
 
 
 @bp.route("/admin/payments/sync", methods=["POST"])
@@ -373,7 +389,7 @@ def payments_sync_now(*, context):
         flash(f"Платежі з 1С синхронізовано: рядків у копії {state.get('rows', 0)}, нових або змінених "
               f"{state.get('loaded_last', 0)}, прив'язано платежів {state.get('linked_last', 0)}"
               + (f", позначено оплаченими: {', '.join('№ ' + n for n in paid)}" if paid else ""), "success")
-    return redirect(url_for("admin.admin_settings", tab="reconcile"))
+    return redirect(settings_url("reconcile"))
 
 
 @bp.route("/admin/settings/export")

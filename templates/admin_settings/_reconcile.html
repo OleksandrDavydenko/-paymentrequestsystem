@@ -25,7 +25,7 @@
   </div>
 </div>
 
-<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="process-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="reconcile-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="tab" value="reconcile">
   <div class="budget-section-title">«Оплачено» для кожного бухгалтера</div>
   <div class="table-wrap">
