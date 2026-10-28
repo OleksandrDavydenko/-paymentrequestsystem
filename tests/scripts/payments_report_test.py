@@ -77,7 +77,7 @@ c.post("/admin/settings", data={"tab": "reconcile", "pay_mode_acc_cash": "manual
 check("exclusions saved, journal", app_settings.get("payments_ok_operations") == ["Комісія банку", "Перерахування податків"]
       and any(e["label"] == "Без заявки дозволено: види операцій" for e in settings_log.query(20)))
 data = payments.report(payments.since(), payments.clock.today())
-allowed = {d["number"]: d["allowed"] for d in data["allowed"]}
+allowed = {d["number"]: d["allowed"]["text"] for d in data["allowed"]}
 check("fee and tax allowed by operation; 02.001 (ІТ in its departments) allowed by item department",
       allowed.get("SAL4498696") == "вид операції «Комісія банку»" and "000074" in allowed
       and allowed.get("ОТП-000163") == "відділ статті «ІТ»" and not data["unlinked"])
@@ -91,13 +91,29 @@ login("cfo@ftpua.com")
 check("quick allow: admin only", c.post("/payments/allow", data={"key": "payment_type", "value": "1"}).status_code == 403)
 login("adm@ftpua.com")
 r_ = c.post("/payments/allow", data={"key": "payment_type", "value": "1", "next": "/payments/reconcile"})
-allowed = {d["number"]: d["allowed"] for d in payments.report(payments.since(), payments.clock.today())["allowed"]}
+allowed = {d["number"]: d["allowed"]["text"] for d in payments.report(payments.since(), payments.clock.today())["allowed"]}
 check("quick allow by payment type -> allowed, journal", r_.status_code == 302
       and app_settings.get("payments_ok_payment_types") == ["1"]
       and allowed.get("ОТП-000163") == "вид оплати «ПриватБанк, поточний · UAH · …0101»"
       and any(e["label"] == "Без заявки дозволено: види оплати" for e in settings_log.query(20)))
 c.post("/payments/allow", data={"key": "bogus", "value": "1"})
 check("quick allow: unknown key ignored", app_settings.get("payments_ok_payment_types") == ["1"])
+
+# ---------- «Чому дозволено»: стаття — код і назва
+app_settings.set("payments_ok_payment_types", [], "t")
+app_settings.set("payments_ok_items", ["02.001"], "t")
+why = {d["number"]: d["allowed"] for d in payments.report(payments.since(), payments.clock.today())["allowed"]}.get("ОТП-000163")
+name = payments.expense_items.get_name("02.001")
+check("allowed by article: kind, code and name", why and why["kind"] == "Стаття" and why["code"] == "02.001"
+      and name and why["name"] == name and why["text"] == f"стаття 02.001 «{name}»")
+login("adm@ftpua.com")
+html = page("/payments/reconcile?from=2026-09-01&to=2026-10-31&tab=allowed")
+from markupsafe import escape
+check("allowed tab shows the article code and name", '<span class="rc-why-code">02.001</span>' in html and str(escape(name)) in html
+      and "rc-why-kind" in html)
+app_settings.set("payments_ok_items", [], "t")
+app_settings.set("payments_ok_payment_types", ["1"], "t")
+
 app_settings.set("payments_ok_payment_types", [], "t")
 
 # ---------- вікно «Знайти заявку»: кандидати
@@ -153,4 +169,5 @@ counterparties._onec_by_id, payment_accounts.use_types, payment_types.get = lamb
 check("test mode: demo counterparty and payment type names", counterparties.name("2") == "ПрАТ «Київстар»"
       and payment_accounts.label("1") == "ПриватБанк, поточний · UAH · …0101")
 counterparties._onec_by_id, payment_accounts.use_types, payment_types.get = live_cp, live_types, live_get
+
 print("ALL OK" if ok else "SOME FAILED")

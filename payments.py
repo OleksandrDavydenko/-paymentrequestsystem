@@ -636,21 +636,31 @@ def exclusions():
             "departments": set(app_settings.get("payments_ok_departments") or [])}
 
 
+def _why(kind, name, text, code=None, detail=None):
+    return {"kind": kind, "code": code, "name": name, "detail": detail, "text": text}
+
+
 def allowed_reason(doc, ok=None, item_deps=None):
-    """Чому платіж без заявки не вважається помилкою («Звірка з 1С» → винятки) або None."""
+    """Чому платіж без заявки не вважається помилкою («Звірка з 1С» → винятки) або None.
+
+    {"kind": «Стаття» / «Вид операції» / «Вид оплати» / «Відділ статті», "code", "name", "detail" — для показу,
+    "text" — те саме одним рядком}."""
     ok = ok if ok is not None else exclusions()
     item_deps = item_deps if item_deps is not None else item_departments()
     if doc.get("operation") and doc["operation"] in ok["operations"]:
-        return f"вид операції «{doc['operation']}»"
+        return _why("Вид операції", doc["operation"], f"вид операції «{doc['operation']}»")
     if doc.get("payment_type") and doc["payment_type"] in ok.get("payment_types", ()):
         import payment_accounts
-        return f"вид оплати «{payment_accounts.label(doc['payment_type'])}»"
+        label = payment_accounts.label(doc["payment_type"])
+        return _why("Вид оплати", label, f"вид оплати «{label}»")
     for code in doc.get("items") or []:
+        name = expense_items.get_name(code) or ""
         if code in ok["items"]:
-            return f"стаття {code}"
+            return _why("Стаття", name, f"стаття {code}" + (f" «{name}»" if name else ""), code=code)
         deps = item_deps.get(code, set()) & ok["departments"]
         if deps:
-            return f"відділ статті «{sorted(deps)[0]}»"
+            dep = sorted(deps)[0]
+            return _why("Відділ статті", dep, f"відділ статті «{dep}»", detail=f"{code} {name}".strip())
     return None
 
 

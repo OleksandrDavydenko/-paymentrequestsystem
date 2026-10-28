@@ -978,6 +978,13 @@ a.badge { text-decoration: none; }
 .rc-ok { color: var(--ok-ink); font-size: 13px; }
 .rc-compare { font-size: 13px; }
 .rc-actions { white-space: nowrap; }
+/* «Чому дозволено»: що саме дозволяє платіж без заявки — вид підстави, код і назва */
+.rc-why { display: grid; gap: 2px; justify-items: start; min-width: 180px; max-width: 320px; }
+.rc-why-kind { font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); }
+.rc-why-value { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; font-size: 13px; font-weight: 600; line-height: 1.35; }
+.rc-why-code { padding: 1px 6px; border-radius: 4px; background: var(--line); color: var(--text);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; font-weight: 600; }
+.rc-why-detail { font-size: 12px; color: var(--muted); }
 .rc-allow { margin-top: 6px; }
 .rc-allow summary { list-style: none; cursor: pointer; color: var(--primary-dark); font-size: 13px; }
 .rc-allow summary::-webkit-details-marker { display: none; }

@@ -105,7 +105,10 @@
           {% for n in d.missing_numbers %}<div class="muted">Заявки № {{ n }} немає в PayDesk</div>{% endfor %}</td>
 
         {% elif tab == 'allowed' %}
-        <td data-label="Чому дозволено"><span class="badge grey">{{ d.allowed }}</span></td>
+        <td data-label="Чому дозволено">{% set why = d.allowed %}<div class="rc-why">
+          <span class="rc-why-kind">{{ why.kind }}</span>
+          <span class="rc-why-value">{% if why.code %}<span class="rc-why-code">{{ why.code }}</span>{% endif %}{{ why.name or '' }}</span>
+          {% if why.detail %}<span class="rc-why-detail">стаття {{ why.detail }}</span>{% endif %}</div></td>
 
         {% else %}
         <td data-label="Стаття · операція">{% for code in d['items'] %}<div>{{ code }} <span class="muted">{{ expense_title(code) or '' }}</span></div>{% endfor %}
