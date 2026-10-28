@@ -109,4 +109,24 @@ check("cancelled: order created, request no longer to pay",
       15 in [i["request_id"] for i in c.get("/api/1c/v1/payment-orders?state=cancelled", headers=H).get_json()["items"]])
 check("created for a request not «До оплати» -> 409",
       c.post("/api/1c/v1/payment-orders/15/created", headers=H, json={"doc_number": "X", "replace": True}).status_code == 409)
+
+# ---------- перевірка документів: заявки з прив'язаними платежами 1С
+import payments
+guid = "0123456789ABCDEF0123456789ABCDEF"
+payments.store().replace_docs([payments.parse({
+    "PaymentGUID": guid, "LineNo": 1, "DocumentKind": "Cash", "DocumentNumber": "CR104495", "PaymentDate": "2026-10-27",
+    "Amount": 6180, "Currency": "UAH", "Purpose": "#16 оплата", "IsPosted": True, "IsDeleted": False, "RowVersion": 1})])
+payments.store().add_link(guid, 16, "manual", "t")
+r = c.get("/api/1c/v1/payment-checks?since=2026-10-01", headers=H)
+items = r.get_json()["items"]
+it = next((i for i in items if i["request_id"] == 16), None)
+check("checks: request with its linked 1C document", r.status_code == 200 and it and it["payments"] == [
+    {"doc_ref": "89abcdef-4567-0123-0123-456789abcdef", "guid": guid, "number": "CR104495", "kind": "Cash",
+     "date": "2026-10-27", "active": True, "match": "manual"}] and it["counterparty"] and it["marker"] == "#16")
+check("checks: to-pay requests without payments listed too",
+      any(i["payments"] == [] and db.get_request(i["request_id"])["status"] == "to_pay" for i in items))
+check("checks: bad date -> 400", c.get("/api/1c/v1/payment-checks?since=27.10.2026", headers=H).status_code == 400)
+check("checks: default 30 days", c.get("/api/1c/v1/payment-checks", headers=H).get_json()["since"]
+      == (onec_api.clock.today() - onec_api.timedelta(days=30)).isoformat())
+check("checks: key required", c.get("/api/1c/v1/payment-checks").status_code == 403)
 print("ALL OK" if ok else "SOME FAILED")

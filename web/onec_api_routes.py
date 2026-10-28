@@ -58,6 +58,19 @@ def payment_orders():
     return {"ok": True, "state": state, "count": len(items), "items": items}
 
 
+@bp.route("/payment-checks")
+@guarded
+def payment_checks():
+    """Заявки з прив'язаними платежами 1С — для перевірки й виправлення документів у 1С (since — з якої дати оплати)."""
+    raw = (request.args.get("since") or "").strip()
+    try:
+        since = onec_api.date.fromisoformat(raw) if raw else onec_api.clock.today() - onec_api.timedelta(days=30)
+    except ValueError:
+        return _error("since — дата у форматі РРРР-ММ-ДД", 400)
+    items = onec_api.checks(since, _base())
+    return {"ok": True, "since": since.isoformat(), "count": len(items), "items": items}
+
+
 @bp.route("/payment-orders/<int:request_id>")
 @guarded
 def payment_order(request_id):

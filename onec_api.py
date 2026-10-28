@@ -177,6 +177,28 @@ def orders(state="new", form="", organization=""):
     return out
 
 
+def checks(since, base_url=""):
+    """Заявки для перевірки документів у 1С: «До оплати» й оплачені з дати since — кожна з платежами 1С, які звірка
+    вже прив'язала до неї (автоматично чи вручну). Обробка порівнює документ із заявкою й виправляє його в 1С."""
+    import payments
+    reqs = db.get_many(db.payment_candidate_ids(since))
+    s = payments.store()
+    by_req = s.links_for_requests(list(reqs))
+    links = s.all_links()
+    guids = {g for v in by_req.values() for g in v}
+    docs = payments.documents(s.lines_of(guids)) if guids else {}
+    out = []
+    for r in sorted(reqs.values(), key=lambda r: r["id"]):
+        item = order(r, base_url)
+        item["payments"] = [
+            {"doc_ref": ref_1c(g), "guid": g, "number": docs[g]["number"], "kind": docs[g]["kind"],
+             "date": docs[g]["date"].isoformat() if docs[g].get("date") else None, "active": docs[g]["active"],
+             "match": (links.get(g, {}).get(r["id"]) or {}).get("match")}
+            for g in sorted(by_req.get(r["id"], [])) if g in docs]
+        out.append(item)
+    return out
+
+
 def _with_orders(days=180):
     """Заявки з відміткою 1С (для «cancelled»): повернуті / відхилені / скасовані після створення платіжки."""
     today = clock.today()
