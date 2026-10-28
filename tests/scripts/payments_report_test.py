@@ -85,8 +85,8 @@ app_settings.set("payments_ok_departments", [], "t")
 check("without the department the supplier payment is unlinked again",
       [d["number"] for d in payments.report(payments.since(), payments.clock.today())["unlinked"]] == ["ОТП-000163"])
 html = page("/payments/reconcile?from=2026-09-01&to=2026-10-31")
-check("quick allow menu for admin", "Дозволити без заявки…" in html and 'name="key" value="payment_type"' in html
-      and 'name="key" value="department"' in html and 'name="value" value="ІТ"' in html)
+check("quick allow menu for admin", "Дозволити без заявки…" in html and 'name="pick" value="payment_type::' in html
+      and 'name="pick" value="department::ІТ"' in html and 'name="until"' in html)
 login("cfo@ftpua.com")
 check("quick allow: admin only", c.post("/payments/allow", data={"key": "payment_type", "value": "1"}).status_code == 403)
 login("adm@ftpua.com")

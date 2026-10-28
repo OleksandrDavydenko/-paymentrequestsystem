@@ -13,14 +13,13 @@
     <button type="submit" class="btn btn-primary">Зберегти</button>
   </div>
   <input type="hidden" name="view" id="dept-view" value="{{ view }}">
-  {% if invoices_on %}
   <nav class="tabs dept-tabs" role="tablist" aria-label="Налаштування відділів">
-    <button type="button" class="tab {{ 'active' if view != 'direct' }}" data-view="approval" role="tab">Погодження</button>
-    <button type="button" class="tab {{ 'active' if view == 'direct' }}" data-view="direct" role="tab">Прямі витрати</button>
+    <button type="button" class="tab {{ 'active' if view == 'approval' }}" data-view="approval" role="tab">Погодження</button>
+    {% if invoices_on %}<button type="button" class="tab {{ 'active' if view == 'direct' }}" data-view="direct" role="tab">Прямі витрати</button>{% endif %}
+    <button type="button" class="tab {{ 'active' if view == 'reconcile' }}" data-view="reconcile" role="tab">Звірка з 1С</button>
   </nav>
-  {% endif %}
 
-  <section class="dept-panel" data-panel="approval" {{ 'hidden' if view == 'direct' }}>
+  <section class="dept-panel" data-panel="approval" {{ 'hidden' if view != 'approval' }}>
   <p class="muted" style="margin-top:0">Як погоджуються заявки кожного відділу. «Як у загальних налаштуваннях» — за
     «Налаштування → Погодження» (зараз керівник відділу <strong>{{ 'погоджує' if global_head == 'approve' else 'лише бачить' }}</strong>).
     Поріг керівника — у {{ currency }} за курсом 1С: дрібніші заявки йдуть одразу до бухгалтера. Керівника й тих, хто бачить
@@ -101,11 +100,56 @@
   </table>
   </div>
   </section>
-  {% else %}
+  {% endif %}
+
+  <section class="dept-panel" data-panel="reconcile" {{ 'hidden' if view != 'reconcile' }}>
+  <p class="muted" style="margin-top:0">Відділи переходять на PayDesk поступово. Для кожного вкажіть дату, з якої його заявки
+    обов'язкові: у звірці з 1С платежі цього відділу раніше дати без заявки — «Дозволені без заявки», з цієї дати — уже
+    проблема («Без заявки»). Відділ — той, що вказаний у самому документі списання в 1С; платежі без відділу в документі
+    звіряються як звичайно. Минулі платежі від зміни дати не ламаються: дата лише відділяє «до» й «після».</p>
+  <div class="dept-default dept-since-default">
+    <strong>Відділи без дати:</strong>
+    {% for code, label in DEPT_DEFAULT_MODES.items() %}
+    <label class="inline-check"><input type="radio" name="payments_dept_default" value="{{ code }}" {{ 'checked' if code == dept_default }}> {{ label }}</label>
+    {% endfor %}
+  </div>
+  <div class="table-wrap">
+  <table class="stack dept-table">
+    <thead><tr><th>Відділ</th><th>Заявки обов'язкові з</th><th>Зараз у звірці</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      <tr>
+        <td data-label="Відділ"><strong>{{ r.name }}</strong>
+          <div class="muted">{{ r.members }} співроб.{% if r.profit_center %} · <span class="bchip bchip-direct" title="Profitcenter у 1С">профітцентр</span>{% endif %}</div></td>
+        <td data-label="Заявки обов'язкові з">
+          <input type="date" name="requests_since-{{ r.code }}" value="{{ r.settings.requests_since or '' }}" class="dept-since"
+                 aria-label="Заявки обов'язкові з: {{ r.name }}"></td>
+        <td data-label="Зараз у звірці">
+          {% if r.since %}{% if r.since <= today %}<span class="badge green">працює через PayDesk з {{ r.since | d }}</span>
+          {% else %}<span class="badge amber">ще ні — заявки з {{ r.since | d }}</span>{% endif %}
+          {% elif dept_default == 'pending' %}<span class="badge grey">ще не працює — дати немає</span>
+          {% else %}<span class="badge green">працює (дати немає — як для всіх без дати)</span>{% endif %}</td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  </section>
+  {% if not invoices_on %}
   <p class="muted">Рахунки в заявці вимкнено («Налаштування → Заявка»), тож прямі витрати, їхні статті й обов'язковість рахунків не діють.</p>
   {% endif %}
   <div class="form-actions" style="justify-content:flex-start"><button type="submit" class="btn btn-primary">Зберегти</button></div>
 </form>
+
+<script>
+// Вкладки «Погодження / Прямі витрати / Звірка з 1С» — одна форма, одна кнопка «Зберегти»; після збереження — та сама вкладка
+document.querySelectorAll('.dept-tabs .tab').forEach(t => t.addEventListener('click', () => {
+  document.querySelectorAll('.dept-tabs .tab').forEach(x => x.classList.toggle('active', x === t));
+  document.querySelectorAll('.dept-panel').forEach(p => { p.hidden = p.dataset.panel !== t.dataset.view; });
+  document.getElementById('dept-view').value = t.dataset.view;
+  history.replaceState(null, '', location.pathname + (t.dataset.view === 'approval' ? '' : '?view=' + t.dataset.view));
+}));
+</script>
 
 {% if invoices_on %}
 <dialog id="codes-dialog" class="codes-dialog">
@@ -124,13 +168,6 @@
 </dialog>
 <script type="application/json" id="codes-items">{{ items | tojson }}</script>
 <script>
-// Вкладки «Погодження / Прямі витрати» — одна форма, одна кнопка «Зберегти»; після збереження — та сама вкладка
-document.querySelectorAll('.dept-tabs .tab').forEach(t => t.addEventListener('click', () => {
-  document.querySelectorAll('.dept-tabs .tab').forEach(x => x.classList.toggle('active', x === t));
-  document.querySelectorAll('.dept-panel').forEach(p => { p.hidden = p.dataset.panel !== t.dataset.view; });
-  document.getElementById('dept-view').value = t.dataset.view;
-  history.replaceState(null, '', location.pathname + (t.dataset.view === 'direct' ? '?view=direct' : ''));
-}));
 // Прямі витрати заборонено — статті й обов'язковість рахунків для відділу не діють
 document.querySelectorAll('.direct-select').forEach(sel => sel.addEventListener('change', () => {
   const pc = sel.options[0].textContent.includes('так');

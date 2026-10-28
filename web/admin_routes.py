@@ -1,11 +1,13 @@
 """Адміністрування: користувачі й ролі, пошта, організації, журнал сповіщень (налаштування — web/admin_settings.py)."""
 import re
+from datetime import date
 from decimal import Decimal, InvalidOperation
 
 from flask import Blueprint, current_app, flash, g, redirect, render_template, request, url_for
 
 import app_settings
 import cfo_rules
+import clock
 import counterparties
 import currencies
 import db_sql
@@ -254,6 +256,12 @@ def admin_departments(*, context):
                 continue
             changes[code] = {"head_mode": head_mode, "head_threshold": limit, "cfo": cfo,
                              "deputy_approve": f.get(f"deputy_approve-{code}") == "1"}
+            if f"requests_since-{code}" in f:  # «Звірка з 1С»: з якої дати заявки відділу обов'язкові
+                raw_since = (f.get(f"requests_since-{code}") or "").strip()
+                try:
+                    changes[code]["requests_since"] = date.fromisoformat(raw_since).isoformat() if raw_since else None
+                except ValueError:
+                    errors.append(f"«{d['name']}»: «Заявки обов'язкові з» — вкажіть дату")
             if f"contractor_codes-{code}" in f:  # блок рахунків увімкнено — є і статті підрядника
                 raw_codes = f.get(f"contractor_codes-{code}") or ""
                 changes[code]["contractor_codes"] = None if raw_codes == "*" else _codes(raw_codes)
@@ -262,6 +270,10 @@ def admin_departments(*, context):
                 changes[code]["direct_allowed"] = None if raw_direct not in ("0", "1") else raw_direct == "1"
         for message in errors:
             flash(message, "error")
+        mode = f.get("payments_dept_default")
+        if mode in schema.DEPT_DEFAULT_MODES and not errors and mode != app_settings.get("payments_dept_default"):
+            app_settings.set("payments_dept_default", mode, who)
+            flash("Відділи без дати підключення: " + schema.DEPT_DEFAULT_MODES[mode], "success")
         if "contractor_default" in f and not errors:
             default = _codes(f.get("contractor_default"))
             if default != app_settings.get("contractor_expense_codes"):
@@ -274,15 +286,20 @@ def admin_departments(*, context):
             changed = sorted({code for code, *_ in log}, key=lambda c: departments.get_name(c).lower())
             flash("Збережено: " + ", ".join(departments.get_name(c) for c in changed) + ". Діє для нових і повторно "
                   "відправлених заявок." if changed else "Змін немає", "success")
-        return redirect(url_for("admin.admin_departments", view="direct" if f.get("view") == "direct" else None))
+        return redirect(url_for("admin.admin_departments",
+                                view=f.get("view") if f.get("view") in ("direct", "reconcile") else None))
+    since = dept_settings.all_requests_since()
     rows = [{"code": d["code"], "name": d["name"], "members": len(org_structure.members_of(d["code"])),
              "profit_center": departments.is_profit_center(d["code"]), "head": org_structure.head_of(d["code"]),
              "viewers": org_structure.staff(d["code"])["viewers"], "settings": dept_settings.get(d["code"]),
-             "route": dept_settings.route_text(d["code"]), "direct": dept_settings.direct_allowed(d["code"])}
+             "route": dept_settings.route_text(d["code"]), "direct": dept_settings.direct_allowed(d["code"]),
+             "since": since.get(d["code"])}
             for d in deps]
     items = [{"code": i["code"], "name": i["name"]} for i in expense_items.get_items()]
     return render_template("admin_departments.html", user_name=g.user["name"], rows=rows, items=items,
-                           view="direct" if request.args.get("view") == "direct" else "approval",
+                           view=request.args.get("view") if request.args.get("view") in ("direct", "reconcile") else "approval",
+                           DEPT_DEFAULT_MODES=schema.DEPT_DEFAULT_MODES, today=clock.today(),
+                           dept_default=app_settings.get("payments_dept_default") or "connected",
                            invoices_on=app_settings.get("invoices_mode") != "off",
                            contractor_default=app_settings.get("contractor_expense_codes") or [],
                            HEAD_MODES=dept_settings.HEAD_MODES, CFO_MODES=dept_settings.CFO_MODES,

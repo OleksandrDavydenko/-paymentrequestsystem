@@ -108,7 +108,8 @@
         <td data-label="Чому дозволено">{% set why = d.allowed %}<div class="rc-why">
           <span class="rc-why-kind">{{ why.kind }}</span>
           <span class="rc-why-value">{% if why.code %}<span class="rc-why-code">{{ why.code }}</span>{% endif %}{{ why.name or '' }}</span>
-          {% if why.detail %}<span class="rc-why-detail">стаття {{ why.detail }}</span>{% endif %}</div></td>
+          {% if why.detail %}<span class="rc-why-detail">{{ ('стаття ' if why.kind == 'Відділ статті' else '') ~ why.detail }}</span>{% endif %}
+          {% if why.until %}<span class="rc-why-until">діє до {{ why.until | d }}</span>{% endif %}</div></td>
 
         {% else %}
         <td data-label="Стаття · операція">{% for code in d['items'] %}<div>{{ code }} <span class="muted">{{ expense_title(code) or '' }}</span></div>{% endfor %}
@@ -130,16 +131,17 @@
           {% if opts %}
           <details class="rc-allow">
             <summary class="btn-link">Дозволити без заявки…</summary>
-            <div class="rc-allow-menu">
+            <form method="post" action="{{ url_for('payments.payment_allow') }}" class="rc-allow-menu"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <input type="hidden" name="next" value="{{ request.full_path }}">
               <span class="muted">Не вважати помилкою платежі без заявки, у яких:</span>
               {% for key, value, text in opts %}
-              <form method="post" action="{{ url_for('payments.payment_allow') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="key" value="{{ key }}"><input type="hidden" name="value" value="{{ value }}">
-                <input type="hidden" name="next" value="{{ request.full_path }}">
-                <button type="submit" class="btn btn-sm">{{ text }}</button>
-              </form>
+              <button type="submit" name="pick" value="{{ key }}::{{ value }}" class="btn btn-sm">{{ text }}</button>
               {% endfor %}
-            </div>
+              <label class="rc-allow-until muted">діє до <input type="date" name="until" aria-label="Виняток діє до дати">
+                <span>— порожньо: завжди</span></label>
+              {% if d.departments %}<a class="rc-allow-dept" href="{{ url_for('admin.admin_departments', view='reconcile') }}">Відділ
+                ще не працює через PayDesk? — дата підключення в «Відділи»</a>{% endif %}
+            </form>
           </details>
           {% endif %}
           {% endif %}

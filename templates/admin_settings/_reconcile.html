@@ -70,11 +70,20 @@
     {% endfor %}
   </span></div>
 
+  <div class="budget-section-title">Відділи, які ще не працюють через PayDesk</div>
+  <p class="muted" style="margin-top:0">Відділ — той, що вказаний у самому документі списання в 1С. Для кожного відділу в
+    <a href="{{ url_for('admin.admin_departments', view='reconcile') }}">«Відділи» → «Звірка з 1С»</a> задається дата,
+    з якої його заявки обов'язкові: платежі раніше цієї дати — «Дозволені без заявки», пізніше — ні. Відділи без дати зараз
+    <strong>{{ DEPT_DEFAULT_MODES[dept_default].split(' — ')[0] }}</strong>
+    (<a href="{{ url_for('admin.admin_departments', view='reconcile') }}">змінити</a>).</p>
+
   <div class="budget-section-title">Платежі без заявки, які не вважаються помилкою</div>
+  <input type="hidden" name="ok_until_sent" value="1">
   <p class="muted" style="margin-top:0">Такі платежі у звіті «Звірка» йдуть окремою вкладкою «Дозволені без заявки», а не в
-    «Без заявки». Досить збігу за одним із чотирьох. Відділ — той, до якого в довіднику 1С прив'язано статтю витрат платежу:
-    поки відділ не працює через PayDesk, позначте його тут, а коли підключиться — зніміть. Додати виняток можна й одразу
-    зі звіту «Звірка»: «Дозволити без заявки…» в рядку платежу.</p>
+    «Без заявки». Досить збігу за одним із чотирьох. Біля позначеного винятку можна вказати, до якої дати він діє: платежі
+    до цієї дати й далі дозволені, пізніші знову потребують заявки (так виняток вимикають, не чіпаючи минулих платежів);
+    без дати — назавжди. «Відділ статті» — той, до якого в довіднику 1С прив'язано статтю витрат платежу. Додати виняток
+    можна й одразу зі звіту «Звірка»: «Дозволити без заявки…» в рядку платежу.</p>
   {% for title, name, options, chosen in [('Відділи статей витрат', 'payments_ok_departments', OK_DEPARTMENTS, ok_departments),
                                           ('Статті витрат', 'payments_ok_items', OK_ITEMS, ok_items),
                                           ('Види операцій 1С', 'payments_ok_operations', OK_OPERATIONS, ok_operations),
@@ -84,7 +93,9 @@
     {% if options | length > 12 %}<input type="search" class="cfo-codes-search ok-search" placeholder="Пошук…" autocomplete="off" aria-label="Пошук: {{ title }}">{% endif %}
     <div class="cfo-codes-list">
       {% for code, label in options.items() %}
-      <label class="cfo-code"><input type="checkbox" name="{{ name }}" value="{{ code }}" {{ 'checked' if code in chosen }}> <span>{{ label }}</span></label>
+      {% set until = (ok_until.get(name) or {}).get(code) %}
+      <label class="cfo-code ok-code"><input type="checkbox" name="{{ name }}" value="{{ code }}" {{ 'checked' if code in chosen }}> <span>{{ label }}</span>
+        <span class="ok-until">до <input type="date" name="ok_until__{{ name }}__{{ code }}" value="{{ until or '' }}" aria-label="{{ label }}: діє до"></span></label>
       {% else %}
       <span class="muted">{{ 'Ще немає синхронізованих платежів' if name in ('payments_ok_operations', 'payments_ok_payment_types') else 'Довідник порожній' }}</span>
       {% endfor %}

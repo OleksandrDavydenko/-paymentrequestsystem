@@ -20,6 +20,7 @@ import clock
 import counterparties
 import currencies
 import db_sql
+import departments
 import employees
 import expense_items
 import notifications
@@ -629,38 +630,97 @@ def item_departments():
     return {i["code"]: set(i.get("departments") or []) for i in expense_items.get_items()}
 
 
+OK_KEYS = {"operations": "payments_ok_operations", "payment_types": "payments_ok_payment_types",
+           "items": "payments_ok_items", "departments": "payments_ok_departments"}
+
+
+def _iso_date(value):
+    try:
+        return date.fromisoformat(str(value)[:10]) if value else None
+    except ValueError:
+        return None
+
+
 def exclusions():
-    return {"operations": set(app_settings.get("payments_ok_operations") or []),
-            "payment_types": set(app_settings.get("payments_ok_payment_types") or []),
-            "items": set(app_settings.get("payments_ok_items") or []),
-            "departments": set(app_settings.get("payments_ok_departments") or [])}
+    """Винятки «платіж без заявки — не помилка» (з датами «діє до») і дати підключення відділів до PayDesk."""
+    import dept_settings
+    until = app_settings.get("payments_ok_until") or {}
+    return {**{kind: set(app_settings.get(key) or []) for kind, key in OK_KEYS.items()},
+            "until": {kind: {v: _iso_date(d) for v, d in (until.get(key) or {}).items() if _iso_date(d)}
+                      for kind, key in OK_KEYS.items()},
+            "dept_since": dept_settings.all_requests_since(),
+            "dept_default": app_settings.get("payments_dept_default") or "connected"}
 
 
-def _why(kind, name, text, code=None, detail=None):
-    return {"kind": kind, "code": code, "name": name, "detail": detail, "text": text}
+def _why(kind, name, text, code=None, detail=None, until=None):
+    if until:
+        text += f" (до {until:%d.%m.%Y})"
+    return {"kind": kind, "code": code, "name": name, "detail": detail, "until": until, "text": text}
+
+
+def _ok_on(ok, kind, value, day):
+    """Виняток є й діє на дату платежу: без «діє до» — завжди, з датою — для платежів не пізніше неї. -> (так/ні, дата)"""
+    if value not in ok[kind]:
+        return False, None
+    until = (ok.get("until") or {}).get(kind, {}).get(value)
+    return (until is None or day is None or day <= until), until
+
+
+def not_connected_reason(doc, ok):
+    """Платіж відділу, який ще не працює через PayDesk, — заявка не потрібна. Відділ — з документа 1С (рядки
+    розшифровки); якщо там кілька відділів, заявка не потрібна, лише коли жоден із них ще не підключено."""
+    codes = []
+    for guid in doc.get("departments") or []:
+        code = departments.code_by_guid(guid)
+        if code and code not in codes:
+            codes.append(code)
+    if not codes:
+        return None
+    day, since = doc.get("date"), ok.get("dept_since") or {}
+
+    def connected(code):
+        if since.get(code):
+            return day is None or day >= since[code]
+        return ok.get("dept_default", "connected") == "connected"
+
+    if any(connected(c) for c in codes):
+        return None
+    name = departments.get_name(codes[0]) or codes[0]
+    start = since.get(codes[0])
+    detail = f"заявки обов'язкові з {start:%d.%m.%Y}" if start else "дату підключення ще не задано"
+    return _why("Відділ ще не працює через PayDesk", name, f"відділ «{name}» ще не працює через PayDesk ({detail})",
+                detail=detail)
 
 
 def allowed_reason(doc, ok=None, item_deps=None):
-    """Чому платіж без заявки не вважається помилкою («Звірка з 1С» → винятки) або None.
+    """Чому платіж без заявки не вважається помилкою або None: відділ документа ще не працює через PayDesk або
+    виняток («Звірка з 1С» → винятки), що діє на дату платежу.
 
-    {"kind": «Стаття» / «Вид операції» / «Вид оплати» / «Відділ статті», "code", "name", "detail" — для показу,
-    "text" — те саме одним рядком}."""
+    {"kind": «Відділ ще не працює через PayDesk» / «Стаття» / «Вид операції» / «Вид оплати» / «Відділ статті»,
+    "code", "name", "detail", "until" (виняток діє до) — для показу, "text" — те саме одним рядком}."""
     ok = ok if ok is not None else exclusions()
     item_deps = item_deps if item_deps is not None else item_departments()
-    if doc.get("operation") and doc["operation"] in ok["operations"]:
-        return _why("Вид операції", doc["operation"], f"вид операції «{doc['operation']}»")
-    if doc.get("payment_type") and doc["payment_type"] in ok.get("payment_types", ()):
+    day = doc.get("date")
+    why = not_connected_reason(doc, ok)
+    if why:
+        return why
+    on, until = _ok_on(ok, "operations", doc.get("operation"), day)
+    if on:
+        return _why("Вид операції", doc["operation"], f"вид операції «{doc['operation']}»", until=until)
+    on, until = _ok_on(ok, "payment_types", doc.get("payment_type"), day)
+    if on:
         import payment_accounts
         label = payment_accounts.label(doc["payment_type"])
-        return _why("Вид оплати", label, f"вид оплати «{label}»")
+        return _why("Вид оплати", label, f"вид оплати «{label}»", until=until)
     for code in doc.get("items") or []:
         name = expense_items.get_name(code) or ""
-        if code in ok["items"]:
-            return _why("Стаття", name, f"стаття {code}" + (f" «{name}»" if name else ""), code=code)
-        deps = item_deps.get(code, set()) & ok["departments"]
-        if deps:
-            dep = sorted(deps)[0]
-            return _why("Відділ статті", dep, f"відділ статті «{dep}»", detail=f"{code} {name}".strip())
+        on, until = _ok_on(ok, "items", code, day)
+        if on:
+            return _why("Стаття", name, f"стаття {code}" + (f" «{name}»" if name else ""), code=code, until=until)
+        for dep in sorted(item_deps.get(code, set()) & ok["departments"]):
+            on, until = _ok_on(ok, "departments", dep, day)
+            if on:
+                return _why("Відділ статті", dep, f"відділ статті «{dep}»", detail=f"{code} {name}".strip(), until=until)
     return None
 
 
@@ -790,15 +850,26 @@ ALLOW_KEYS = {"operation": "payments_ok_operations", "payment_type": "payments_o
               "item": "payments_ok_items", "department": "payments_ok_departments"}
 
 
-def allow(key, value, user):
-    """Адміністратор зі звірки: такі платежі — «Дозволені без заявки» (додає value до винятку key)."""
+def allow(key, value, user, until=None):
+    """Адміністратор зі звірки: такі платежі — «Дозволені без заявки» (додає value до винятку key). until — дата,
+    до якої діє виняток (платежі пізніше неї знову потребують заявки); None — назавжди."""
     setting = ALLOW_KEYS.get(key)
     value = (value or "").strip()
     if not setting or not value:
         raise wf.WorkflowError("Невідомий виняток")
+    who = user.get("email") or user.get("name") or ""
     current = list(app_settings.get(setting) or [])
     if value not in current:
-        app_settings.set(setting, current + [value], user.get("email") or user.get("name") or "")
+        app_settings.set(setting, current + [value], who)
+    dates = {k: dict(v) for k, v in (app_settings.get("payments_ok_until") or {}).items()}
+    old = dates.get(setting, {}).get(value)
+    new = until.isoformat() if until else None
+    if new != old:
+        if new:
+            dates.setdefault(setting, {})[value] = new
+        else:
+            dates.get(setting, {}).pop(value, None)
+        app_settings.set("payments_ok_until", {k: v for k, v in dates.items() if v}, who)
     return setting
 
 

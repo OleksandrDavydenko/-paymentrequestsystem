@@ -254,16 +254,24 @@ def payment_link_candidates(*, context):
 def payment_allow(*, context):
     """Зі звірки: такі платежі не вважати помилкою («Дозволені без заявки») — додати виняток у налаштуваннях."""
     key, value = request.form.get("key", ""), request.form.get("value", "")
+    if request.form.get("pick"):  # одна форма меню: кнопка — «ключ::значення»
+        key, _, value = request.form["pick"].partition("::")
+    raw_until = (request.form.get("until") or "").strip()
     try:
-        payments.allow(key, value, g.user)
+        until = date.fromisoformat(raw_until) if raw_until else None
+    except ValueError:
+        flash("«Діє до»: вкажіть дату", "error")
+        return redirect(_next_url(url_for("payments.reconcile")))
+    try:
+        payments.allow(key, value, g.user, until)
     except wf.WorkflowError as e:
         flash(str(e), "error")
     else:
         what = {"operation": "вид операції", "payment_type": "вид оплати", "item": "стаття",
                 "department": "відділ статті"}.get(key, "")
         shown = payment_accounts.label(value) if key == "payment_type" else value
-        flash(f"Тепер платежі без заявки ({what} «{shown}») — «Дозволені без заявки». Змінити: «Налаштування → Звірка з 1С».",
-              "success")
+        flash(f"Тепер платежі без заявки ({what} «{shown}»){f' до {until:%d.%m.%Y}' if until else ''} — «Дозволені без "
+              "заявки». Змінити: «Налаштування → Інтеграція з 1С».", "success")
     return redirect(_next_url(url_for("payments.reconcile")))
 
 

@@ -985,6 +985,15 @@ a.badge { text-decoration: none; }
 .rc-why-code { padding: 1px 6px; border-radius: 4px; background: var(--line); color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: 12px; font-weight: 600; }
 .rc-why-detail { font-size: 12px; color: var(--muted); }
+.rc-why-until { font-size: 12px; color: var(--warn); font-weight: 600; }
+.rc-allow-until { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 12px; margin-top: 2px; }
+.rc-allow-until input { width: auto; padding: 2px 6px; font-size: 12px; }
+.rc-allow-dept { font-size: 12px; }
+/* «Налаштування → Звірка»: дата «діє до» — лише біля позначеного винятку */
+.ok-code { flex-wrap: wrap; }
+.ok-code .ok-until { display: none; align-items: center; gap: 4px; margin-left: auto; font-size: 12px; color: var(--muted); }
+.ok-code:has(input[type=checkbox]:checked) .ok-until { display: inline-flex; }
+.ok-code .ok-until input { width: auto; padding: 1px 6px; font-size: 12px; }
 .rc-allow { margin-top: 6px; }
 .rc-allow summary { list-style: none; cursor: pointer; color: var(--primary-dark); font-size: 13px; }
 .rc-allow summary::-webkit-details-marker { display: none; }

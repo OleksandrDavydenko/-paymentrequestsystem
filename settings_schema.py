@@ -205,6 +205,24 @@ def _fmt_cfo_rules(value):
     return cfo_rules.describe_rows(value, app_settings.get("cfo_currency") or "USD")
 
 
+DEPT_DEFAULT_MODES = {
+    "connected": "уже працюють через PayDesk — платіж без заявки показується як проблема",
+    "pending": "ще не працюють через PayDesk — їхні платежі без заявки дозволені",
+}
+OK_UNTIL_KINDS = {"payments_ok_departments": "відділи статей", "payments_ok_items": "статті",
+                  "payments_ok_operations": "види операцій", "payments_ok_payment_types": "види оплати"}
+
+
+def _fmt_ok_until(value):
+    """«види оплати: 1 — до 31.10.2026; статті: 02.001 — до 30.11.2026» (порожньо — «—»)."""
+    parts = []
+    for key, dates in (value or {}).items():
+        items = ", ".join(f"{v} — до {d[8:10]}.{d[5:7]}.{d[:4]}" for v, d in sorted(dates.items()) if d)
+        if items:
+            parts.append(f"{OK_UNTIL_KINDS.get(key, key)}: {items}")
+    return "; ".join(parts) or "без дат (діють завжди)"
+
+
 def _fmt_codes(value):
     return ", ".join(value) if value else "—"
 
@@ -290,6 +308,11 @@ _LIST = [
     Setting("payments_ok_items", "Без заявки дозволено: статті витрат", "reconcile", "multi", [], _ok_items),
     Setting("payments_ok_operations", "Без заявки дозволено: види операцій", "reconcile", "multi", [], _ok_operations),
     Setting("payments_ok_payment_types", "Без заявки дозволено: види оплати", "reconcile", "multi", [], _ok_payment_types),
+    # До якої дати платежу діє виняток: {ключ винятку: {значення: ISO-дата}}; без дати — завжди (зберігає форма «Звірки»)
+    Setting("payments_ok_until", "Без заявки дозволено: діє до", "reconcile", "json", {}, fmt=_fmt_ok_until),
+    # Відділ у документі платежу без дати «заявки обов'язкові з» («Відділи → Звірка з 1С»): уже працює чи ще ні
+    Setting("payments_dept_default", "Відділи без дати підключення до PayDesk", "reconcile", "choice", "connected",
+            lambda: DEPT_DEFAULT_MODES, managed=True),
     # ---- API для обробки 1С «Платіжки із заявок PayDesk» (onec_api.py); ключ — лише SHA-256, створює адміністратор
     Setting("onec_api_enabled", "API для 1С увімкнено", "onec_api", "bool", False),
     Setting("onec_api_ips", "API для 1С: дозволені IP", "onec_api", "text", ""),

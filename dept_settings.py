@@ -10,6 +10,8 @@
   invoices_required — для «Оплата підряднику» обов'язковий хоча б один рахунок;
   direct_allowed  — чи робить відділ прямі витрати: None — за замовчуванням (профітцентр — так, інший — ні),
                     True / False — задано адміністратором. Ні — у заявці кроку «Що оплачуємо» немає, вона непряма.
+  requests_since  — з якої дати відділ працює через PayDesk (ISO-дата): платежі 1С з таким відділом у документі,
+                    раніше цієї дати, — «Дозволені без заявки» у звірці; None — як «Відділи без дати» (payments.py).
 Маршрут визначається під час відправки й запам'ятовується в заявці, тож зміна налаштувань не ламає заявки в роботі.
 У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure). Окремо від org_structure: там записи
 відділів (керівник, хто бачить) перезаписуються цілком.
@@ -31,10 +33,10 @@ import workflow as wf
 HEAD_MODES = {"default": "Як у загальних налаштуваннях", "approve": "Погоджує", "view": "Лише бачить"}
 CFO_MODES = {"default": "За загальними правилами", "always": "Погоджує завжди"}
 DEFAULT = {"head_mode": "default", "head_threshold": 0, "deputy_approve": False, "cfo": "default",
-           "contractor_codes": None, "invoices_required": False, "direct_allowed": None}
+           "contractor_codes": None, "invoices_required": False, "direct_allowed": None, "requests_since": None}
 LABELS = {"head_mode": "керівник відділу", "head_threshold": "поріг керівника", "deputy_approve": "заступник погоджує",
           "cfo": "фіндиректор", "contractor_codes": "статті прямих витрат", "invoices_required": "рахунки обов'язкові",
-          "direct_allowed": "прямі витрати"}
+          "direct_allowed": "прямі витрати", "requests_since": "заявки обов'язкові з"}
 
 _lock = threading.Lock()
 _data = None
@@ -103,6 +105,19 @@ def direct_allowed(code):
     return departments.is_profit_center(code) if own is None else bool(own)
 
 
+def all_requests_since():
+    """{код відділу: дата}, з якої відділ працює через PayDesk (лише відділи, де дату задано)."""
+    with _lock:
+        data = dict(_load())
+    out = {}
+    for code, s in data.items():
+        try:
+            out[code] = date.fromisoformat(s["requests_since"]) if (s or {}).get("requests_since") else None
+        except (TypeError, ValueError):
+            out[code] = None
+    return {c: d for c, d in out.items() if d}
+
+
 def invoices_required(code):
     return bool(code) and get(code)["invoices_required"]
 
@@ -164,6 +179,11 @@ def log_value(key, value):
         return "за замовчуванням (профітцентр — так)" if value is None else ("дозволено" if value else "заборонено")
     if field in ("deputy_approve", "invoices_required"):
         return "так" if value else "ні"
+    if field == "requests_since":
+        try:
+            return date.fromisoformat(value).strftime("%d.%m.%Y") if value else "не задано"
+        except ValueError:
+            return str(value)
     if field == "contractor_codes":
         return "як за замовчуванням" if value is None else (", ".join(value) or "—")
     return f"{wf.fmt_usd(value)} {cfo_rules.get()['currency']}" if value else "усі заявки"

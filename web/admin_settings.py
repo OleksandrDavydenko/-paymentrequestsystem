@@ -178,6 +178,9 @@ def _context(tab):
                    ok_operations=app_settings.get("payments_ok_operations") or [],
                    OK_OPERATIONS=schema.SETTINGS["payments_ok_operations"].choices(),
                    ok_payment_types=app_settings.get("payments_ok_payment_types") or [],
+                   ok_until=app_settings.get("payments_ok_until") or {},
+                   dept_default=app_settings.get("payments_dept_default") or "connected",
+                   DEPT_DEFAULT_MODES=schema.DEPT_DEFAULT_MODES,
                    OK_PAYMENT_TYPES=schema.SETTINGS["payments_ok_payment_types"].choices(),
                    cp_stage=app_settings.get("pending_cp_payment"), PENDING_CP_TITLES=schema.PENDING_CP_TITLES)
     elif tab == "design":
@@ -226,6 +229,24 @@ def settings_url(tab):
     """Посилання на розділ: вкладка з ним, а якщо розділів на вкладці кілька — одразу до нього."""
     url = url_for("admin.admin_settings", tab=tab)
     return url + "#s-" + tab if len(schema.page_of(tab)[2]) > 1 else url
+
+
+def _parse_ok_until(form, changes, errors):
+    """«Діє до» для винятків «без заявки дозволено»: лише для позначених значень; порожня дата — виняток назавжди."""
+    until = {}
+    for name in form:
+        if not name.startswith("ok_until__"):
+            continue
+        _, key, value = name.split("__", 2)
+        raw = (form.get(name) or "").strip()
+        if key not in schema.OK_UNTIL_KINDS or not raw or value not in form.getlist(key):
+            continue
+        try:
+            until.setdefault(key, {})[value] = date_cls.fromisoformat(raw).isoformat()
+        except ValueError:
+            errors["payments_ok_until"] = "«Діє до» у винятках: вкажіть дату"
+    if until != (app_settings.get("payments_ok_until") or {}):
+        changes["payments_ok_until"] = until
 
 
 def _parse_cfo_rules(form, changes, errors):
@@ -338,6 +359,8 @@ def admin_settings(*, context):
         errors["cfo_threshold_usd"] = "Вкажіть поріг фіндиректора — суму в USD, більшу за 0"
     if tab == "approval" and "cfo_rules_sent" in request.form:
         _parse_cfo_rules(request.form, changes, errors)
+    if tab == "reconcile" and "ok_until_sent" in request.form:
+        _parse_ok_until(request.form, changes, errors)
     if "payments_since" in changes:
         try:
             changes["payments_since"] = date_cls.fromisoformat(changes["payments_since"]).isoformat()
