@@ -28,7 +28,7 @@ import workflow as wf
 
 from web.auth import _home, _load_visible, login_required, requires
 from web.listing import _filtered, _page, _parse_date, _ref_keys
-from web.request_helpers import INLINE_EXT, _parse_amount, add_workdays, contractor_items, derive_kind, invoices_on, kind_question_on, lines_block_on, lines_required, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
+from web.request_helpers import INLINE_EXT, _parse_amount, add_workdays, contractor_items, derive_kind, invoices_on, kind_question_on, lines_block_on, lines_error, lines_required, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
 
 
 bp = Blueprint("requests", __name__)
@@ -239,6 +239,8 @@ def request_card(request_id=None, *, context):
                 req["lines"] = []  # рахунки — лише для оплати підряднику
         elif not use_invoices:
             req["lines"] = existing.get("lines") or []  # блоку рахунків немає — збережене лишається як є
+        if use_invoices and "lines" not in errors and (problem := lines_error(req)):
+            errors["lines"] = problem
         if not errors and request.form.get("action") == "submit":
             errors = submit_requirements(req)  # вимоги з налаштувань — лише при відправці; зберегти можна й без них
         if (existing.get("organization_id") and not data["organization_id"] and not errors

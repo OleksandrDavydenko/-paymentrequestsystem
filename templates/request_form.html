@@ -471,7 +471,6 @@
   <div class="dlg-body">
     <div class="inv-tools">
       <input type="search" id="inv-search" placeholder="Пошук: номер рахунку або угода" autocomplete="off" aria-label="Пошук рахунку">
-      <select id="inv-currency" aria-label="Валюта рахунків"></select>
       <span class="muted" id="inv-dept"></span>
     </div>
     <div class="inv-msg" id="inv-msg" hidden></div>
@@ -496,7 +495,7 @@
     <td class="n"></td>
     <td><input type="text" data-f="invoice" autocomplete="off"></td>
     <td><input type="text" inputmode="decimal" data-f="amount" autocomplete="off" style="text-align:right"></td>
-    <td><select data-f="currency">{% for c in CURRENCIES %}<option>{{ c }}</option>{% endfor %}</select></td>
+    <td class="line-cur"><input type="hidden" data-f="currency"><span></span></td>
     <td><input type="text" data-f="deal" autocomplete="off"></td>
     <td><button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button></td>
   </tr>
@@ -538,6 +537,14 @@ function num(v) { return parseFloat(String(v).replace(/\s/g, '').replace(',', '.
 function fmt(v) { return v.toLocaleString('uk-UA', {minimumFractionDigits: 2, maximumFractionDigits: 2}); }
 function rows() { return body ? [...body.querySelectorAll('tr:not(#no-lines)')] : []; }  // блоку рахунків може не бути
 
+// Рахунки — лише у валюті заявки: валюту рядка не вибирають, рядок в іншій валюті (старі заявки) підсвічено
+function requestCurrency() { return (document.getElementById('currency') || {}).value || ''; }
+function lineCurrency(tr) { return tr.querySelector('[name$="-currency"]').value || requestCurrency(); }
+function linesTotal() {
+  return rows().filter(tr => lineCurrency(tr) === requestCurrency())
+    .reduce((s, tr) => s + num(tr.querySelector('[name$="-amount"]').value), 0);
+}
+
 function refresh() {
   if (!body) return;
   const r = rows();
@@ -546,12 +553,14 @@ function refresh() {
   // Підсумок по валютах
   const totals = {};
   r.forEach(tr => {
-    const cur = tr.querySelector('select').value;
+    const cur = lineCurrency(tr);
+    tr.querySelector('.line-cur').classList.toggle('is-other', cur !== requestCurrency());
     totals[cur] = (totals[cur] || 0) + num(tr.querySelector('[name$="-amount"]').value);
   });
   document.getElementById('lines-total').textContent =
     Object.entries(totals).map(([c, v]) => fmt(v) + ' ' + c).join(' + ') || '0,00';
 }
+document.getElementById('currency')?.addEventListener('change', refresh);
 
 function addLine(data = {}) {
   const tr = document.getElementById('line-template').content.firstElementChild.cloneNode(true);
@@ -560,7 +569,9 @@ function addLine(data = {}) {
     el.name = `lines-${i}-${el.dataset.f}`;
     if (data[el.dataset.f] !== undefined) el.value = data[el.dataset.f];
   });
-  if (!data.currency) tr.querySelector('select').value = document.getElementById('currency').value;
+  const cur = tr.querySelector('[data-f="currency"]');
+  if (!data.currency) cur.value = requestCurrency();
+  tr.querySelector('.line-cur span').textContent = cur.value;
   body.insertBefore(tr, noLines);
   refresh();
   return tr;
@@ -579,34 +590,27 @@ const dlg = document.getElementById('invoice-dialog');
 if (document.getElementById('pick-invoices')) {
   const rowsBox = document.getElementById('dlg-rows'), msg = document.getElementById('inv-msg');
   const search = document.getElementById('inv-search'), allBox = document.getElementById('inv-all');
-  const curSel = document.getElementById('inv-currency');
   const addBtn = document.getElementById('dlg-add'), selInfo = document.getElementById('inv-selected');
   let found = [];
   const esc = s => String(s || '').replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
   function selected() { return [...rowsBox.querySelectorAll('input[type=checkbox]:checked:not(:disabled)')].map(cb => found[cb.value]); }
+  // Разом із уже доданими рахунки не можуть бути більшими за суму заявки (менше можна — решта лишається авансом)
   function info() {
-    const sel = selected(), totals = {};
-    sel.forEach(i => { totals[i.currency] = (totals[i.currency] || 0) + num(i.unpaid); });
-    selInfo.textContent = sel.length ? `Вибрано: ${sel.length} на ${Object.entries(totals).map(([c, v]) => fmt(v) + ' ' + c).join(' + ')}` : '';
-    addBtn.disabled = !sel.length;
-  }
-  // Валюта: за замовчуванням — як у заявці; «Усі валюти» або інша — з тих, що є в рахунках контрагента
-  function fillCurrencies() {
-    const mine = document.getElementById('currency').value;
-    const all = [...new Set(found.map(i => i.currency))].sort();
-    curSel.innerHTML = '';
-    [[mine, `${mine} — як у заявці`], ...all.filter(c => c !== mine).map(c => [c, c]), ['', 'Усі валюти']].forEach(([v, t]) => {
-      const o = document.createElement('option'); o.value = v; o.textContent = t; curSel.appendChild(o);
-    });
-    curSel.value = mine;
+    const sel = selected(), cur = requestCurrency(), limit = num(document.getElementById('amount').value);
+    const total = sel.reduce((s, i) => s + num(i.unpaid), 0), before = linesTotal();
+    const over = limit > 0 && Math.round((before + total - limit) * 100) > 0;
+    selInfo.textContent = sel.length ? `Вибрано: ${sel.length} на ${fmt(total)} ${cur}` : '';
+    selInfo.classList.toggle('inv-over', over);
+    if (over) selInfo.textContent += ` — разом${before ? ` з доданими (${fmt(before)})` : ''} більше за суму заявки ${fmt(limit)} ${cur}`;
+    addBtn.disabled = !sel.length || over;
   }
   function render() {
-    const q = search.value.trim().toLowerCase(), cur = curSel.value;
+    const q = search.value.trim().toLowerCase(), cur = requestCurrency();
     const added = new Set(rows().map(tr => tr.querySelector('[name$="-invoice"]').value));
-    const otherCur = cur ? found.filter(i => i.currency !== cur).length : 0;
+    const other = found.filter(i => i.currency !== cur);
     rowsBox.innerHTML = '';
     found.forEach((inv, idx) => {
-      if (cur && inv.currency !== cur) return;
+      if (inv.currency !== cur) return;
       if (q && !(inv.number + ' ' + inv.deal + ' ' + inv.deal_type).toLowerCase().includes(q)) return;
       const dis = added.has(inv.number), used = inv.used_in.length;
       const tr = document.createElement('tr');
@@ -621,10 +625,17 @@ if (document.getElementById('pick-invoices')) {
       rowsBox.appendChild(tr);
     });
     if (!rowsBox.children.length) rowsBox.innerHTML = `<tr><td colspan="6" class="empty">${found.length ? (q ? 'Нічого не знайдено' : `Рахунків у ${cur} немає`) : 'Неоплачених рахунків цього контрагента для відділу заявки в 1С немає'}</td></tr>`;
-    if (otherCur) {
+    if (other.length) {
+      // Рахунки в інших валютах у заявку не додаються; поки рахунків немає — можна змінити валюту заявки
+      const curs = [...new Set(other.map(i => i.currency))].sort(), cs = document.getElementById('currency');
+      const can = !rows().length && curs.length === 1 && [...cs.options].some(o => o.value === curs[0]);
       const tr = document.createElement('tr');
-      tr.innerHTML = `<td colspan="6" class="muted inv-other">Ще ${otherCur} рахунк. в інших валютах — <button type="button" class="btn-link inv-show-all">показати всі</button></td>`;
-      tr.querySelector('button').addEventListener('click', () => { curSel.value = ''; render(); });
+      tr.innerHTML = `<td colspan="6" class="muted inv-other">Ще ${other.length} рахунк. в ${curs.map(esc).join(', ')} не показано: у заявку додаються лише рахунки у валюті заявки (${esc(cur)}).${can ? ` <button type="button" class="btn-link">Змінити валюту заявки на ${esc(curs[0])}</button>` : ''}</td>`;
+      if (can) tr.querySelector('button').addEventListener('click', () => {
+        cs.value = curs[0];
+        cs.dispatchEvent(new Event('change', {bubbles: true}));
+        render();
+      });
       rowsBox.appendChild(tr);
     }
     allBox.checked = false;
@@ -642,7 +653,6 @@ if (document.getElementById('pick-invoices')) {
       const params = new URLSearchParams({counterparty_id: cp, department: dept, request_id: dlg.dataset.request});
       const data = await (await fetch(dlg.dataset.url + '?' + params, {headers: {Accept: 'application/json'}})).json();
       found = data.invoices || [];
-      fillCurrencies();
       document.getElementById('inv-dept').textContent = data.department ? 'Відділ: ' + data.department : '';
       if (data.error) { msg.textContent = data.error; msg.hidden = false; }
       render();
@@ -653,7 +663,6 @@ if (document.getElementById('pick-invoices')) {
     }
   };
   search.addEventListener('input', render);
-  curSel.addEventListener('change', render);
   allBox.addEventListener('change', () => {
     rowsBox.querySelectorAll('input[type=checkbox]:not(:disabled)').forEach(cb => { cb.checked = allBox.checked; });
     info();
@@ -665,13 +674,10 @@ if (document.getElementById('pick-invoices')) {
         !confirm('Деякі рахунки вже є в інших заявках у роботі. Точно додати їх і сюди?')) return;
     sel.forEach(inv => addLine({invoice: inv.number, amount: inv.unpaid, currency: inv.currency,
                                 deal: [inv.deal, inv.deal_type].filter(Boolean).join(' · ')}));
-    // Сума заявки ще порожня — підставити суму вибраних рахунків (якщо валюта одна)
+    // Сума заявки ще порожня — підставити суму рахунків
     const amount = document.getElementById('amount');
-    const currencies = new Set(sel.map(i => i.currency));
-    if (!num(amount.value) && currencies.size === 1) {
-      const cur = [...currencies][0], cs = document.getElementById('currency');
-      if ([...cs.options].some(o => o.value === cur)) cs.value = cur;
-      amount.value = fmt(sel.reduce((s, i) => s + num(i.unpaid), 0));
+    if (!num(amount.value)) {
+      amount.value = fmt(linesTotal());
       amount.dispatchEvent(new Event('input', {bubbles: true}));
     }
     dlg.close();

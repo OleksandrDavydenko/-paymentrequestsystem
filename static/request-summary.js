@@ -103,20 +103,26 @@
     return el.tagName === 'SELECT' ? (el.options[el.selectedIndex] || {}).text || '' : el.value;
   }
 
+  // Рахунки — лише у валюті заявки й разом не більше за суму заявки; менше можна — решта лишається авансом
   function linesDiff(amount, currency) {
     const box = $('lines-diff');
     if (!box) return;
     const rows = lineRows();
-    let total = 0, other = false;
+    let total = 0;
+    const other = new Set();
     rows.forEach(tr => {
       const a = num((tr.querySelector('[name$="-amount"]') || {}).value);
-      const c = (tr.querySelector('select') || {}).value;
-      if (a === null) return;
-      if (c && c !== currency) other = true; else total += a;
+      const c = (tr.querySelector('[name$="-currency"]') || {}).value;
+      if (c && c !== currency) other.add(c); else if (a !== null) total += a;
     });
     const diff = amount === null ? 0 : Math.round((amount - total) * 100) / 100;
-    box.hidden = !rows.length || other || !diff;
-    box.textContent = diff ? `Не збігається із сумою заявки на ${fmt(Math.abs(diff))} ${currency}` : '';
+    let text = '';
+    if (other.size) text = `Рахунки в ${[...other].join(', ')} у заявку в ${currency} додати не можна — приберіть їх`;
+    else if (diff < 0) text = `Рахунки разом більші за суму заявки на ${fmt(-diff)} ${currency} — так відправити не можна`;
+    else if (diff > 0) text = `Рахунки менші за суму заявки на ${fmt(diff)} ${currency} — решта лишиться авансом`;
+    box.hidden = !rows.length || !text;
+    box.classList.toggle('is-over', other.size > 0 || diff < 0);
+    box.textContent = text;
   }
 
   function clientTodo(amount) {

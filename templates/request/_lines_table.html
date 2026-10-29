@@ -10,11 +10,7 @@
           <td class="n">{{ loop.index }}</td>
           <td><input type="text" name="lines-{{ loop.index0 }}-invoice" value="{{ line.invoice }}" autocomplete="off"></td>
           <td><input type="text" inputmode="decimal" autocomplete="off" name="lines-{{ loop.index0 }}-amount" value="{{ line.amount_raw if line.amount_raw is defined else line.amount }}" style="text-align:right"></td>
-          <td>
-            <select name="lines-{{ loop.index0 }}-currency">
-              {% for c in CURRENCIES %}<option {{ 'selected' if c == line.currency }}>{{ c }}</option>{% endfor %}{% if line.currency and line.currency not in CURRENCIES %}<option selected>{{ line.currency }}</option>{% endif %}
-            </select>
-          </td>
+          <td class="line-cur"><input type="hidden" name="lines-{{ loop.index0 }}-currency" value="{{ line.currency or req.currency or '' }}"><span>{{ line.currency or req.currency or '' }}</span></td>
           <td><input type="text" name="lines-{{ loop.index0 }}-deal" value="{{ line.deal }}" autocomplete="off"></td>
           <td>{% if editable %}<button type="button" class="btn-link remove-line" title="Видалити рядок">✕</button>{% endif %}</td>
         </tr>

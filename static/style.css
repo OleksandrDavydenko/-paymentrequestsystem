@@ -1048,8 +1048,8 @@ a.badge { text-decoration: none; }
 .invoice-dialog { width: min(900px, calc(100vw - 32px)); }
 .inv-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 8px; }
 .inv-tools input { flex: 1 1 260px; }
-.inv-tools select { width: auto; flex: 0 0 auto; }
 .inv-other { text-align: center; font-size: 13px; }
+.inv-over { color: var(--danger); }
 .inv-other .btn-link { color: var(--primary); }
 .inv-msg { background: var(--warn-soft); border-left: 4px solid var(--warn); padding: 8px 12px; border-radius: 6px; margin-bottom: 8px; }
 .inv-table td, .inv-table th { vertical-align: top; }
@@ -1121,6 +1121,8 @@ fieldset:disabled .segmented label { cursor: default; }
 .chip { border: 1px solid var(--border); background: var(--card); border-radius: 999px; padding: 2px 10px; font: inherit; font-size: 12px; cursor: pointer; color: var(--text); }
 .chip:hover { border-color: var(--primary); color: var(--primary); }
 .lines-diff { color: var(--amber-ink); font-size: 12px; }
+.lines-diff.is-over, .line-cur.is-other { color: var(--danger); }
+.line-cur { font-weight: 600; }
 .req-block textarea#note { min-height: 70px; }
 .req-summary { position: sticky; top: 68px; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 16px; }
 .sum-title, .sum-sub { font-size: 12px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }

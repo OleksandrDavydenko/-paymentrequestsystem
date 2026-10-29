@@ -379,7 +379,8 @@ class _SqlStore:
         with self._eng().begin() as c:
             text = json.dumps(state, ensure_ascii=False)
             if len(text) > 1000:  # колонка schema_meta — до 1000 символів
-                text = json.dumps({**state, "error": (state.get("error") or "")[:150], "paid_last": []}, ensure_ascii=False)
+                text = json.dumps({**state, "error": (state.get("error") or "")[:150], "paid_last": [], "unpaid_last": []},
+                                  ensure_ascii=False)
             db_schema.meta_set(c, "payments_state", text)
 
 
@@ -403,13 +404,13 @@ def documents(lines):
             "recipient": ln["recipient"], "operation": ln["operation"], "posted": ln["posted"], "deleted": ln["deleted"],
             "amount": Decimal(0), "doc_amount": None, "counterparties": [], "items": [], "departments": [], "invoices": [],
             "lines": 0, "removed_lines": 0})
+        if ln.get("doc_amount") is not None and d["doc_amount"] is None:
+            d["doc_amount"] = Decimal(ln["doc_amount"])
         if ln.get("removed"):
             d["removed_lines"] += 1
             continue
         d["lines"] += 1
         d["amount"] += Decimal(ln["amount"] or 0)
-        if ln.get("doc_amount") is not None and d["doc_amount"] is None:
-            d["doc_amount"] = Decimal(ln["doc_amount"])
         for key, value in (("counterparties", ln["counterparty"]), ("items", ln["item_code"]),
                            ("departments", ln["department"]), ("invoices", ln["invoice"])):
             if value and value not in d[key]:
@@ -477,15 +478,76 @@ def _pay(req_id, doc, user=None):
     return None
 
 
+def _unpay(req_id, doc, revert):
+    """Платіж заявки видалили або розпровели в 1С (кілька спроб, якщо заявку саме змінюють): revert — оплачена ним
+    заявка знову «До оплати»; відмітка обробки 1С про цей документ знімається (обробка знову запропонує платіжку).
+    Повертає заявку, якщо її повернуто в «До оплати»."""
+    import onec_api
+    for _ in range(3):
+        req = db.get_request(req_id)
+        if not req:
+            return None
+        o = req.get("onec_order") or {}
+        if o.get("state") == "created" and o.get("doc_ref") == onec_api.ref_1c(doc["guid"]):
+            req.pop("onec_order")
+        back = revert and req["status"] == "paid"
+        if back:
+            wf.revert_paid_by_payment(req, label(doc))
+        else:
+            wf.add_history(req, "payment_removed", wf.PAYMENT_USER, wf.accountant_role(req) or "acc_resident",
+                           f"Платіж 1С ({label(doc)}) видалено або розпроведено — зв'язок із заявкою прибрано",
+                           req["status"], req["status"])
+        try:
+            db.save_request(req)
+        except db.StaleRequestError:
+            continue
+        return req if back else None
+    return None
+
+
+def _drop_removed(s, docs, links):
+    """Прив'язаний платіж став неактивним (видалено, розпроведено, зник з 1С): зв'язок зникає (і з links), заявка без
+    інших активних платежів — знову «До оплати». Повертає номери заявок, повернутих у «До оплати»."""
+    back, by_req = [], {}
+    for g, v in links.items():
+        for rid in v:
+            by_req.setdefault(rid, set()).add(g)
+    for g in [g for g in links if g in docs and not docs[g]["active"]]:
+        for rid in list(links.pop(g)):
+            s.remove_link(g, rid)
+            by_req[rid].discard(g)
+            still = any(docs.get(x, {"active": True})["active"] for x in by_req[rid])
+            if req := _unpay(rid, docs[g], not still):
+                back.append(req["number"])
+    return back
+
+
+def _drop_removed_orders(docs, cands):
+    """Заявку оплатила обробка 1С (проведена платіжка), а документ видалили чи розпровели ще до прив'язки: заявка
+    знову «До оплати» (оновлюється в cands). Повертає номери повернутих заявок."""
+    import onec_api
+    removed = {ref: d for d in docs.values() if not d["active"] and (ref := onec_api.ref_1c(d["guid"]))}
+    back = []
+    for rid, req in list(cands.items()):
+        o = req.get("onec_order") or {}
+        if req["status"] == "paid" and o.get("state") == "created" and o.get("doc_ref") in removed:
+            if r := _unpay(rid, removed[o["doc_ref"]], True):
+                cands[rid] = r
+                back.append(r["number"])
+    return back
+
+
 def run_matching():
     """Зіставити неприв'язані платежі з заявками; для «авто»/«обидва» — «Оплачено». Повертає підсумок."""
     s, today, start = store(), clock.today(), since()
     window = max(start, today - timedelta(days=MATCH_WINDOW_DAYS))
     docs = documents(s.lines_since(window))
     links = s.all_links()
+    unpaid = _drop_removed(s, docs, links)
     taken = {rid for v in links.values() for rid in v}
     candidate_ids = db.payment_candidate_ids(start - timedelta(days=10))
     cands = {i: r for i, r in db.get_many([i for i in candidate_ids if i not in taken]).items()}
+    unpaid += _drop_removed_orders(docs, cands)
     paid = []
     # Платіж уже прив'язали (напр. у режимі «Вручну»), а тепер для бухгалтера заявки — «Автоматично» / «Обидва»
     active_links = {rid: g for g, v in links.items() if docs.get(g, {}).get("active") for rid in v}
@@ -500,11 +562,7 @@ def run_matching():
     ctx = _context()
     issues, linked = {}, 0
     for doc in sorted(docs.values(), key=lambda d: (d["date"] or date.min, d["guid"])):
-        if doc["guid"] in links:
-            if not doc["active"]:
-                issues[doc["guid"]] = ("removed", "")
-            continue
-        if not doc["active"]:
+        if doc["guid"] in links or not doc["active"]:
             continue
         res = payment_match.match(doc, cands, by_number, ctx)
         if res.get("issue"):
@@ -524,7 +582,7 @@ def run_matching():
     recent = today - timedelta(days=REPORT_DAYS)
     unlinked = sum(1 for d in docs.values() if d["active"] and d["date"] and d["date"] >= recent and d["guid"] not in links
                    and d["guid"] not in issues and not allowed_reason(d, ok, item_deps))
-    return {"linked": linked, "paid": paid, "issues": len(issues), "unlinked": unlinked}
+    return {"linked": linked, "paid": paid, "unpaid": unpaid, "issues": len(issues), "unlinked": unlinked}
 
 
 # ---------------------------------------------------------------- синхронізація
@@ -596,8 +654,8 @@ def sync(check_keys=False):
             state.update(keys_at=now.isoformat(), removed_last=len(gone))
         result = run_matching()
         state.update(synced_at=now.isoformat(), error=None, loaded_last=loaded, rows=s.count(),
-                     linked_last=result["linked"], paid_last=result["paid"][-20:], issues=result["issues"],
-                     unlinked=result["unlinked"])
+                     linked_last=result["linked"], paid_last=result["paid"][-20:], unpaid_last=result["unpaid"][-10:],
+                     issues=result["issues"], unlinked=result["unlinked"])
     except Exception as e:  # Power BI недоступний, немає таблиці тощо — показати в адмінці, спробувати пізніше
         logger.exception("Синхронізація платежів з 1С")
         state.update(error=str(e)[:400], failed_at=now.isoformat())

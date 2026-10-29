@@ -101,10 +101,27 @@ check("required invoices: submit without lines refused", "додайте рах�
 n = db.last_id()
 c.post("/requests/new", data={**BASE, "payment_kind": "contractor", "expense_code": "01.003", "action": "save"})
 check("draft without lines saved", db.last_id() == n + 1)
-c.post("/requests/new", data={**BASE, "payment_kind": "contractor", "department": "SAL", "expense_code": "01.004",
-                              "action": "submit", "lines-0-invoice": "UC-0920", "lines-0-amount": "980", "lines-0-currency": "USD"})
+USD_LINE = {"payment_kind": "contractor", "department": "SAL", "expense_code": "01.004", "lines-0-invoice": "UC-0920",
+            "lines-0-amount": "980", "lines-0-currency": "USD"}
+c.post("/requests/new", data={**BASE, **USD_LINE, "currency": "USD", "amount": "980", "action": "submit"})
 req = db.get_request(db.last_id())
 check("SAL: default list, not required -> submitted", req["department"] == "SAL" and req["status"] != "draft")
+
+# ---------- рахунки лише у валюті заявки й разом не більше за суму заявки (менше можна — аванс)
+n = db.last_id()
+r_ = c.post("/requests/new", data={**BASE, **USD_LINE, "action": "save"}).get_data(as_text=True)
+check("line in another currency refused", "лише рахунки у валюті заявки (UAH) — приберіть рахунки в USD" in r_
+      and db.last_id() == n)
+r_ = c.post("/requests/new", data={**BASE, **USD_LINE, "currency": "USD", "amount": "979.99", "action": "save"})
+check("lines more than the amount refused", "980,00 USD, це більше за суму заявки (979,99 USD)" in r_.get_data(as_text=True)
+      and db.last_id() == n)
+c.post("/requests/new", data={**BASE, **USD_LINE, "currency": "USD", "amount": "1500", "action": "submit"})
+req = db.get_request(db.last_id())
+check("lines less than the amount: allowed (advance)", db.last_id() == n + 1 and req["status"] != "draft"
+      and req["lines"][0]["amount"] == 980)
+html = page("/requests/new")
+check("form: line currency is not chosen, no currency filter in the picker", 'data-f="currency"' in html
+      and 'id="inv-currency"' not in html and '<select data-f="currency"' not in html)
 pv = get("/requests/route-preview?amount=100&currency=UAH&department=LOG&payment_kind=contractor&payment_form=bank&organization_id=1")
 check("summary: required invoices in todo", any("рахунок" in t for t in pv["todo"]))
 

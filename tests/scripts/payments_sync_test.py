@@ -93,9 +93,11 @@ check("cash accountant still manual", status(14) == "to_pay")
 
 # ---------- видалений у 1С платіж
 payments.MOCK_ROWS[:] = [r for r in payments.MOCK_ROWS if r["DocumentNumber"] != "ОТП-000170"]
-payments.sync(check_keys=True)
-check("removed in 1C -> issue on the linked payment", payments.store().all_issues().get("D" + "0" * 29 + "20", {}).get("issue")
-      == "removed" and payments.status()["rows"] == 7)
+st = payments.sync(check_keys=True)
+h = db.get_request(15)["history"][-1]
+check("removed in 1C -> link dropped, request back to «До оплати»", "D" + "0" * 29 + "20" not in payments.store().all_links()
+      and status(15) == "to_pay" and h["action"] == "payment_removed" and "ОТП-000170" in h["comment"]
+      and st["unpaid_last"] == ["000000015"] and payments.status()["rows"] == 7)
 
 # ---------- адмінка
 login("adm@ftpua.com")

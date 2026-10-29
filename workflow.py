@@ -221,6 +221,7 @@ ACTIONS = {
     "onec_order_failed": (None, "1С не створила платіжку", "red", False),
     "onec_order_reset": (None, "Відмітку 1С про платіжку знято", "purple", False),
     "payment_unlink": (None, "Платіж з 1С відв'язано", "purple", False),
+    "payment_removed": (None, "Платіж з 1С видалено", "red", False),
     "withdraw": ("Відкликати на редагування", "Відкликано автором на редагування", "orange", False),
     "cancel": ("Скасувати заявку", "Скасовано автором", "grey", True),
 }
@@ -413,9 +414,10 @@ def paid_entry(req):
 PAYMENT_USER = {"name": "1С (платіж)", "email": ""}  # автор запису, коли «Оплачено» ставить звірка з платежами
 
 
-def mark_paid_by_payment(req, payment_label, payment_type=None, handover=False, user=None):
-    """«Оплачено» за платежем з 1С (payments.py): автоматично — від імені 1С, вручну прив'язаний — від user.
-    Порожній «Вид оплати» заявки береться з платежу. Кидає WorkflowError, якщо заявка не «До оплати»."""
+def mark_paid_by_payment(req, payment_label, payment_type=None, handover=False, user=None, how=None):
+    """«Оплачено» за платежем з 1С (payments.py): автоматично — від імені 1С, вручну прив'язаний — від user;
+    how — свій опис (обробка 1С створила проведену платіжку). Порожній «Вид оплати» заявки береться з платежу.
+    Кидає WorkflowError, якщо заявка не «До оплати»."""
     if req["status"] != "to_pay":
         raise WorkflowError("Оплаченою можна позначити лише заявку «До оплати»")
     if payment_type and not req.get("payment_account_id"):
@@ -423,9 +425,18 @@ def mark_paid_by_payment(req, payment_label, payment_type=None, handover=False, 
     old = req["status"]
     req["status"] = "paid"
     start_handover(req, handover)
-    how = "прив'язано платіж" if user else "автоматично за платежем"
+    how = how or ("прив'язано платіж" if user else "автоматично за платежем")
     add_history(req, "pay", user or PAYMENT_USER, accountant_role(req) or "acc_resident",
                 f"Оплачено — {how} 1С: {payment_label}", old, "paid")
+
+
+def revert_paid_by_payment(req, payment_label):
+    """Платіж, яким закрито заявку, видалили або розпровели в 1С: заявка знову «До оплати» (підтвердження передачі
+    готівки скидається), запис в історії від імені 1С."""
+    req["status"] = "to_pay"
+    start_handover(req, False)
+    add_history(req, "payment_removed", PAYMENT_USER, accountant_role(req) or "acc_resident",
+                f"Платіж 1С {payment_label} видалено або розпроведено — заявка знову «До оплати»", "paid", "to_pay")
 
 
 def admin_set_status(req, new_status, user, comment, handover=False):

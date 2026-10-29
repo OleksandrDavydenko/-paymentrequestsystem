@@ -25,7 +25,7 @@ import storage as db
 import user_directory
 import workflow as wf
 
-from web.formatting import fmt_datetime
+from web.formatting import fmt_datetime, money
 
 
 def _parse_amount(raw):
@@ -139,6 +139,20 @@ def parse_request_form(form, current=None, allowed_codes=None, contractor=False)
             errors["lines"] = "Сума в рядку рахунку має бути більшою за 0"
         data["lines"].append(line)
     return data, errors
+
+
+def lines_error(req):
+    """Рахунки — лише у валюті заявки й разом не більше за суму заявки (менше можна: решта лишається авансом).
+    Повертає текст помилки або None."""
+    cur, lines = req.get("currency"), req.get("lines") or []
+    other = sorted({ln["currency"] for ln in lines if ln.get("currency") and ln["currency"] != cur})
+    if cur and other:
+        return f"У заявку можна додати лише рахунки у валюті заявки ({cur}) — приберіть рахунки в {', '.join(other)}"
+    total = sum((ln["amount"] for ln in lines if ln.get("amount")), Decimal(0))
+    if req.get("amount") and total > req["amount"]:
+        return (f"Рахунки разом — {money(total)} {cur}, це більше за суму заявки ({money(req['amount'])} {cur}). "
+                "Зменште суми в рядках або приберіть зайві рахунки")
+    return None
 
 
 def _can_link_cp(roles):

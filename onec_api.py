@@ -121,7 +121,8 @@ def order(req, base_url=""):
     cur = next((c for c in currencies._table.items() if c["name"] == req.get("currency")), None)
     pt = payment_types.get(req.get("payment_account_id")) if payment_accounts.use_types() else None
     dep = req.get("department")
-    approved = next((h["at"] for h in reversed(req.get("history") or []) if h.get("to_status") == "to_pay"), None)
+    approved = next((h["at"] for h in reversed(req.get("history") or [])
+                     if h.get("to_status") == "to_pay" and h.get("action") != "payment_removed"), None)
     emp = employees.by_email(req.get("author_email"))  # співробітник 1С — кому видають готівку
     o = req.get("onec_order") or {}
     return {
@@ -237,31 +238,49 @@ def _who(data):
     return {"name": f"1С: {name}" if name else USER["name"], "email": ""}
 
 
+def _truthy(value):
+    return value is True or str(value).strip().lower() in ("1", "true", "yes", "так")
+
+
 def mark_created(request_id, data):
+    """1С створила платіжку. posted: true — документ проведений: якщо для бухгалтера заявки «Оплачено» ставиться
+    автоматично (режим «Автоматично» / «Обидва»), заявка одразу оплачена — звірка потім лише прив'яже платіж."""
+    import notifications
+    import payments
     doc_ref = str(data.get("doc_ref") or "").strip()[:64]
     doc_number = str(data.get("doc_number") or "").strip()[:50]
     if not doc_number:
         raise ApiError("Вкажіть doc_number — номер документа в 1С", 400)
+    paid = []
 
     def change(req):
+        paid.clear()
         o = req.get("onec_order") or {}
+        if o.get("state") == "created" and o.get("doc_ref") == doc_ref and o.get("doc_number") == doc_number \
+                and req["status"] in ("to_pay", "paid"):
+            return False  # повторний виклик
         if req["status"] != "to_pay":
             raise ApiError(f"Заявка № {req['number']} не «До оплати» ({wf.STATUSES[req['status']][0]}) — платіжку не створюють")
-        if o.get("state") == "created":
-            if o.get("doc_ref") == doc_ref and o.get("doc_number") == doc_number:
-                return False
-            if not data.get("replace"):
-                raise ApiError(f"Для заявки вже створено платіжку № {o.get('doc_number')} — передайте replace: true, "
-                               "якщо її замінили новою")
+        if o.get("state") == "created" and not data.get("replace"):
+            raise ApiError(f"Для заявки вже створено платіжку № {o.get('doc_number')} — передайте replace: true, "
+                           "якщо її замінили новою")
         user = _who(data)
         req["onec_order"] = {"state": "created", "doc_ref": doc_ref or None, "doc_number": doc_number,
                              "doc_date": str(data.get("doc_date") or "")[:10] or None,
                              "doc_type": str(data.get("doc_type") or "").strip()[:100] or None,
+                             "posted": _truthy(data.get("posted")),
                              "at": clock.now(), "by": user["name"], "message": ""}
         when = f" від {req['onec_order']['doc_date']}" if req["onec_order"]["doc_date"] else ""
         wf.add_history(req, "onec_order", user, wf.accountant_role(req) or "acc_resident",
                        f"Платіжку створено в 1С: № {doc_number}{when}", req["status"], req["status"])
-    return _update(request_id, change)
+        if req["onec_order"]["posted"] and payments.auto_pay(req) and not counterparties.is_pending(req.get("counterparty_id")):
+            wf.mark_paid_by_payment(req, f"№ {doc_number}{when}", handover=bool(app_settings.get("cash_handover_confirm")),
+                                    user=user, how="створено проведену платіжку в")
+            paid.append(True)
+    req = _update(request_id, change)
+    if paid:
+        notifications.notify("pay", req, _who(data))
+    return req
 
 
 def mark_failed(request_id, data):
