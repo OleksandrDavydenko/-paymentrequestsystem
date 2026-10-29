@@ -1,5 +1,5 @@
 """Фонові задачі: нагадування про передачу готівки, щоденне обслуговування, синхронізація налаштувань,
-звірка з платежами 1С (кожні 10 хвилин)."""
+звірка з платежами 1С (як часто — «Налаштування → Звірка з 1С», за замовчуванням кожні 10 хвилин)."""
 import logging
 import os
 import threading
@@ -24,6 +24,7 @@ import workflow as wf
 
 
 REMINDER_INTERVAL = 3600  # перевірка раз на годину
+PAYMENTS_TICK = 60        # раз на хвилину — чи пора звіряти (новий інтервал з налаштувань діє одразу)
 _app = None  # додаток (init_app) — листи з фонового потоку будують посилання через його контекст запиту
 _last_base_url = None
 
@@ -127,11 +128,13 @@ def _payments_loop():
     time.sleep(90)
     while True:
         try:
-            jobs.run("payments_sync", payments.SYNC_EVERY - timedelta(minutes=1), run_payments_sync)
+            docstore.sync()  # інтервал могли змінити в іншому процесі
+            if payments.sync_due():
+                jobs.run("payments_sync", payments.sync_every() - timedelta(minutes=1), run_payments_sync)
         except Exception as e:
             logging.getLogger(__name__).exception("Помилка звірки з платежами 1С")
             alerts.report(e, "фонова задача «payments_sync»", base_url=_public_base_url())
-        time.sleep(payments.SYNC_EVERY.total_seconds())
+        time.sleep(PAYMENTS_TICK)
 
 
 _kick_lock = threading.Lock()
@@ -145,7 +148,7 @@ def kick_payments_sync():
 
     def run():
         try:
-            jobs.run("payments_sync", payments.SYNC_EVERY - timedelta(minutes=1), run_payments_sync)
+            jobs.run("payments_sync", payments.sync_every() - timedelta(minutes=1), run_payments_sync)
         except Exception:
             logging.getLogger(__name__).exception("Помилка звірки з платежами 1С")
         finally:

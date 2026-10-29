@@ -1,13 +1,13 @@
 """Звірка з платежами 1С: копія платежів (перше завантаження, зміни, видалені), «#номер» і реквізити, режими
 «Оплачено» за видом бухгалтера (вручну / автоматично / обидва), підказка «#номер» у картці, «Синхронізувати зараз»."""
 import os, sys, tempfile
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 sys.path.insert(0, os.getcwd())
 tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, ADMIN_EMAILS="adm@ftpua.com")
 import app as m
-import app_settings, payment_match, payments, settings_log, user_roles
+import app_settings, clock, payment_match, payments, settings_log, user_roles
 import storage as db
 
 ok = True
@@ -110,6 +110,20 @@ check("modes saved, journal", app_settings.get("pay_mode_acc_cash") == "both"
       and any(e["label"] == "«Оплачено»: бухгалтер по готівці" for e in settings_log.query(20)))
 c.post("/admin/settings", data={"tab": "reconcile", "payments_since": "вчора"})
 check("bad date refused", app_settings.get("payments_since") == "2026-09-01")
+check("sync every 10 min by default", payments.sync_every() == timedelta(minutes=10) and 'name="payments_sync_minutes"' in html
+      and "кожні 10 хв" in html and payments.status()["every_minutes"] == 10)
+c.post("/admin/settings", data={"tab": "reconcile", "payments_sync_minutes": "2"})
+check("sync interval below 5 refused", payments.sync_minutes() == 10)
+c.post("/admin/settings", data={"tab": "reconcile", "payments_sync_minutes": "30"})
+st_ = payments.status()
+check("sync interval saved, used by sync_due", payments.sync_every() == timedelta(minutes=30) and "Кожні 30 хв" in page("/payments/reconcile")
+      and not payments.sync_due())
+payments.store().set_state({**st_, "synced_at": (clock.now() - timedelta(minutes=31)).isoformat()})
+check("sync due after the new interval", payments.sync_due())
+payments.store().set_state({**st_, "synced_at": (clock.now() - timedelta(minutes=31)).isoformat(),
+                            "failed_at": clock.now().isoformat()})
+check("recent failure counts as an attempt", not payments.sync_due())
+payments.store().set_state(st_)
 r_ = c.post("/admin/payments/sync")
 check("sync now: cash in «both» -> #14 paid", r_.status_code == 302 and status(14) == "paid")
 login("res@ftpua.com")

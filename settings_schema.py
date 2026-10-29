@@ -298,6 +298,7 @@ _LIST = [
     Setting("org_accountants", "Бухгалтери організацій", "payment", "json", {}, managed=True),
     # ---- Звірка з платежами 1С (payments.py)
     Setting("payments_since", "Звіряти платежі з 1С від дати", "reconcile", "text", "2026-09-01"),
+    Setting("payments_sync_minutes", "Синхронізація з 1С: кожні N хвилин", "reconcile", "int", 10, min=5, max=120),
     Setting("pay_mode_acc_cash", "«Оплачено»: бухгалтер по готівці", "reconcile", "choice", "manual", _pay_modes),
     Setting("pay_mode_acc_resident", "«Оплачено»: бухгалтер резидентів", "reconcile", "choice", "manual", _pay_modes),
     Setting("pay_mode_acc_nonresident", "«Оплачено»: бухгалтер нерезидентів", "reconcile", "choice", "manual", _pay_modes),

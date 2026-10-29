@@ -20,7 +20,8 @@
     </dl>
     <form method="post" action="{{ url_for('admin.payments_sync_now') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-sm">⟳ Синхронізувати зараз</button>
-      <span class="muted">Сама синхронізація — кожні 10 хвилин; видалені в 1С платежі — раз на добу.</span>
+      <span class="muted">Сама синхронізація — кожні {{ sync_state.every_minutes }} хв (змінити — нижче, у «Звідки й як часто звіряти»);
+        видалені в 1С платежі — раз на добу.</span>
     </form>
   </div>
 </div>
@@ -103,12 +104,19 @@
   </details>
   {% endfor %}
 
-  <div class="budget-section-title">Звідки звіряти</div>
+  <div class="budget-section-title">Звідки й як часто звіряти</div>
   <label class="mode-option">
     <span><strong>Звіряти платежі з 1С від дати</strong>
       <input type="date" name="payments_since" value="{{ payments_since }}" class="inline-select" aria-label="Звіряти платежі від дати">
       <span class="mode-hint">Платежі раніше цієї дати не забираються й не зіставляються. Зміна дати перезавантажує копію
         платежів (прив'язки до заявок лишаються).</span></span>
+  </label>
+  <label class="mode-option">
+    <span><strong>Синхронізувати з 1С кожні
+      <input type="number" name="payments_sync_minutes" value="{{ sync_state.every_minutes }}" min="5" max="120" style="width:64px"
+             aria-label="Синхронізувати кожні N хвилин"> хв</strong>
+      <span class="mode-hint">Від 5 до 120 хвилин. PayDesk бачить нові платіжки, коли їх уже є в Power BI, тож частіша
+        синхронізація допомагає, лише якщо Power BI оновлюється частіше. Будь-коли — «Синхронізувати зараз» вище.</span></span>
   </label>
   <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
 </form>

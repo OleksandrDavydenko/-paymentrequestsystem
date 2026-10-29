@@ -37,7 +37,6 @@ PAGE = 5000                 # рядків за один запит змін (з
 KEYS_WINDOW_DAYS = 90       # за скільки днів раз на добу перевіряти, чи не зникли платежі з 1С
 MATCH_WINDOW_DAYS = 120     # платежі за скільки днів зіставляються з заявками
 REPORT_DAYS = 30            # звіт «Звірка» за замовчуванням і лічильник у меню — за останні 30 днів
-SYNC_EVERY = timedelta(minutes=10)
 PAY_MODES = ("manual", "auto", "both")
 DEFAULT_SINCE = date(2026, 9, 1)
 
@@ -61,6 +60,15 @@ def manual_pay_allowed(req):
 
 def auto_pay(req):
     return pay_mode(wf.accountant_role(req)) in ("auto", "both")
+
+
+def sync_minutes():
+    """Як часто синхронізувати з 1С, хвилин («Налаштування → Звірка з 1С»)."""
+    return int(app_settings.get("payments_sync_minutes") or 10)
+
+
+def sync_every():
+    return timedelta(minutes=sync_minutes())
 
 
 def since():
@@ -668,19 +676,19 @@ def sync(check_keys=False):
 
 
 def status():
-    """Стан для адмінки: коли синхронізовано, скільки рядків, остання помилка."""
+    """Стан для адмінки: коли синхронізовано, скільки рядків, остання помилка, як часто синхронізувати."""
     try:
-        return {**store().get_state(), "table": table(), "live": _live()}
+        return {**store().get_state(), "table": table(), "live": _live(), "every_minutes": sync_minutes()}
     except Exception as e:
-        return {"error": str(e)[:400], "table": table(), "live": _live()}
+        return {"error": str(e)[:400], "table": table(), "live": _live(), "every_minutes": sync_minutes()}
 
 
 def sync_due():
-    """Чи пора синхронізувати (минуло SYNC_EVERY з останньої спроби) — для фону й відкриття сторінок."""
+    """Чи пора синхронізувати (минуло sync_every() з останньої спроби) — для фону й відкриття сторінок."""
     st = status()
-    last = st.get("synced_at") or st.get("failed_at")
+    last = max(st.get("synced_at") or "", st.get("failed_at") or "")
     try:
-        return not last or clock.now() - datetime.fromisoformat(last) >= SYNC_EVERY
+        return not last or clock.now() - datetime.fromisoformat(last) >= sync_every()
     except ValueError:
         return True
 
