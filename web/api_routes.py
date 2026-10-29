@@ -5,18 +5,24 @@ from flask import Blueprint, abort, current_app, request
 
 import db_sql
 import filestore
+import ratelimit
 import storage as db
 import telegram_notify
+from web.onec_api_routes import client_ip
 
 
 bp = Blueprint("api", __name__)
 
 
 def _bot_guard():
-    """Лише для бота: Telegram підключено (TELEGRAM_BOT_KEY) і правильний X-Api-Key."""
+    """Лише для бота: Telegram підключено (TELEGRAM_BOT_KEY), не забагато запитів і правильний X-Api-Key."""
     if not telegram_notify.enabled():
         abort(404)
+    ip = client_ip()
+    if ratelimit.API_BAD_KEYS.blocked(ip) or not ratelimit.API_REQUESTS.hit(ip):
+        abort(429)
     if not telegram_notify.key_ok(request.headers.get("X-Api-Key")):
+        ratelimit.API_BAD_KEYS.hit(ip)
         abort(403)
 
 

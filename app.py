@@ -23,6 +23,7 @@ import db_sql
 import sessions_db
 import workflow as wf  # noqa: F401  (для сценарних тестів: m.wf)
 from web import admin_settings, background, context, errors  # noqa: F401  (admin_settings — маршрути в admin_bp)
+from web import security_headers
 from web.admin_routes import bp as admin_bp
 from web.api_routes import bp as api_bp
 from web.auth import auth
@@ -56,6 +57,7 @@ auth.init_app(app)
 
 context.init_app(app)
 errors.init_app(app)
+security_headers.init_app(app)
 background.init_app(app)
 for bp in (login_bp, requests_bp, lists_bp, payments_bp, settings_bp, admin_bp, api_bp, onec_api_bp):
     app.register_blueprint(bp)

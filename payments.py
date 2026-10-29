@@ -554,7 +554,8 @@ def run_matching():
     links = s.all_links()
     unpaid = _drop_removed(s, docs, links)
     taken = {rid for v in links.values() for rid in v}
-    candidate_ids = db.payment_candidate_ids(start - timedelta(days=10))
+    # Оплачені — лише ті, що могли бути оплачені платежами вікна (а не всі з «Звіряти платежі з»: їх щодня більше)
+    candidate_ids = db.payment_candidate_ids(window - timedelta(days=10))
     cands = {i: r for i, r in db.get_many([i for i in candidate_ids if i not in taken]).items()}
     unpaid += _drop_removed_orders(docs, cands)
     paid = []

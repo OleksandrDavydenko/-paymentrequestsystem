@@ -46,9 +46,10 @@ print(f"Створюю {N} заявок…", flush=True)
 t0 = time.time()
 eng = dbs._engine()
 R, H = db_sql.requests_t, db_sql.history_t
-batch_r, batch_h = [], []
+batch_r, batch_h, n_active = [], [], 0
 for i in range(1, N + 1):
     src = rng.choice(active if rng.random() < 300 / N else closed)
+    n_active += src in active
     r = deepcopy(src)
     r["id"], r["number"], r["version"] = i, f"{i:09d}", 1
     r["author_email"] = rng.choice(authors)
@@ -74,13 +75,13 @@ with eng.begin() as c:
     c.execute(db_sql.meta_t.update().where(db_sql.meta_t.c.key == "request_id_offset").values(value=str(N)))
     c.execute(sa.text("ANALYZE"))
 dbs._cache.reset()
-print(f"  {time.time() - t0:.0f} с; у роботі: {sum(1 for r in batch_r)}", flush=True)
+print(f"  {time.time() - t0:.0f} с; у роботі: {n_active}", flush=True)
 
 claims = {}
 m.auth._auth.get_user = lambda: dict(claims)
-m.auth._auth.get_token_for_user = lambda s: {"access_token": "t", "scope": " ".join(s)}
-import graph  # noqa: E402
-graph.group_members = lambda t, g: []
+import user_roles  # noqa: E402
+for email, roles in (("admin@ftpua.com", ["admin"]), ("acc@ftpua.com", ["acc_resident"]), (authors[0], ["initiator"])):
+    user_roles.set_roles(email, email, email, roles, "load")
 c = m.app.test_client()
 
 
