@@ -696,8 +696,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
     border-radius: 9px; background: #fff; color: var(--primary); font-size: 11px; font-weight: 700; line-height: 18px; }
   .nav-toggle[aria-expanded="true"] .nav-toggle-count { display: none; }
   header nav { display: none; }
-  html.nav-open header nav { display: flex; flex-direction: column; gap: 0; overflow: hidden auto; margin: 4px -16px -8px;
-    padding: 4px 0 8px; border-top: 1px solid #ffffff33; max-height: calc(100vh - 64px); }
+  html.nav-open header nav { display: flex; flex-direction: column; flex-basis: calc(100% + 32px); gap: 0;
+    overflow: hidden auto; margin: 4px -16px -8px; padding: 4px 0 8px; border-top: 1px solid #ffffff33;
+    max-height: calc(100vh - 64px); }
   html.nav-open header nav a { display: flex; align-items: center; justify-content: space-between; min-height: 48px;
     padding: 0 16px; border-bottom: 0; border-left: 3px solid transparent; font-size: 15px; opacity: .9; }
   html.nav-open header nav a.active { opacity: 1; border-left-color: var(--header-text); background: #ffffff1a; }

@@ -16,8 +16,8 @@
 <body>
   <header>
     {% if user_name %}
-    {% set nav_total = ((queue_count or 0) if is_approver else 0) + ((payments_count or 0) if can_see_payments else 0)
-                       + ((reconcile_count or 0) if ('cfo' in roles or 'admin' in roles) else 0) %}
+    {# на кнопці — лише те, що чекає дій людини; «Звірка» (платежі без заявки) — у самому меню #}
+    {% set nav_total = ((queue_count or 0) if is_approver else 0) + ((payments_count or 0) if can_see_payments else 0) %}
     <button type="button" class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="main-nav" aria-label="Меню">
       <span class="nav-toggle-icon" aria-hidden="true"></span>
       {% if nav_total %}<span class="nav-toggle-count">{{ nav_total }}</span>{% endif %}
