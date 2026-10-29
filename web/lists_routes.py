@@ -1,7 +1,7 @@
 """Списки: «На погодження», «Усі заявки», «Заявки відділу»."""
 from datetime import timedelta
 
-from flask import Blueprint, abort, g, render_template, request
+from flask import Blueprint, abort, g, redirect, render_template, request, url_for
 
 import clock
 import departments
@@ -19,6 +19,8 @@ bp = Blueprint("lists", __name__)
 @login_required
 @requires(*wf.APPROVER_ROLES)
 def approvals(*, context):
+    if not g.roles & wf.APPROVER_ROLES - wf.pays_only(g.roles):  # бухгалтер «Лише оплачує»: погодження немає
+        return redirect(url_for("payments.to_pay"))
     view = request.args.get("view") if request.args.get("view") in ("processed", "accountants") else "queue"
     if view == "accountants" and "cfo" not in g.roles:
         abort(403)

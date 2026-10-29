@@ -84,6 +84,11 @@ def cp_pending_check(cp_id):
     return counterparties.is_pending(cp_id)
 
 
+def forget_members():
+    """Склад ролей змінився (картка користувача) — наступна розсилка перечитає його одразу, не чекаючи MEMBERS_TTL."""
+    _members_cache.clear()
+
+
 def cached_role_members(role):
     hit = _members_cache.get(role)
     if hit and time.time() - hit[0] < (MEMBERS_TTL if hit[2] else FAILED_TTL):
@@ -275,6 +280,11 @@ def _notify(event, req, actor, comment, target=None, before=None):
             for m in members:
                 if kind == "task_new" and wf.self_approval_blocked(req, m["email"]):
                     continue  # власну заявку погоджує інша людина (параметр «Розподіл обов'язків»)
+                if kind == "task_new" and m.get("pays_only"):
+                    if (m["email"] or "").lower() not in recipients:
+                        skipped.setdefault((m["email"] or "").lower(), f"ви — {wf.ROLES.get(role, role).lower()}, але "
+                                           "лише оплачуєте (картка користувача): про погодження сповіщень немає")
+                    continue
                 add(m["email"], "task_new", f"ви — {wf.ROLES.get(role, role).lower()}", SUBJECTS[kind])
 
     # 2а. Автор відкликав або скасував заявку (before — стан до дії): тим, у кого вона чекала рішення,
@@ -284,6 +294,8 @@ def _notify(event, req, actor, comment, target=None, before=None):
             members = dept_settings.approvers(before.get("department")) if role == "dept_head" \
                 else cached_role_members(role)
             for m in members:
+                if m.get("pays_only"):  # заявка була на погодженні — «Лише оплачує» її й не бачив
+                    continue
                 add(m["email"], "task_withdrawn", f"заявка чекала вашого рішення ({wf.ROLES.get(role, role).lower()})",
                     SUBJECTS[event])
         for email, role in wf.round_approvers(before):
@@ -354,7 +366,7 @@ def send_approver_reminder(req, days):
         members = dept_settings.approvers(req.get("department")) if role == "dept_head" else cached_role_members(role)
         for mbr in members:
             email = (mbr.get("email") or "").lower()
-            if email and not wf.self_approval_blocked(req, email):
+            if email and not wf.self_approval_blocked(req, email) and not mbr.get("pays_only"):
                 recipients.setdefault(email, f"заявка чекає вашого рішення {days} дн. ({wf.ROLES.get(role, role).lower()})")
     if app_settings.get("approver_remind_cfo_copy") and wf.at_accountants(req):
         for mbr in cached_role_members("cfo"):

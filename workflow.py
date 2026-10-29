@@ -46,15 +46,22 @@ ROLE_GROUPS = [
 
 
 class RoleSet(frozenset):
-    """Ролі користувача + коди відділів, які він очолює і заявки яких бачить.
+    """Ролі користувача + коди відділів, які він очолює і заявки яких бачить, + бухгалтерські ролі, якими він лише
+    оплачує (pay_only: не погоджує, не бачить заявок на погодженні).
 
     Поводиться як звичайна множина ролей, тож усі перевірки `"cfo" in roles` працюють як раніше.
     """
-    def __new__(cls, roles=(), head_departments=(), view_departments=()):
+    def __new__(cls, roles=(), head_departments=(), view_departments=(), pay_only=()):
         obj = super().__new__(cls, roles)
         obj.head_departments = frozenset(head_departments)
         obj.view_departments = frozenset(view_departments)
+        obj.pay_only = frozenset(pay_only)
         return obj
+
+
+def pays_only(roles):
+    """Бухгалтерські ролі, якими людина лише оплачує (картка користувача → «Лише оплачує»)."""
+    return getattr(roles, "pay_only", frozenset())
 
 
 def head_deps(roles):
@@ -332,12 +339,14 @@ def acting_role(req, roles, user_email, ignore_self=False):
     if not ignore_self and self_approval_blocked(req, user_email):
         return None
     if req["status"] == "approval":
-        return next((r for r in pending_roles(req) if r in roles), None)
+        return next((r for r in pending_roles(req) if r in roles and r not in pays_only(roles)), None)
     actor = stage_actor(req)
     if actor == "author":
         return "initiator" if "initiator" in roles and is_author(req, user_email) else None
     if actor == "dept_head":  # керівник відділу заявки (або заступник); заступник-автор свою заявку не погоджує
         return actor if heads_department(req, roles) and not is_author(req, user_email) else None
+    if actor in pays_only(roles) and req["status"] != "to_pay":  # «Лише оплачує» — не погоджує
+        return None
     return actor if actor in roles else None
 
 
@@ -348,11 +357,11 @@ def in_queue(req, roles, user_email=""):
     if user_email and self_approval_blocked(req, user_email):
         return False
     if req["status"] == "approval":
-        return any(r in roles for r in pending_roles(req))
+        return any(r in roles and r not in pays_only(roles) for r in pending_roles(req))
     actor = stage_actor(req)
     if actor == "dept_head":
         return heads_department(req, roles)
-    return req["status"] != "to_pay" and actor in APPROVER_ROLES and actor in roles
+    return req["status"] != "to_pay" and actor in APPROVER_ROLES and actor in roles and actor not in pays_only(roles)
 
 
 def can_see_payment_account(roles):
@@ -685,9 +694,12 @@ def can_view(req, roles, user_email):
     # Адміністратор бачить усі заявки (лише перегляд — дії визначаються іншими ролями).
     # Учасник — заявки, до яких його додали (і чернетки теж).
     # Керівник і ті, хто бачить заявки відділу, — заявки свого відділу (крім чернеток).
+    # Бухгалтер «Лише оплачує» — лише «До оплати» й оплачені свого виду (заявок на погодженні не бачить).
     if is_author(req, user_email) or is_participant(req, user_email):
         return True
-    if roles & (ACCOUNTANT_ROLES | {"cfo", "admin"}):
+    if roles & ((ACCOUNTANT_ROLES - pays_only(roles)) | {"cfo", "admin"}):
+        return True
+    if pays_only(roles) and (in_payments(req, roles) or in_paid(req, roles)):
         return True
     return in_department(req, roles)
 

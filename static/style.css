@@ -675,6 +675,35 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
   header nav::-webkit-scrollbar { display: none; }
 }
 
+/* Телефон: розділи — за кнопкою «☰» (base.html), розгортаються вертикальним списком під шапкою */
+.nav-toggle { display: none; }
+@media (max-width: 760px) {
+  header { padding-bottom: 8px; }
+  .nav-toggle { display: inline-flex; align-items: center; justify-content: center; position: relative; flex-shrink: 0;
+    width: 40px; height: 40px; margin-left: -8px; padding: 0; background: none; border: 0; border-radius: 8px;
+    color: var(--header-text); cursor: pointer; }
+  .nav-toggle:hover, .nav-toggle[aria-expanded="true"] { background: #ffffff22; }
+  .nav-toggle-icon, .nav-toggle-icon::before, .nav-toggle-icon::after { display: block; width: 20px; height: 2px;
+    border-radius: 2px; background: currentColor; transition: transform .2s, background-color .2s; }
+  .nav-toggle-icon { position: relative; }
+  .nav-toggle-icon::before, .nav-toggle-icon::after { content: ""; position: absolute; left: 0; }
+  .nav-toggle-icon::before { top: -6px; }
+  .nav-toggle-icon::after { top: 6px; }
+  .nav-toggle[aria-expanded="true"] .nav-toggle-icon { background: transparent; }
+  .nav-toggle[aria-expanded="true"] .nav-toggle-icon::before { transform: translateY(6px) rotate(45deg); }
+  .nav-toggle[aria-expanded="true"] .nav-toggle-icon::after { transform: translateY(-6px) rotate(-45deg); }
+  .nav-toggle-count { position: absolute; top: 1px; right: -2px; min-width: 18px; height: 18px; padding: 0 5px;
+    border-radius: 9px; background: #fff; color: var(--primary); font-size: 11px; font-weight: 700; line-height: 18px; }
+  .nav-toggle[aria-expanded="true"] .nav-toggle-count { display: none; }
+  header nav { display: none; }
+  html.nav-open header nav { display: flex; flex-direction: column; gap: 0; overflow: hidden auto; margin: 4px -16px -8px;
+    padding: 4px 0 8px; border-top: 1px solid #ffffff33; max-height: calc(100vh - 64px); }
+  html.nav-open header nav a { display: flex; align-items: center; justify-content: space-between; min-height: 48px;
+    padding: 0 16px; border-bottom: 0; border-left: 3px solid transparent; font-size: 15px; opacity: .9; }
+  html.nav-open header nav a.active { opacity: 1; border-left-color: var(--header-text); background: #ffffff1a; }
+  html.nav-open header nav a:hover { opacity: 1; background: #ffffff12; }
+}
+
 /* Картка користувача в адмінці */
 .back-link { display: inline-block; margin: 0 0 10px; color: var(--primary); text-decoration: none; font-size: 14px; }
 .back-link:hover { text-decoration: underline; }

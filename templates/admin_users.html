@@ -23,6 +23,10 @@
   <p class="muted" style="margin-top:0">Натисніть на людину, щоб відкрити її картку: там усі налаштування з поясненнями —
     ролі, відділ, керівництво й перегляд відділів, статті бюджету.</p>
 
+  {% for role in no_approver %}
+  <div class="callout orange">{{ ROLES[role] }}: немає жодного, хто погоджує, — усі «Лише оплачує». Заявки цього виду
+    зупиняться на «Перевірка бухгалтера». Відкрийте картку одного з бухгалтерів і виберіть «Погоджує і оплачує».</div>
+  {% endfor %}
   {% set no_email = users | rejectattr('email') | list %}
   {% if no_email %}
   <div class="flash error">
@@ -93,6 +97,7 @@
         <td data-label="Ролі">
           <div class="budget-chips">
             {% for r in role_order if r in u.roles %}<span class="bchip {{ 'bchip-admin' if r == 'admin' else 'bchip-dep' }}">{{ ROLE_SHORT[r] }}</span>{% endfor %}
+            {% if u.acc_mode == 'pay' and u.roles | select('in', ACCOUNTANT_ROLES) | list %}<span class="bchip bchip-none" title="Бухгалтер не погоджує заявки — лише «До оплати»">лише оплачує</span>{% endif %}
             {% for h in head_departments[u.id] %}<span class="bchip bchip-head">Керівник: {{ dept_name(h) }}</span>{% endfor %}
           </div>
         </td>

@@ -66,6 +66,27 @@
       {% endfor %}
     </div>
     {% endfor %}
+    {% set acc_mode = person.acc_mode or 'both' %}
+    <div class="uc-acc-mode" id="uc-acc-mode" {{ 'hidden' if not is_accountant }}>
+      <div class="uc-group-title">Бухгалтер</div>
+      <div class="uc-options">
+        <label class="uc-option">
+          <input type="radio" name="acc_mode" value="both" {{ 'checked' if acc_mode != 'pay' }}>
+          <span><strong>{{ ACC_MODES.both }}</strong>
+            <span class="uc-hint">Бачить вкладки «На погодження» й «До оплати»; отримує сповіщення про погодження й оплату</span></span>
+        </label>
+        <label class="uc-option">
+          <input type="radio" name="acc_mode" value="pay" {{ 'checked' if acc_mode == 'pay' }}>
+          <span><strong>{{ ACC_MODES.pay }}</strong>
+            <span class="uc-hint">Бачить лише вкладку «До оплати» (і свої заявки, якщо він ще й ініціатор); заявок на погодженні
+              не бачить і не погоджує; сповіщення — лише про оплату</span></span>
+        </label>
+      </div>
+    </div>
+    {% for role in no_approver %}
+    <div class="callout orange">{{ ROLES[role] }}: немає жодного, хто погоджує, — усі «Лише оплачує». Заявки
+      цього виду зупиняться на «Перевірка бухгалтера».</div>
+    {% endfor %}
   </section>
 
   <section class="card uc-section" id="uc-department">

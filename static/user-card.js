@@ -49,6 +49,11 @@
     };
     roleBoxes.forEach(b => b.addEventListener('change', sync));
   }
+  // Пункт 1: «Погоджує і оплачує» / «Лише оплачує» — лише коли вибрано роль бухгалтера
+  const accMode = document.getElementById('uc-acc-mode');
+  if (accMode && roleBoxes.length) {
+    roleBoxes.forEach(b => b.addEventListener('change', () => { accMode.hidden = !roleBoxes.some(x => x.checked); }));
+  }
 
   const onec = document.getElementById('uc-onec');
   const onecTypes = document.getElementById('onec-types');

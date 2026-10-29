@@ -113,7 +113,9 @@ def requires(*needed):
                 roles.add("dept_viewer")
             user_directory.remember([{"id": g.user["oid"], "email": email, "name": g.user["name"]}],
                                     active=bool(roles))
-            g.roles = wf.RoleSet(roles, heads, views)
+            # Бухгалтер «Лише оплачує» (картка користувача): бухгалтерськими ролями — лише оплата
+            pay_only = roles & wf.ACCOUNTANT_ROLES if user_roles.acc_mode(uid) == "pay" else ()
+            g.roles = wf.RoleSet(roles, heads, views, pay_only)
             if not g.roles or (needed and not g.roles & set(needed)):
                 return render_template("no_access.html", user_name=g.user["name"], missing=needed), 403
             return view(*args, context=context, **kwargs)
@@ -134,8 +136,8 @@ notifications.admin_emails = lambda: sorted(ADMIN_EMAILS)
 
 def _deciding_roles(roles):
     """Ролі, якими користувач ухвалює рішення. Керівник відділу — лише якщо хоч один його відділ погоджує (налаштування
-    відділу або загальне) чи в черзі вже є заявки, що чекають його рішення."""
-    deciding = set(roles & wf.APPROVER_ROLES)
+    відділу або загальне) чи в черзі вже є заявки, що чекають його рішення. Бухгалтер «Лише оплачує» не погоджує."""
+    deciding = set(roles & wf.APPROVER_ROLES) - wf.pays_only(roles)
     heads = wf.head_deps(roles)
     if "dept_head" in deciding and not any(dept_settings.head_approves(d) for d in heads) \
             and not db.count("queue", wf.RoleSet({"dept_head"}, heads)):
@@ -158,6 +160,8 @@ def _home():
         return url_for("lists.department_requests")
     if g.roles == {"admin"} or ("initiator" not in g.roles and "cfo" in g.roles):
         return url_for("lists.admin_requests")
+    if "initiator" not in g.roles and wf.can_see_payments(g.roles):  # бухгалтер «Лише оплачує»
+        return url_for("payments.to_pay")
     return url_for("requests.requests_list")
 
 

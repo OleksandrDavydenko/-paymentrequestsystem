@@ -210,6 +210,8 @@ def admin_users(*, context):
         user_name=g.user["name"],
         users=sorted(users.values(), key=lambda u: u["name"].lower()),
         role_order=ADMIN_ROLE_ORDER,
+        ACCOUNTANT_ROLES=wf.ACCOUNTANT_ROLES,
+        no_approver=user_roles.accountants_without_approver(),
         external=google_login.is_external,
         me_oid=g.user["oid"],
         user_departments={uid: org_structure.department_of(uid) for uid in users},
@@ -468,6 +470,8 @@ def admin_user_card(user_id, *, context):
         onec_types={u["guid"]: [t["name"] for t in payment_types.types_for_user(u["guid"])]
                     for u in payment_types.onec_users()},
         is_accountant=bool(set(person["roles"]) & wf.ACCOUNTANT_ROLES),
+        ACC_MODES=user_roles.ACC_MODES,
+        no_approver=user_roles.accountants_without_approver(),
     )
 
 
@@ -503,6 +507,14 @@ def _save_user_card(person):
         changes.append("додано ролі: " + ", ".join(added))
     if removed:
         changes.append("знято ролі: " + ", ".join(removed))
+
+    # Бухгалтер: погоджує і оплачує / лише оплачує (поле є, лише коли в картці вибрано роль бухгалтера)
+    mode = f.get("acc_mode")
+    if wanted & wf.ACCOUNTANT_ROLES and mode in user_roles.ACC_MODES and mode != user_roles.acc_mode(uid):
+        user_roles.set_acc_mode(uid, mode, who)
+        changes.append("бухгалтер — " + user_roles.ACC_MODES[mode].lower())
+    if added or removed or mode:
+        notifications.forget_members()  # розсилка — з новим складом ролей одразу
 
     # Відділ співробітника
     known = departments.get_map()
@@ -577,7 +589,7 @@ def _save_user_card(person):
             flash(f"{name} більше не має жодної ролі — доступу до системи немає.", "success")
     else:
         flash("Змін немає", "success")
-    return redirect(url_for("admin.admin_user_card", user_id=uid))
+    return redirect(url_for("admin.admin_user_card", user_id=uid))  # попередження «нікому погоджувати» — у самій картці
 
 
 @bp.route("/admin/notifications")

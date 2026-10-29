@@ -15,8 +15,16 @@
 </head>
 <body>
   <header>
+    {% if user_name %}
+    {% set nav_total = ((queue_count or 0) if is_approver else 0) + ((payments_count or 0) if can_see_payments else 0)
+                       + ((reconcile_count or 0) if ('cfo' in roles or 'admin' in roles) else 0) %}
+    <button type="button" class="nav-toggle" id="nav-toggle" aria-expanded="false" aria-controls="main-nav" aria-label="Меню">
+      <span class="nav-toggle-icon" aria-hidden="true"></span>
+      {% if nav_total %}<span class="nav-toggle-count">{{ nav_total }}</span>{% endif %}
+    </button>
+    {% endif %}
     <a class="brand" href="/"><svg class="brand-logo" viewBox="0 0 80 80" width="28" height="28" aria-hidden="true"><rect width="80" height="80" rx="18" fill="#fff"/><path class="logo-doc" d="M24 16h22l12 12v36a4 4 0 0 1-4 4H24a4 4 0 0 1-4-4V20a4 4 0 0 1 4-4z"/><path class="logo-fold" d="M46 16v10a2 2 0 0 0 2 2h10"/><path d="M29 47l7 7 14-15" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="brand-text"><span class="brand-name">{{ app_name or 'PayDesk' }}</span><span class="brand-sub">заявки на оплату</span></span></a>
-    <nav>
+    <nav id="main-nav">
       {% if 'initiator' in roles or participating_count %}
       <a href="{{ url_for('requests.requests_list') }}" class="{{ 'active' if request.endpoint == 'requests.requests_list' }}">Мої заявки</a>
       {% endif %}
@@ -92,7 +100,7 @@
         requestAnimationFrame(() => {
           const y = scrollY;
           root.classList.toggle('is-scrolled', y > 4);
-          if (!phone.matches || y < 80 || document.querySelector('details.user-menu[open]')) {
+          if (!phone.matches || y < 80 || document.querySelector('details.user-menu[open]') || root.classList.contains('nav-open')) {
             root.classList.remove('header-hidden');
             last = y;
           } else if (Math.abs(y - last) > 12) {  // повільне гортання накопичується, дрібне тремтіння — ні
@@ -107,6 +115,23 @@
     document.addEventListener('click', e => {
       document.querySelectorAll('details.user-menu[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });
     });
+    // Телефон: розділи — кнопкою «☰» вертикальним списком; закривається вибором пункту, кліком поза меню, Esc
+    (function () {
+      const btn = document.getElementById('nav-toggle'), nav = document.getElementById('main-nav');
+      if (!btn || !nav) return;
+      const root = document.documentElement;
+      const isOpen = () => root.classList.contains('nav-open');
+      const set = open => {
+        root.classList.toggle('nav-open', open);
+        btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+        btn.setAttribute('aria-label', open ? 'Закрити меню' : 'Меню');
+      };
+      btn.addEventListener('click', () => set(!isOpen()));
+      nav.addEventListener('click', e => { if (e.target.closest('a')) set(false); });
+      document.addEventListener('click', e => { if (isOpen() && !nav.contains(e.target) && !btn.contains(e.target)) set(false); });
+      document.addEventListener('keydown', e => { if (e.key === 'Escape' && isOpen()) { set(false); btn.focus(); } });
+      matchMedia('(max-width: 760px)').addEventListener('change', () => set(false));
+    })();
   </script>
 </body>
 </html>
