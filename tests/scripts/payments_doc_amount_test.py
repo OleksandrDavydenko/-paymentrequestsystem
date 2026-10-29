@@ -1,6 +1,6 @@
 """Звірка за сумою документа (DocumentAmount у Power BI — шапка списання), а не за сумою рядків «Счета»: рядки можуть
 бути меншими (решта лишається авансом). Без колонки — як раніше, сума рядків. Коли колонка з'являється в Power BI,
-копія платежів перезавантажується один раз."""
+суми документів один раз дописуються в наявну копію легким запитом (без перезавантаження)."""
 import os, sys, tempfile
 sys.path.insert(0, os.getcwd())
 tmp = tempfile.mkdtemp()
@@ -48,8 +48,8 @@ for r in payments.MOCK_ROWS:
 payments.MOCK_ROWS += doc(2, b, [round(amount_b * 0.5, 2)], header=amount_b)                    # рядок 50 %, решта — аванс
 st = payments.sync()
 docs = payments.documents(payments.store().lines_of([f"A{1:031d}", f"A{2:031d}"]))
-check("DocumentAmount appeared: copy reloaded once (state flag), header amount used",
-      st.get("doc_amount") is True and float(docs[f"A{1:031d}"]["amount"]) == amount_a
+check("DocumentAmount appeared: amounts filled into the existing copy once, header amount used",
+      st.get("doc_amount") is True and st.get("doc_amount_filled", 0) >= 2 and float(docs[f"A{1:031d}"]["amount"]) == amount_a
       and float(docs[f"A{1:031d}"]["lines_amount"]) == round(amount_a * 0.8, 2))
 links = payments.store().all_links()
 check("lines smaller than the header (advance): request matched by #number and header amount",
@@ -57,6 +57,6 @@ check("lines smaller than the header (advance): request matched by #number and h
       and f"A{1:031d}" not in payments.store().all_issues())
 rv_before = payments.store().get_state().get("rv")
 payments.sync()
-check("next sync: no second reload", payments.store().get_state().get("doc_amount") is True
+check("next sync: amounts are not filled again", payments.store().get_state().get("doc_amount") is True
       and payments.store().get_state().get("rv") == rv_before)
 print("ALL OK" if ok else "SOME FAILED")

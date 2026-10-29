@@ -1,7 +1,8 @@
 """Платежі з 1С (таблиця Power BI «Payments»): копія в PayDesk, синхронізація змін і зіставлення із заявками.
 
 Рядок таблиці — рядок розшифровки документа списання (банк або каса). Сума для звірки — сума документа (колонка
-DocumentAmount — шапка): рядки «Счета» можуть бути меншими (решта лишається авансом); без цієї колонки — сума рядків. PayDesk тримає копію (SQL-таблиці payments,
+DocumentAmount — шапка): рядки «Счета» можуть бути меншими (решта лишається авансом); без цієї колонки — сума рядків.
+Коли колонка з'являється, суми документів дописуються в наявну копію одним легким запитом (без перезавантаження). PayDesk тримає копію (SQL-таблиці payments,
 payment_links, payment_issues; у тестовому режимі — у пам'яті), перше завантаження — по місяцях від «Звіряти
 платежі з», далі лише змінені документи (RowVersion), раз на добу — перевірка видалених за 90 днів.
 Правила зіставлення — payment_match.py; тут — що робити далі: прив'язати платіж і, якщо для бухгалтера заявки
@@ -94,6 +95,9 @@ def dax(what):
                 f"{col('PaymentDate')} >= {_dax_date(what['since'])}), {col('RowVersion')}, ASC)")
     if what["kind"] == "probe":  # один рядок — які колонки є в таблиці
         return f"EVALUATE TOPN(1, '{t}')"
+    if what["kind"] == "doc_amounts":  # сума документа (шапка) для кожного документа — дописати в наявну копію
+        return (f"EVALUATE DISTINCT(SELECTCOLUMNS(FILTER('{t}', {col('PaymentDate')} >= {_dax_date(what['since'])}), "
+                f"\"PaymentGUID\", {col('PaymentGUID')}, \"DocumentAmount\", {col('DocumentAmount')}))")
     return (f"EVALUATE SELECTCOLUMNS(FILTER('{t}', {col('PaymentDate')} >= {_dax_date(what['since'])}), "
             f"\"PaymentGUID\", {col('PaymentGUID')}, \"LineNo\", {col('LineNo')})")
 
@@ -104,6 +108,9 @@ MOCK_ROWS = [dict(r) for r in db.demo.PAYMENTS]  # демо-платежі й т
 def _mock(what):
     if what["kind"] == "probe":
         return [dict(r) for r in MOCK_ROWS[:1]]
+    if what["kind"] == "doc_amounts":
+        return [{"PaymentGUID": r.get("PaymentGUID"), "DocumentAmount": r.get("DocumentAmount")} for r in MOCK_ROWS
+                if (_date_of(r.get("PaymentDate")) or what["since"]) >= what["since"]]
     rows = []
     for r in MOCK_ROWS:
         d = _date_of(r.get("PaymentDate"))
@@ -190,6 +197,11 @@ class _MemoryStore:
     def keys_since(self, d):
         return {k for k, ln in self.lines.items() if ln["pay_date"] and ln["pay_date"] >= d and not ln["removed"]}
 
+    def set_doc_amounts(self, amounts):
+        for (g, _), ln in self.lines.items():
+            if g in amounts:
+                ln["doc_amount"] = amounts[g]
+
     def mark_removed(self, keys):
         for k in keys:
             self.lines[k]["removed"] = True
@@ -258,15 +270,25 @@ class _SqlStore:
             yield items[i:i + n]
 
     def replace_docs(self, lines):
+        """Документи замінюються порціями по 200 — короткими транзакціями, щоб сторінки, які читають платежі, не
+        чекали на весь місяць завантаження."""
         if not lines:
             return
         now = clock.now()
-        rows = [{**ln, "removed": False, "synced_at": now} for ln in lines]
-        with self._eng().begin() as c:
-            for part in self._chunks({ln["payment_guid"] for ln in lines}):
+        by_guid = {}
+        for ln in lines:
+            by_guid.setdefault(ln["payment_guid"], []).append({**ln, "removed": False, "synced_at": now})
+        for part in self._chunks(by_guid, 200):
+            with self._eng().begin() as c:
                 c.execute(self.P.delete().where(self.P.c.payment_guid.in_(part)))
-            for part in self._chunks(rows):
-                c.execute(self.P.insert(), part)
+                c.execute(self.P.insert(), [row for g in part for row in by_guid[g]])
+
+    def set_doc_amounts(self, amounts):
+        """Дописати суму документа в наявні рядки копії — порціями по 200 документів."""
+        for part in self._chunks(amounts, 200):
+            with self._eng().begin() as c:
+                c.execute(self.P.update().where(self.P.c.payment_guid.in_(part))
+                          .values(doc_amount=sa.case({g: amounts[g] for g in part}, value=self.P.c.payment_guid)))
 
     def keys_since(self, d):
         with self._eng().connect() as c:
@@ -523,6 +545,17 @@ def _has_document_amount():
     return bool(rows) and "DocumentAmount" in rows[0]
 
 
+def _fill_doc_amounts(s, start):
+    """Суми документів із Power BI — у наявну копію (кількість документів)."""
+    amounts = {}
+    for r in _fetch({"kind": "doc_amounts", "since": start}):
+        guid, amount = _guid(r.get("PaymentGUID")), _dec(r.get("DocumentAmount"))
+        if guid and amount is not None:
+            amounts[guid.upper()] = amount
+    s.set_doc_amounts(amounts)
+    return len(amounts)
+
+
 def sync(check_keys=False):
     """Забрати з 1С нові й змінені платежі, (раз на добу) прибрати зниклі, зіставити з заявками.
     Повертає стан синхронізації (для адмінки); помилка Power BI записується в стан, а не кидається."""
@@ -534,8 +567,8 @@ def sync(check_keys=False):
         if state.get("since") != start.isoformat():
             state = {"since": start.isoformat()}  # змінили дату початку — перезавантажити (прив'язки лишаються)
         if not state.get("doc_amount") and _has_document_amount():
-            # у Power BI з'явилася сума документа — перезавантажити копію, щоб вона була й у вже забраних платежах
-            state = {"since": start.isoformat(), "doc_amount": True}
+            # у Power BI з'явилася сума документа — дописати її в уже забрані платежі одним легким запитом
+            state.update(doc_amount=True, doc_amount_filled=_fill_doc_amounts(s, start))
         loaded = 0
         if not state.get("loaded"):
             for a, b in _months(start, now.date()):
