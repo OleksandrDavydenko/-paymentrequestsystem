@@ -1,6 +1,7 @@
 """Платежі з 1С (таблиця Power BI «Payments»): копія в PayDesk, синхронізація змін і зіставлення із заявками.
 
-Рядок таблиці — рядок розшифровки документа списання (банк або каса). PayDesk тримає копію (SQL-таблиці payments,
+Рядок таблиці — рядок розшифровки документа списання (банк або каса). Сума для звірки — сума документа (колонка
+DocumentAmount — шапка): рядки «Счета» можуть бути меншими (решта лишається авансом); без цієї колонки — сума рядків. PayDesk тримає копію (SQL-таблиці payments,
 payment_links, payment_issues; у тестовому режимі — у пам'яті), перше завантаження — по місяцях від «Звіряти
 платежі з», далі лише змінені документи (RowVersion), раз на добу — перевірка видалених за 90 днів.
 Правила зіставлення — payment_match.py; тут — що робити далі: прив'язати платіж і, якщо для бухгалтера заявки
@@ -91,6 +92,8 @@ def dax(what):
     if what["kind"] == "changes":
         return (f"EVALUATE TOPN({PAGE}, FILTER('{t}', {col('RowVersion')} > {int(what['rv'])} && "
                 f"{col('PaymentDate')} >= {_dax_date(what['since'])}), {col('RowVersion')}, ASC)")
+    if what["kind"] == "probe":  # один рядок — які колонки є в таблиці
+        return f"EVALUATE TOPN(1, '{t}')"
     return (f"EVALUATE SELECTCOLUMNS(FILTER('{t}', {col('PaymentDate')} >= {_dax_date(what['since'])}), "
             f"\"PaymentGUID\", {col('PaymentGUID')}, \"LineNo\", {col('LineNo')})")
 
@@ -99,6 +102,8 @@ MOCK_ROWS = [dict(r) for r in db.demo.PAYMENTS]  # демо-платежі й т
 
 
 def _mock(what):
+    if what["kind"] == "probe":
+        return [dict(r) for r in MOCK_ROWS[:1]]
     rows = []
     for r in MOCK_ROWS:
         d = _date_of(r.get("PaymentDate"))
@@ -157,7 +162,7 @@ def parse(r):
             "kind": str(r.get("DocumentKind") or "Bank").strip() or "Bank",
             "doc_number": str(r.get("DocumentNumber") or "").strip()[:50], "pay_date": _date_of(r.get("PaymentDate")),
             "payment_type": _guid(r.get("PaymentTypeGUID")), "counterparty": _guid(r.get("CounterpartyGUID")),
-            "amount": _dec(r.get("Amount")), "currency": _currency(r),
+            "amount": _dec(r.get("Amount")), "doc_amount": _dec(r.get("DocumentAmount")), "currency": _currency(r),
             "item_code": str(r.get("ExpenseItemCode") or "").strip() or None, "department": _guid(r.get("DepartmentGUID")),
             "purpose": str(r.get("Purpose") or "").strip(),
             "posted": pbi_cache.truthy(r.get("IsPosted")) if r.get("IsPosted") is not None else True,
@@ -374,19 +379,22 @@ def documents(lines):
             "guid": ln["payment_guid"], "kind": ln["kind"], "number": ln["doc_number"], "date": ln["pay_date"],
             "payment_type": ln["payment_type"], "currency": ln["currency"], "purpose": ln["purpose"] or "",
             "recipient": ln["recipient"], "operation": ln["operation"], "posted": ln["posted"], "deleted": ln["deleted"],
-            "amount": Decimal(0), "counterparties": [], "items": [], "departments": [], "invoices": [], "lines": 0,
-            "removed_lines": 0})
+            "amount": Decimal(0), "doc_amount": None, "counterparties": [], "items": [], "departments": [], "invoices": [],
+            "lines": 0, "removed_lines": 0})
         if ln.get("removed"):
             d["removed_lines"] += 1
             continue
         d["lines"] += 1
         d["amount"] += Decimal(ln["amount"] or 0)
+        if ln.get("doc_amount") is not None and d["doc_amount"] is None:
+            d["doc_amount"] = Decimal(ln["doc_amount"])
         for key, value in (("counterparties", ln["counterparty"]), ("items", ln["item_code"]),
                            ("departments", ln["department"]), ("invoices", ln["invoice"])):
             if value and value not in d[key]:
                 d[key].append(value)
     for d in docs.values():
-        d["amount"] = d["amount"].quantize(Decimal("0.01"))
+        d["lines_amount"] = d["amount"].quantize(Decimal("0.01"))  # сума рядків «Счета» (менша — решта авансом)
+        d["amount"] = d["doc_amount"].quantize(Decimal("0.01")) if d["doc_amount"] is not None else d["lines_amount"]
         d["active"] = bool(d["posted"] and not d["deleted"] and d["lines"])
     return docs
 
@@ -510,6 +518,11 @@ def _months(start, end):
         first = nxt
 
 
+def _has_document_amount():
+    rows = _fetch({"kind": "probe"})
+    return bool(rows) and "DocumentAmount" in rows[0]
+
+
 def sync(check_keys=False):
     """Забрати з 1С нові й змінені платежі, (раз на добу) прибрати зниклі, зіставити з заявками.
     Повертає стан синхронізації (для адмінки); помилка Power BI записується в стан, а не кидається."""
@@ -520,6 +533,9 @@ def sync(check_keys=False):
     try:
         if state.get("since") != start.isoformat():
             state = {"since": start.isoformat()}  # змінили дату початку — перезавантажити (прив'язки лишаються)
+        if not state.get("doc_amount") and _has_document_amount():
+            # у Power BI з'явилася сума документа — перезавантажити копію, щоб вона була й у вже забраних платежах
+            state = {"since": start.isoformat(), "doc_amount": True}
         loaded = 0
         if not state.get("loaded"):
             for a, b in _months(start, now.date()):
