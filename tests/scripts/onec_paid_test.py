@@ -1,7 +1,7 @@
 """Обробка 1С створила проведену платіжку (posted: true): для бухгалтера в режимі «Автоматично» / «Обидва» заявка
 одразу «Оплачено», у «Вручну» — лише відмітка. Платіжку потім видалили чи розпровели в 1С — при синхронізації зв'язок
 зникає, оплачена нею заявка знову «До оплати», відмітка 1С знімається (обробка знову запропонує платіжку)."""
-import itertools, os, sys, tempfile
+import itertools, os, sys, tempfile, time
 sys.path.insert(0, os.getcwd())
 tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, ADMIN_EMAILS="adm@ftpua.com")
@@ -101,4 +101,27 @@ st = payments.sync()
 req = db.get_request(d["id"])
 check("processing paid, document unposted before linking -> «До оплати»", req["status"] == "to_pay"
       and "onec_order" not in req and req["history"][-1]["action"] == "payment_removed" and d["number"] in st["unpaid_last"])
+
+# ---------- нова платіжка з обробки — синхронізація за пів хвилини; видалили зовсім — помічає звичайна синхронізація
+from web import background
+calls = []
+background._reminders_started, background.SOON_DELAY = True, 0
+background.run_payments_sync = lambda: calls.append(1)
+resp = c.post(f"/api/1c/v1/payment-orders/{e['id']}/created", headers={"X-Api-Key": key},
+              json={"doc_ref": onec_api.ref_1c(G(6)), "doc_number": "ПП-6", "doc_date": today.isoformat(), "posted": True,
+                    "replace": True})
+for _ in range(100):
+    if calls:
+        break
+    time.sleep(0.05)
+background._reminders_started = False
+check("created via API: paid, sync scheduled soon", resp.get_json()["item"]["status"] == "paid" and calls == [1])
+add_doc(6, e)
+payments.sync()
+check("linked", e["id"] in links().get(G(6), {}))
+payments.MOCK_ROWS[:] = [x for x in payments.MOCK_ROWS if x["PaymentGUID"] != G(6)]
+st = payments.sync()
+req = db.get_request(e["id"])
+check("deleted completely in 1C: regular sync -> «До оплати»", req["status"] == "to_pay" and G(6) not in links()
+      and req["history"][-1]["action"] == "payment_removed" and e["number"] in st["unpaid_last"])
 print("ALL OK" if ok else "SOME FAILED")

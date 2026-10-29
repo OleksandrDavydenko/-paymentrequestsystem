@@ -21,7 +21,8 @@
     <form method="post" action="{{ url_for('admin.payments_sync_now') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-sm">⟳ Синхронізувати зараз</button>
       <span class="muted">Сама синхронізація — кожні {{ sync_state.every_minutes }} хв (змінити — нижче, у «Звідки й як часто звіряти»);
-        видалені в 1С платежі — раз на добу.</span>
+        платежі, видалені в 1С зовсім, — щоразу за 14 днів і раз на добу за 90. Платіжку з обробки 1С PayDesk забирає за
+        пів хвилини після створення.</span>
     </form>
   </div>
 </div>

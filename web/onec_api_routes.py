@@ -90,4 +90,7 @@ def payment_order_mark(request_id, action):
     if not isinstance(data, dict):
         data = {}
     req = handlers[action](request_id, data)
+    if action == "created":
+        from web import background
+        background.payments_sync_soon()  # документ — одразу в копію платежів, поки його не видалили
     return {"ok": True, "item": onec_api.order(req, _base())}

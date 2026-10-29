@@ -156,6 +156,29 @@ def kick_payments_sync():
     threading.Thread(target=run, name="payments-sync-kick", daemon=True).start()
 
 
+SOON_DELAY = 30  # секунд після нової платіжки з обробки 1С — до синхронізації
+_soon_lock = threading.Lock()
+
+
+def payments_sync_soon():
+    """Обробка 1С щойно створила платіжку — синхронізувати за SOON_DELAY секунд, не чекаючи розкладу (кілька платіжок
+    поспіль — одна синхронізація): документ одразу потрапить у копію, і звірка помітить, навіть якщо його невдовзі
+    видалять зовсім."""
+    if not _reminders_started or not _soon_lock.acquire(blocking=False):
+        return
+
+    def run():
+        try:
+            time.sleep(SOON_DELAY)
+        finally:
+            _soon_lock.release()
+        try:
+            run_payments_sync()
+        except Exception:
+            logging.getLogger(__name__).exception("Помилка звірки з платежами 1С")
+    threading.Thread(target=run, name="payments-sync-soon", daemon=True).start()
+
+
 def _start_background():
     global _last_base_url, _reminders_started
     _last_base_url = request.host_url.rstrip("/")

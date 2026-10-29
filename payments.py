@@ -4,7 +4,7 @@
 DocumentAmount — шапка): рядки «Счета» можуть бути меншими (решта лишається авансом); без цієї колонки — сума рядків.
 Коли колонка з'являється, суми документів дописуються в наявну копію одним легким запитом (без перезавантаження). PayDesk тримає копію (SQL-таблиці payments,
 payment_links, payment_issues; у тестовому режимі — у пам'яті), перше завантаження — по місяцях від «Звіряти
-платежі з», далі лише змінені документи (RowVersion), раз на добу — перевірка видалених за 90 днів.
+платежі з», далі лише змінені документи (RowVersion) і перевірка зниклих (видалених зовсім) за 14 днів, раз на добу — за 90.
 Правила зіставлення — payment_match.py; тут — що робити далі: прив'язати платіж і, якщо для бухгалтера заявки
 ввімкнено автоматичне «Оплачено» («Налаштування → Звірка з 1С»), позначити заявку оплаченою.
 """
@@ -35,6 +35,7 @@ logger = logging.getLogger(__name__)
 
 PAGE = 5000                 # рядків за один запит змін (з запасом до ліміту Power BI в 1 млн значень)
 KEYS_WINDOW_DAYS = 90       # за скільки днів раз на добу перевіряти, чи не зникли платежі з 1С
+KEYS_RECENT_DAYS = 14       # а за скільки — при кожній синхронізації (платіжку видалили зовсім — зникає з Power BI)
 MATCH_WINDOW_DAYS = 120     # платежі за скільки днів зіставляються з заявками
 REPORT_DAYS = 30            # звіт «Звірка» за замовчуванням і лічильник у меню — за останні 30 днів
 PAY_MODES = ("manual", "auto", "both")
@@ -652,14 +653,17 @@ def sync(check_keys=False):
                 state["rv"] = max([state.get("rv") or 0] + [ln["row_version"] for ln in lines])
                 if len(rows) < PAGE:
                     break
+        # Зниклі з 1С документи (видалені зовсім): щоразу — за останні дні, раз на добу — за 90 днів
         last_keys = state.get("keys_at")
-        if check_keys or not last_keys or now - datetime.fromisoformat(last_keys) > timedelta(hours=23):
-            window = max(start, now.date() - timedelta(days=KEYS_WINDOW_DAYS))
-            present = {(str(r.get("PaymentGUID") or "").strip().upper(), int(r.get("LineNo") or 1))
-                       for r in _fetch({"kind": "keys", "since": window})}
-            gone = s.keys_since(window) - present
-            s.mark_removed(gone)
-            state.update(keys_at=now.isoformat(), removed_last=len(gone))
+        full = check_keys or not last_keys or now - datetime.fromisoformat(last_keys) > timedelta(hours=23)
+        window = max(start, now.date() - timedelta(days=KEYS_WINDOW_DAYS if full else KEYS_RECENT_DAYS))
+        present = {(str(r.get("PaymentGUID") or "").strip().upper(), int(r.get("LineNo") or 1))
+                   for r in _fetch({"kind": "keys", "since": window})}
+        gone = s.keys_since(window) - present
+        s.mark_removed(gone)
+        state.update(removed_last=len(gone))
+        if full:
+            state.update(keys_at=now.isoformat())
         result = run_matching()
         state.update(synced_at=now.isoformat(), error=None, loaded_last=loaded, rows=s.count(),
                      linked_last=result["linked"], paid_last=result["paid"][-20:], unpaid_last=result["unpaid"][-10:],
