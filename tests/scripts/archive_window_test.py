@@ -77,6 +77,14 @@ check("other user's choice is separate (admin chose 'all time')",
 html = c.get("/approvals?view=processed").get_data(as_text=True)
 check("processed: default 12 months", old_no not in numbers(html) and "За весь час" in html)
 check("processed: all time", old_no in numbers(c.get("/approvals?view=processed&period=all").get_data(as_text=True)))
+html = c.get("/approvals?view=processed").get_data(as_text=True)
+check("processed: 'all time' remembered", old_no in numbers(html) and active(html) == "За весь час"
+      and '<input type="hidden" name="period" value="all">' in html)
+check("processed: filter keeps it", old_no in numbers(c.get("/approvals?view=processed&status=paid").get_data(as_text=True)))
+html = c.get("/approvals?view=processed&period=recent").get_data(as_text=True)
+check("processed: back to 12 months, remembered", old_no not in numbers(html) and active(html) == "12 місяців"
+      and old_no not in numbers(c.get("/approvals?view=processed").get_data(as_text=True)))
+check("processed: chip links carry the code", "period=recent" in html and "period=all" in html)
 
 # кілька вибраних значень фільтра не губляться в посиланнях періоду
 login("admin@ftpua.com", ["g-a"])

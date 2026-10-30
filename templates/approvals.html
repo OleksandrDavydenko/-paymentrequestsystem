@@ -25,7 +25,7 @@
   </form>
   {% if view == 'processed' %}
   <div class="period"><div class="chips">
-    <a class="chip {{ 'active' if not all_time }}" href="{{ url_with({'period': None}) }}">12 місяців</a>
+    <a class="chip {{ 'active' if not all_time }}" href="{{ url_with({'period': 'recent'}) }}">12 місяців</a>
     <a class="chip {{ 'active' if all_time }}" href="{{ url_with({'period': 'all'}) }}">За весь час</a>
   </div></div>
   {% endif %}

@@ -6,6 +6,7 @@ from flask import Blueprint, abort, g, redirect, render_template, request, url_f
 import clock
 import departments
 import storage as db
+import user_prefs
 import workflow as wf
 
 from web.auth import login_required, requires
@@ -13,6 +14,7 @@ from web.listing import RECENT_DAYS, _date_filter, _filtered, _in_period, _page,
 
 
 bp = Blueprint("lists", __name__)
+PROCESSED_VIEW = "approvals_processed_period"
 
 
 @bp.route("/approvals")
@@ -25,8 +27,15 @@ def approvals(*, context):
     if view == "accountants" and "cfo" not in g.roles:
         abort(403)
     scope = {"processed": "processed", "accountants": "at_accountants", "queue": "queue"}[view]
-    # «Опрацьовані» — архів рішень: за замовчуванням за останні 12 місяців
-    all_time = request.args.get("period") == "all"
+    # «Опрацьовані» — архів рішень: за замовчуванням за останні 12 місяців; вибір («12 місяців» / «За весь час»)
+    # запам'ятовується за користувачем — і після нового входу, і з іншого пристрою
+    period = request.args.get("period")
+    if view == "processed":
+        if period in ("recent", "all"):
+            user_prefs.set_view(g.user["email"], PROCESSED_VIEW, period)
+        else:
+            period = user_prefs.view(g.user["email"], PROCESSED_VIEW)
+    all_time = period == "all"
     since = None if all_time or view != "processed" else clock.today() - timedelta(days=RECENT_DAYS)
     source = db.scope_rows(scope, g.roles, g.user["email"], period=("decided", since, None) if since else None)
     if since:
