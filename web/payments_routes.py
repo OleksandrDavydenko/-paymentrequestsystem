@@ -12,6 +12,7 @@ import payment_accounts
 import payments
 import request_numbers
 import storage as db
+import user_prefs
 import workflow as wf
 
 from web import background
@@ -190,6 +191,42 @@ def _parse_day(raw, default):
         return default
 
 
+RECONCILE_VIEW = "reconcile_period"
+
+
+def _reconcile_periods(today):
+    """Швидкі періоди «Звірки»: код -> (назва, з, по)."""
+    month_start = today.replace(day=1)
+    prev_end = month_start - timedelta(days=1)
+    yesterday = today - timedelta(days=1)
+    return {"today": ("Сьогодні", today, today), "yesterday": ("Вчора", yesterday, yesterday),
+            "7d": ("7 днів", today - timedelta(days=6), today),
+            "30d": (f"{payments.REPORT_DAYS} днів", today - timedelta(days=payments.REPORT_DAYS), today),
+            "month": ("Цей місяць", month_start, today), "prev_month": ("Минулий місяць", prev_end.replace(day=1), prev_end)}
+
+
+def _reconcile_period(args, today):
+    """(код швидкого періоду або "", з, по). Вибраний швидкий період запам'ятовується за користувачем (user_prefs) —
+    і після нового входу, і з іншого пристрою «Звірка» відкривається з ним; він відносний, тож «Сьогодні» завтра — це
+    завтра. Дати, введені вручну, — лише для цього перегляду. За замовчуванням — 30 днів."""
+    presets = _reconcile_periods(today)
+    period = args.get("period") or ""
+    raw_from, raw_to = _parse_day(args.get("from"), None), _parse_day(args.get("to"), None)
+    if period in presets:
+        _, p_from, p_to = presets[period]
+        # форма шле й дати: змінили їх — це вже свій період
+        if (raw_from or p_from) == p_from and (raw_to or p_to) == p_to:
+            user_prefs.set_view(g.user["email"], RECONCILE_VIEW, period)
+            return period, p_from, p_to
+    elif not raw_from and not raw_to:
+        saved = user_prefs.view(g.user["email"], RECONCILE_VIEW)
+        period = saved if saved in presets else "30d"
+        return period, *presets[period][1:]
+    d_to = raw_to or today
+    d_from = raw_from or d_to - timedelta(days=payments.REPORT_DAYS)
+    return "", min(d_from, d_to), max(d_from, d_to)
+
+
 @bp.route("/payments/reconcile")
 @login_required
 @requires("cfo", "admin")
@@ -199,8 +236,7 @@ def reconcile(*, context):
     today = clock.today()
     a = request.args
     tab = a.get("tab") if a.get("tab") in payments.REPORT_TABS else "unlinked"
-    d_to = _parse_day(a.get("to"), today)
-    d_from = _parse_day(a.get("from"), today - timedelta(days=payments.REPORT_DAYS))
+    period, d_from, d_to = _reconcile_period(a, today)
     pt, q = (a.get("pt") or "").strip(), (a.get("q") or "").strip().lower()
     background.kick_payments_sync()
     data = payments.report(d_from, d_to)
@@ -228,7 +264,8 @@ def reconcile(*, context):
     return render_template(
         "payments_reconcile.html", user_name=g.user["name"], tab=tab, TABS=payments.REPORT_TABS,
         counts={k: len(v) for k, v in shown.items()}, rows=rows[:500], total_rows=len(rows),
-        totals=sorted(totals.items()), d_from=d_from, d_to=d_to, pt=pt, q=a.get("q") or "",
+        totals=sorted(totals.items()), d_from=d_from, d_to=d_to, period=period, periods=_reconcile_periods(today),
+        pt=pt, q=a.get("q") or "",
         period_types=sorted(((i, payment_accounts.label(i)) for i in period_types), key=lambda kv: kv[1].lower()),
         item_departments=payments.item_departments(), can_link=payments.can_link_any(g.roles),
         can_allow="admin" in g.roles, sync=payments.status())

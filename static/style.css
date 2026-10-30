@@ -981,6 +981,7 @@ a.badge { text-decoration: none; }
 .pm-option input { width: auto; margin-top: 3px; }
 .pm-purpose { display: block; font-size: 12px; }
 /* Звіт «Звірка» */
+.rc-periods { margin-bottom: 8px; }
 .reconcile-filters { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
 .reconcile-filters input[type=date] { width: auto; }
 .reconcile-filters select { width: auto; max-width: 280px; }

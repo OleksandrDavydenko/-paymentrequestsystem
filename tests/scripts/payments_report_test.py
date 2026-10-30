@@ -63,6 +63,27 @@ html = page("/payments/reconcile?tab=issues&from=2026-09-01&to=2026-10-31&pt=6")
 check("report: payment type filter", "ОТП-000141" in html and 'value="6" selected' in html
       and "ОТП-000141" not in page("/payments/reconcile?tab=issues&from=2026-09-01&to=2026-10-31&pt=1"))
 
+# ---------- період: швидкі кнопки; вибрана запам'ятовується за користувачем (відносна), свої дати — ні
+import clock
+from datetime import timedelta
+today = clock.today()
+active = lambda html: html.split('class="chip active"')[1].split(">")[1].split("<")[0] if 'class="chip active"' in html else ""
+html = page("/payments/reconcile")
+check("period: default 30 days", active(html) == "30 днів" and f'value="{(today - timedelta(days=30)).isoformat()}"' in html)
+html = page("/payments/reconcile?period=today&tab=linked")
+check("period: today — dates, tiles keep the code", active(html) == "Сьогодні" and f'name="from" value="{today.isoformat()}"' in html
+      and "tab=unlinked&amp;period=today" in html and 'name="period" value="today"' in html)
+check("period: remembered on the next visit", active(page("/payments/reconcile")) == "Сьогодні")
+html = page("/payments/reconcile?from=2026-09-01&to=2026-10-31")
+check("period: own dates — no chip, not remembered", active(html) == "" and 'name="period"' not in html
+      and active(page("/payments/reconcile")) == "Сьогодні")
+html = page(f"/payments/reconcile?period=today&from=2026-09-01&to={today.isoformat()}")
+check("period: dates changed in the form -> own period", active(html) == "" and 'name="from" value="2026-09-01"' in html)
+login("adm@ftpua.com")
+check("period: per user", active(page("/payments/reconcile")) == "30 днів")
+login("cfo@ftpua.com")
+page("/payments/reconcile?period=30d")
+
 # ---------- винятки: вид операції, стаття, відділ статті
 login("adm@ftpua.com")
 html = page("/admin/settings?tab=reconcile")

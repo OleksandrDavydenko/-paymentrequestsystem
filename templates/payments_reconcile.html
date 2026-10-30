@@ -3,7 +3,9 @@
 {% block title %}Звірка платежів{% endblock %}
 
 {% block content %}
-{% set qs = {'from': d_from.isoformat(), 'to': d_to.isoformat(), 'pt': pt, 'q': q} %}
+{# Швидкий період — кодом (запам'ятовується, відносний), свій — датами #}
+{% if period %}{% set qs = {'period': period, 'pt': pt, 'q': q} %}
+{% else %}{% set qs = {'from': d_from.isoformat(), 'to': d_to.isoformat(), 'pt': pt, 'q': q} %}{% endif %}
 {% set TILE_HINTS = {
   'unlinked': 'Платіж є в 1С, а заявки під нього не знайдено. Знайдіть заявку або дозвольте такі платежі.',
   'issues': 'Платіж вказує на заявку, але щось не збігається. Заявка сама не закривається — перевірте.',
@@ -47,8 +49,15 @@
     {% endfor %}
   </nav>
 
+  <div class="chips rc-periods" aria-label="Період">
+    {% for code, (label, _, _) in periods.items() %}
+    <a class="chip {{ 'active' if period == code }}" href="{{ url_with({'period': code, 'from': None, 'to': None}) }}"
+       {{ 'aria-current=true' if period == code }}>{{ label }}</a>
+    {% endfor %}
+  </div>
   <form method="get" class="filters reconcile-filters">
     <input type="hidden" name="tab" value="{{ tab }}">
+    {% if period %}<input type="hidden" name="period" value="{{ period }}">{% endif %}
     <label>З <input type="date" name="from" value="{{ d_from.isoformat() }}"></label>
     <label>по <input type="date" name="to" value="{{ d_to.isoformat() }}"></label>
     <select name="pt" aria-label="Вид оплати" class="{{ 'is-active' if pt }}">

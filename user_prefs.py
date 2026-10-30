@@ -130,6 +130,21 @@ def save(email, enabled, events):
         _write()
 
 
+def view(email, key):
+    """Запам'ятований вибір користувача на сторінці (напр. період «Звірки») — рядок, "" — не вибирав."""
+    with _lock:
+        return ((_load().get((email or "").lower()) or {}).get("views") or {}).get(key) or ""
+
+
+def set_view(email, key, value):
+    with _lock:
+        entry = _load().setdefault((email or "").lower(), {})
+        views = entry.setdefault("views", {})
+        if views.get(key) != value:
+            views[key] = value
+            _write()
+
+
 def _write():
     docstore.write("user_prefs", _path(), _data)
 
