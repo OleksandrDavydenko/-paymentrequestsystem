@@ -101,6 +101,27 @@ def summary(result):
     return "ok", "" if result is None else str(result)[:500]
 
 
+TIMING_LABELS = {"db": "база", "pbi": "Power BI"}
+
+
+def add_timing(kind, seconds):
+    """Звернення до бази чи Power BI під час запиту сторінки — у її підсумок (g.timings): у журналі повільних запитів
+    видно, куди пішов час. Поза запитом (фонові задачі) нічого не робить."""
+    try:
+        from flask import g, has_request_context
+        if has_request_context():
+            timings = g.setdefault("timings", {})
+            n, total = timings.get(kind, (0, 0.0))
+            timings[kind] = (n + 1, total + seconds)
+    except Exception:
+        pass
+
+
+def timing_summary(timings):
+    """«база: 23 запити, 0.4 с · Power BI: 1 запит, 2.1 с»."""
+    return " · ".join(f"{TIMING_LABELS.get(k, k)}: {n} запит(ів), {total:.1f} с" for k, (n, total) in (timings or {}).items())
+
+
 @contextmanager
 def timed(name):
     """Фонова задача: тривалість і підсумок (info["result"] = що повернула) — у журнал; помилка — статус error."""

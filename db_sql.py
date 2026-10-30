@@ -26,6 +26,7 @@ import logging
 import os
 import struct
 import threading
+import time
 from datetime import date, datetime
 from decimal import Decimal
 
@@ -351,10 +352,26 @@ def engine():
                 else:
                     eng = sa.create_engine("mssql+pyodbc://", creator=_azure_connect, future=True,
                                            pool_pre_ping=True, pool_recycle=1800, fast_executemany=False)
+                _count_query_time(eng)
                 import db_schema  # таблиці, нові колонки й індекси (див. db_schema.py)
                 db_schema.upgrade(eng)
                 _engine = eng
     return _engine
+
+
+def _count_query_time(eng):
+    """Час кожного SQL-запиту — у підсумок запиту сторінки (ops_log.add_timing → журнал повільних запитів)."""
+    @sa.event.listens_for(eng, "before_cursor_execute")
+    def _before(conn, cursor, statement, parameters, context, executemany):
+        if context is not None:
+            context._paydesk_t0 = time.monotonic()
+
+    @sa.event.listens_for(eng, "after_cursor_execute")
+    def _after(conn, cursor, statement, parameters, context, executemany):
+        t0 = getattr(context, "_paydesk_t0", None)
+        if t0 is not None:
+            import ops_log
+            ops_log.add_timing("db", time.monotonic() - t0)
 
 
 def reset():

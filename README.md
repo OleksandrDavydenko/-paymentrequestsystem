@@ -34,6 +34,7 @@ Authorized redirect URIs: `https://paydesk.ftp.ua/auth/google/callback`, ста�
 | FLASK_SECRET_KEY | випадковий рядок |
 | REDIRECT_URI | `https://paydesk.ftp.ua/getAToken` |
 | APP_BASE_URL | `https://paydesk.ftp.ua` — адреса сайту в листах і Telegram (фонові задачі) |
+| GUNICORN_CMD_ARGS | `--worker-class=gthread --threads=8 --access-logformat='%(t)s "%(m)s %(U)s" %(s)s %(B)s %(M)sms'` — ті самі параметри, що в `gunicorn.conf.py`: команду запуску на App Service генерує Oryx, і файл там не читається (без цієї змінної — `Using worker: sync`, один запит за раз) |
 | SCM_DO_BUILD_DURING_DEPLOYMENT | `true` |
 
 Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`

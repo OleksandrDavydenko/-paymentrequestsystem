@@ -34,6 +34,32 @@ check("slow request: path without query string", slow and slow[0]["name"] == "GE
       and "SECRET" not in str(slow[0]))
 c.get("/login")
 check("fast request: not recorded", len(rows("slow")) == len(slow))
+ops_log.SLOW_MS = 0
+c.get("/admin/ops-log")  # сторінка, що читає базу: у записі — хто й куди пішов час
+ops_log.SLOW_MS = 10 ** 9
+s2 = rows("slow")[0]
+check("slow request: who" + (" and database time" if db_sql.configured() else ""),
+      s2["name"] == "GET /admin/ops-log" and "adm@ftpua.com" in (s2["detail"] or "")
+      and (not db_sql.configured() or "база:" in s2["detail"]))
+with m.app.test_request_context("/x"):
+    from flask import g
+    ops_log.add_timing("pbi", 1.5)
+    ops_log.add_timing("pbi", 0.5)
+    ops_log.add_timing("db", 0.25)
+    check("timing summary", ops_log.timing_summary(g.timings) == "Power BI: 2 запит(ів), 2.0 с · база: 1 запит(ів), 0.2 с")
+ops_log.add_timing("db", 1)  # поза запитом — нічого
+
+# ---------- токен Power BI: клієнт MSAL — один на процес (не два зайві звернення до Microsoft на кожен запит)
+import expense_items
+made = []
+class FakeMsal:
+    def __init__(self, *a, **kw):
+        made.append(1)
+    def acquire_token_for_client(self, scopes):
+        return {"access_token": "t"}
+expense_items.msal.ConfidentialClientApplication, expense_items._msal_app = FakeMsal, None
+check("PBI token client is created once", expense_items._get_token() == "t" and expense_items._get_token() == "t"
+      and made == [1])
 
 # ---------- фонові задачі
 res = jobs.run("payments_sync", timedelta(minutes=9), lambda: {"loaded_last": 3, "linked_last": 1, "paid_last": ["1"]})

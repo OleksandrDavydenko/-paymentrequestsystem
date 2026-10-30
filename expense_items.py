@@ -99,13 +99,23 @@ def _natural_key(code):
 
 # ---------------------------------------------------------------- Power BI
 
+_msal_app = None
+_msal_lock = threading.Lock()
+
+
 def _get_token():
-    app = msal.ConfidentialClientApplication(
-        os.environ["CLIENT_ID"],
-        authority=f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}",
-        client_credential=os.environ["CLIENT_SECRET"],
-    )
-    result = app.acquire_token_for_client(scopes=PBI_SCOPE)
+    """Токен додатку для Power BI. Клієнт MSAL — один на процес: він сам тримає токен до закінчення строку (~1 год),
+    тож запит до Power BI не ходить щоразу ще й по налаштування тенанта й новий токен (два зайві звернення до Microsoft)."""
+    global _msal_app
+    if _msal_app is None:
+        with _msal_lock:
+            if _msal_app is None:
+                _msal_app = msal.ConfidentialClientApplication(
+                    os.environ["CLIENT_ID"],
+                    authority=f"https://login.microsoftonline.com/{os.environ['TENANT_ID']}",
+                    client_credential=os.environ["CLIENT_SECRET"],
+                )
+    result = _msal_app.acquire_token_for_client(scopes=PBI_SCOPE)
     if "access_token" not in result:
         raise RuntimeError(f"Не вдалося отримати токен Power BI: {result.get('error')}: "
                            f"{(result.get('error_description') or '').splitlines()[0] if result.get('error_description') else ''}")
@@ -149,15 +159,21 @@ def dax_string(value):
 
 
 def query_dax(dax):
-    """Виконати DAX-запит до семантичної моделі; рядки з іменами колонок без префікса таблиці."""
+    """Виконати DAX-запит до семантичної моделі; рядки з іменами колонок без префікса таблиці.
+    Час запиту — у підсумок повільного запиту сторінки (ops_log.add_timing), якщо його зроблено під час запиту."""
+    import ops_log
     group_id = os.environ["PBI_GROUP_ID"]
     dataset_id = os.environ["PBI_DATASET_ID"]
-    resp = requests.post(
-        f"{PBI_API}/groups/{group_id}/datasets/{dataset_id}/executeQueries",
-        headers={"Authorization": f"Bearer {_get_token()}"},
-        json={"queries": [{"query": dax}], "serializerSettings": {"includeNulls": True}},
-        timeout=120,
-    )
+    t0 = time.monotonic()
+    try:
+        resp = requests.post(
+            f"{PBI_API}/groups/{group_id}/datasets/{dataset_id}/executeQueries",
+            headers={"Authorization": f"Bearer {_get_token()}"},
+            json={"queries": [{"query": dax}], "serializerSettings": {"includeNulls": True}},
+            timeout=120,
+        )
+    finally:
+        ops_log.add_timing("pbi", time.monotonic() - t0)
     if not resp.ok:
         raise RuntimeError(_explain_error(resp))
     tables = (resp.json().get("results") or [{}])[0].get("tables") or []
