@@ -16,7 +16,14 @@ copy .env.example .env   # заповнити значення
 - Supported account types: *My organization only* (single tenant)
 - Authentication → Web → Redirect URIs:
   - `http://localhost:5000/getAToken`
-  - `https://paymentrequestsystem-ece9b4b4g0dbe7fu.polandcentral-01.azurewebsites.net/getAToken`
+  - `https://paydesk.ftp.ua/getAToken` (власний домен сайту — основна адреса)
+  - `https://paymentrequestsystem-ece9b4b4g0dbe7fu.polandcentral-01.azurewebsites.net/getAToken` (стара адреса App
+    Service — сайт за нею теж відкривається)
+
+**Google OAuth** (Google Cloud Console → проєкт «Payment Requests» → Credentials → клієнт «Payment Requests web») →
+Authorized redirect URIs: `https://paydesk.ftp.ua/auth/google/callback`, стара адреса App Service з тим самим шляхом і
+`http://localhost:5000/auth/google/callback`. Адресу повернення сайт будує з домену, на який зайшли, тож новий домен
+сайту треба спершу додати сюди (інакше Google: «redirect_uri_mismatch»).
 
 **App Service** → Environment variables:
 | Name | Value |
@@ -25,7 +32,8 @@ copy .env.example .env   # заповнити значення
 | TENANT_ID | Directory (tenant) ID |
 | CLIENT_SECRET | client secret |
 | FLASK_SECRET_KEY | випадковий рядок |
-| REDIRECT_URI | `https://paymentrequestsystem-ece9b4b4g0dbe7fu.polandcentral-01.azurewebsites.net/getAToken` |
+| REDIRECT_URI | `https://paydesk.ftp.ua/getAToken` |
+| APP_BASE_URL | `https://paydesk.ftp.ua` — адреса сайту в листах і Telegram (фонові задачі) |
 | SCM_DO_BUILD_DURING_DEPLOYMENT | `true` |
 
 Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
