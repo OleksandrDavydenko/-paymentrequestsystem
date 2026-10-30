@@ -89,8 +89,11 @@ SMTP, незалежно від «Розсилка увімкнена»; вим�
   помилки за добу.
 - **Лог App Service** — кожен запит з тривалістю (`gunicorn.conf.py`: `accesslog`, шлях без параметрів). Видно в
   «Log stream»; у файли `/home/LogFiles` пишеться, коли ввімкнено «App Service logs → Application logging (File System)».
-- **Перевірка доступності ззовні** — Application Insights (availability test на `https://paydesk.ftp.ua/health`,
-  лист, коли сайт не відповідає). Ловить те, чого сам сайт записати не може: недоступний домен, сертифікат, Azure.
+- **Перевірка доступності** — App Service → Health check (шлях `/health`, щохвилини) і правило оповіщення Azure Monitor
+  `PayDesk-site-down` (група дій `PayDesk-admins`, лист на `od@ftpua.com`): «Health check status» у середньому менше
+  50% за 15 хвилин, тобто сайт не відповідає ~8 хв і довше (перезапуск після деплою — ~1 хв — листа не дає). Ловить
+  те, чого сам сайт записати не може: процес завис чи впав. Проблеми домену чи сертифіката (перевірка йде зсередини
+  Azure) — ні; для них — платний availability test в Application Insights.
 
 ## Тести
 ```
