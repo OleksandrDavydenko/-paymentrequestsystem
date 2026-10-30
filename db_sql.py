@@ -183,6 +183,20 @@ sa.Index("ix_notification_log_at", log_t.c.at)
 sa.Index("ix_notification_log_ref", log_t.c.ref)
 sa.Index("ix_notification_log_request", log_t.c.request_id)
 
+# Журнал роботи сайту (ops_log.py): повільні запити, фонові задачі, старти, помилки — 30 днів
+ops_log_t = sa.Table(
+    "ops_log", metadata,
+    sa.Column("id", sa.Integer, primary_key=True, autoincrement=True),
+    sa.Column("at", sa.DateTime, nullable=False),
+    sa.Column("kind", sa.Unicode(20), nullable=False),        # slow / job / startup / error
+    sa.Column("name", sa.Unicode(200), nullable=False),       # «GET /to-pay», «payments_sync»…
+    sa.Column("duration_ms", sa.Integer),
+    sa.Column("status", sa.Unicode(20)),                      # HTTP-код, ok / error
+    sa.Column("detail", sa.Unicode(1000)),
+    sa.Column("host", sa.Unicode(100)),                       # екземпляр сайту
+)
+sa.Index("ix_ops_log_at", ops_log_t.c.at)
+
 documents_t = sa.Table(
     "documents", metadata,
     sa.Column("name", sa.Unicode(100), primary_key=True),
@@ -608,6 +622,25 @@ def settings_log_query(limit, key=None):
 def log_add(row):
     with engine().begin() as c:
         c.execute(log_t.insert().values(**row))
+
+
+def ops_add(row):
+    with engine().begin() as c:
+        c.execute(ops_log_t.insert().values(**row))
+
+
+def ops_query(limit, kind, since):
+    stmt = sa.select(ops_log_t).where(ops_log_t.c.at >= since).order_by(ops_log_t.c.id.desc()).limit(limit)
+    if kind:
+        stmt = stmt.where(ops_log_t.c.kind == kind)
+    with engine().connect() as c:
+        return [dict(r) for r in c.execute(stmt).mappings().all()]
+
+
+def ops_cleanup(before):
+    """Прибрати записи журналу роботи, старші за before. Повертає кількість."""
+    with engine().begin() as c:
+        return c.execute(ops_log_t.delete().where(ops_log_t.c.at < before)).rowcount
 
 
 def log_update_ref(ref, status, detail, now):

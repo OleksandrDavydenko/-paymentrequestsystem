@@ -592,6 +592,30 @@ def _save_user_card(person):
     return redirect(url_for("admin.admin_user_card", user_id=uid))  # попередження «нікому погоджувати» — у самій картці
 
 
+@bp.route("/admin/ops-log")
+@login_required
+@requires("admin")
+def admin_ops_log(*, context):
+    """Журнал роботи сайту: повільні запити, фонові задачі (звірка з 1С, нагадування), старти, помилки."""
+    import ops_log
+    args = request.args
+    kind = args.get("kind") if args.get("kind") in ops_log.KINDS else ""
+    hours = {"24h": 24, "7d": 24 * 7, "30d": 24 * 30}.get(args.get("period"), 24)
+    rows = ops_log.query(500, kind, hours)
+    day = ops_log.query(2000, "", 24)
+    jobs = [r for r in day if r["kind"] == "job"]
+    sync = next((r for r in jobs if r["name"].startswith("payments_sync")), None)
+    stats = {"slow": sum(1 for r in day if r["kind"] == "slow"), "errors": sum(1 for r in day if r["kind"] == "error"),
+             "job_errors": sum(1 for r in jobs if r["status"] == "error"),
+             "startup": next((r for r in ops_log.query(1, "startup", 24 * 30)), None), "sync": sync,
+             "sync_avg": round(sum(r["duration_ms"] or 0 for r in jobs if r["name"] == "payments_sync")
+                               / max(1, sum(1 for r in jobs if r["name"] == "payments_sync")))}
+    return render_template("admin_ops_log.html", user_name=g.user["name"], rows=rows, kind=kind,
+                           period=args.get("period") if args.get("period") in ("7d", "30d") else "24h",
+                           KINDS=ops_log.KINDS, JOB_NAMES=ops_log.JOB_NAMES, SLOW_S=ops_log.SLOW_MS // 1000,
+                           KEEP_DAYS=ops_log.KEEP_DAYS, stats=stats)
+
+
 @bp.route("/admin/notifications")
 @login_required
 @requires("admin")

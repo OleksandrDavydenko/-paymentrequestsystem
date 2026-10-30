@@ -3,4 +3,5 @@
   <a href="{{ url_for('admin.admin_users') }}" class="tab {{ 'active' if request.endpoint in ('admin.admin_users', 'admin.admin_user_card', 'admin.admin_onec_employees') }}">Користувачі й ролі</a>
   <a href="{{ url_for('admin.admin_settings') }}" class="tab {{ 'active' if request.endpoint in ('admin.admin_settings', 'admin.admin_departments') }}">Налаштування</a>
   <a href="{{ url_for('admin.admin_notifications') }}" class="tab {{ 'active' if request.endpoint == 'admin.admin_notifications' }}">Журнал сповіщень</a>
+  <a href="{{ url_for('admin.admin_ops_log') }}" class="tab {{ 'active' if request.endpoint == 'admin.admin_ops_log' }}">Журнал роботи</a>
 </nav>

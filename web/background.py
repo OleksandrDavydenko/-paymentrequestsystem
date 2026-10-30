@@ -18,6 +18,7 @@ import jobs
 import mailer
 import notifications
 import onec_sync
+import ops_log
 import sessions_db
 import storage as db
 import workflow as wf
@@ -91,11 +92,12 @@ def run_approver_reminders(today=None):
 
 def run_maintenance():
     """Щоденне обслуговування бази: перерахунок похідних колонок заявок (довідники з 1С могли змінитися),
-    прибирання прострочених сеансів і надісланих листів, старших за 30 днів (журнал сповіщень лишається)."""
+    прибирання прострочених сеансів, надісланих листів і записів журналу роботи, старших за 30 днів (журнал сповіщень
+    лишається)."""
     if not db_sql.configured():
         return {}
     return {"reindexed": db.sql.reindex(), "sessions_removed": sessions_db.cleanup(),
-            "mail_removed": db_sql.mail_cleanup(clock.now() - timedelta(days=30))}
+            "mail_removed": db_sql.mail_cleanup(clock.now() - timedelta(days=30)), "ops_removed": ops_log.cleanup()}
 
 
 def _reminder_loop():
@@ -173,7 +175,8 @@ def payments_sync_soon():
         finally:
             _soon_lock.release()
         try:
-            run_payments_sync()
+            with ops_log.timed("payments_sync_soon") as info:
+                info["result"] = run_payments_sync()
         except Exception:
             logging.getLogger(__name__).exception("Помилка звірки з платежами 1С")
     threading.Thread(target=run, name="payments-sync-soon", daemon=True).start()
@@ -181,6 +184,7 @@ def payments_sync_soon():
 
 def _start_background():
     global _last_base_url, _reminders_started
+    ops_log.first_request()  # старт процесу — у журнал роботи (раз на процес)
     _last_base_url = request.host_url.rstrip("/")
     filestore.start_migration()
     if _reminders_started or not (os.environ.get("WEBSITE_SITE_NAME") or os.environ.get("HANDOVER_REMINDERS") == "1"):

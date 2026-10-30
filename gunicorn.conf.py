@@ -14,3 +14,9 @@ workers = 1
 threads = 8
 timeout = 600
 graceful_timeout = 30
+
+# Кожен запит — у лог App Service (Log stream; «App Service logs → Application logging» — у файли /home/LogFiles):
+# час, метод, шлях без параметрів (у них бувають коди входу), код відповіді, розмір і тривалість у мілісекундах.
+# Повільні запити, фонові задачі й старти сайту — ще й в «Адміністрування → Журнал роботи» (ops_log.py).
+accesslog = "-"
+access_log_format = '%(t)s "%(m)s %(U)s" %(s)s %(B)s %(M)sms'

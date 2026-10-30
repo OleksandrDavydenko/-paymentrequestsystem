@@ -20,14 +20,17 @@ OWNER = f"{socket.gethostname()}:{os.getpid()}:{uuid.uuid4().hex[:6]}"
 
 def run(name, every, fn):
     """Виконати fn, якщо цей процес узяв задачу name на проміжок every (timedelta). Повертає результат fn
-    або None, якщо задачу зараз виконує / нещодавно виконав інший процес."""
-    if not db_sql.configured():
-        return fn()
-    now = clock.now()
-    if not db_sql.lease_acquire(name, OWNER, now, now + every):
-        return None
-    logger.info("Фонова задача %s (%s)", name, OWNER)
-    return fn()
+    або None, якщо задачу зараз виконує / нещодавно виконав інший процес. Кожен запуск (тривалість, підсумок,
+    помилка) — у журнал роботи сайту (ops_log)."""
+    if db_sql.configured():
+        now = clock.now()
+        if not db_sql.lease_acquire(name, OWNER, now, now + every):
+            return None
+        logger.info("Фонова задача %s (%s)", name, OWNER)
+    import ops_log
+    with ops_log.timed(name) as info:
+        info["result"] = fn()
+    return info["result"]
 
 
 def status():

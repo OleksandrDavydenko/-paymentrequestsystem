@@ -11,7 +11,11 @@
   web/auth.py, listing.py, request_helpers.py, formatting.py — спільні функції сторінок
   web/context.py, errors.py, background.py — шаблони, обробка помилок, фонові задачі
 """
-import os
+import time
+
+_STARTED = time.monotonic()  # старт процесу — для «Журналу роботи» (скільки завантажувався сайт)
+
+import os  # noqa: E402
 from datetime import date  # noqa: F401  (для сценарних тестів: m.date)
 
 from flask import Flask
@@ -23,7 +27,7 @@ import db_sql
 import sessions_db
 import workflow as wf  # noqa: F401  (для сценарних тестів: m.wf)
 from web import admin_settings, background, context, errors  # noqa: F401  (admin_settings — маршрути в admin_bp)
-from web import security_headers
+from web import request_timing, security_headers
 from web.admin_routes import bp as admin_bp
 from web.api_routes import bp as api_bp
 from web.auth import auth
@@ -52,6 +56,7 @@ if db_sql.configured():  # сеанси входу в базі — спільн�
 # App Service приймає HTTPS на проксі, а до Flask передає HTTP.
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 # Кожна POST-форма має містити csrf_token, fetch-запити — заголовок X-CSRFToken (див. base.html)
+request_timing.init_app(app)  # першим: час запиту включає й перевірки на початку
 csrf = CSRFProtect(app)
 auth.init_app(app)
 
@@ -70,6 +75,11 @@ from web.background import run_approver_reminders, run_handover_reminders, run_m
 from web.formatting import money  # noqa: E402,F401
 from web.listing import _currency_order, date_presets, payment_plan  # noqa: E402,F401
 from web.request_helpers import payer_label  # noqa: E402,F401
+
+import ops_log  # noqa: E402
+
+ops_log.startup_begin(_STARTED)
+ops_log.startup_imported()
 
 if __name__ == "__main__":
     app.run(port=5000, debug=True)

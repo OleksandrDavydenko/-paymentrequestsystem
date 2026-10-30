@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Журнал роботи{% endblock %}
+
+{% block main_class %}wide{% endblock %}
+
+{% block content %}
+{% include "_admin_tabs.html" %}
+{% macro secs(ms) %}{% if ms is not none %}{{ '%.1f' | format(ms / 1000) }} с{% else %}—{% endif %}{% endmacro %}
+<div class="card">
+  <div class="toolbar">
+    <h1 style="margin:0">Журнал роботи сайту</h1>
+  </div>
+  <p class="muted" style="margin-top:0">Що гальмувало й що падало: запити, довші за {{ SLOW_S }} с, кожен запуск фонових
+    задач (звірка з 1С, нагадування, обслуговування) з тривалістю й підсумком, старти сайту (після деплою чи зміни
+    налаштувань у Azure сайт перезапускається — у цей час він не відповідає) і помилки. Записи зберігаються
+    {{ KEEP_DAYS }} днів. Коли сайт недоступний зовсім (домен, сертифікат, Azure), він нічого записати не може — це
+    ловить перевірка доступності в Azure (Application Insights), листом.</p>
+
+  <div class="sync-state">
+    <dl class="sync-facts">
+      <div><dt>Останній старт сайту</dt><dd>{% if stats.startup %}{{ stats.startup.at | dt }} — {{ secs(stats.startup.duration_ms) }}{% else %}—{% endif %}</dd></div>
+      <div><dt>Остання звірка з 1С</dt><dd>{% if stats.sync %}{{ stats.sync.at | dt }} — {{ secs(stats.sync.duration_ms) }}{% if stats.sync.status == 'error' %} · <span class="err">помилка</span>{% endif %}{% else %}—{% endif %}</dd></div>
+      <div><dt>Звірка в середньому (24 год)</dt><dd>{{ secs(stats.sync_avg) if stats.sync else '—' }}</dd></div>
+      <div><dt>Повільних запитів (24 год)</dt><dd>{{ stats.slow }}</dd></div>
+      <div><dt>Помилок (24 год)</dt><dd>{{ stats.errors + stats.job_errors }}</dd></div>
+    </dl>
+  </div>
+
+  <form method="get" class="filters filters-row">
+    <select name="kind" onchange="this.form.submit()" aria-label="Що показати" class="{{ 'is-active' if kind }}">
+      <option value="">Усе</option>
+      {% for code, label in KINDS.items() %}<option value="{{ code }}" {{ 'selected' if kind == code }}>{{ label }}</option>{% endfor %}
+    </select>
+    <select name="period" onchange="this.form.submit()" aria-label="Період" class="{{ 'is-active' if period != '24h' }}">
+      <option value="24h" {{ 'selected' if period == '24h' }}>За 24 години</option>
+      <option value="7d" {{ 'selected' if period == '7d' }}>За 7 днів</option>
+      <option value="30d" {{ 'selected' if period == '30d' }}>За 30 днів</option>
+    </select>
+    {% if kind or period != '24h' %}<a class="btn btn-sm reset-filters" href="{{ url_for('admin.admin_ops_log') }}">✕ Скинути</a>{% endif %}
+  </form>
+  <div class="table-wrap">
+  <table class="stack sortable" id="ops-log">
+    <thead><tr><th>Час</th><th>Що</th><th>Деталі</th><th class="num">Тривалість</th><th>Результат</th><th>Сервер</th></tr></thead>
+    <tbody>
+    {% for r in rows %}
+      {% set bad = r.status == 'error' or (r.status and r.status[:1] == '5') %}
+      <tr>
+        <td data-label="Час" data-sort="{{ r.at.isoformat() if r.at }}">{{ r.at | dt }}</td>
+        <td data-label="Що"><span class="badge {{ 'red' if r.kind == 'error' else 'amber' if r.kind == 'slow' else 'blue' if r.kind == 'startup' else 'grey' }}">{{ KINDS.get(r.kind, r.kind) }}</span>
+          {{ JOB_NAMES.get(r.name, r.name) if r.kind == 'job' else r.name }}</td>
+        <td data-label="Деталі" class="muted">{{ r.detail or '' }}</td>
+        <td data-label="Тривалість" class="num" data-sort="{{ r.duration_ms or 0 }}">{{ secs(r.duration_ms) }}</td>
+        <td data-label="Результат">{% if bad %}<span class="badge red">{{ 'помилка' if r.status == 'error' else r.status }}</span>{% elif r.status %}<span class="badge green">{{ 'гаразд' if r.status == 'ok' else r.status }}</span>{% endif %}</td>
+        <td data-label="Сервер" class="muted">{{ r.host or '' }}</td>
+      </tr>
+    {% else %}
+      <tr><td colspan="6" class="empty">Записів немає{{ ' за вибраними фільтрами' if kind or period != '24h' }}. Журнал ведеться з моменту оновлення системи.</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</div>
+{% endblock %}

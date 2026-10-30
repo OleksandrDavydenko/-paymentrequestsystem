@@ -423,8 +423,10 @@ def onec_api_key(*, context):
 @requires("admin")
 def payments_sync_now(*, context):
     """«Синхронізувати зараз»: забрати платежі з 1С, перевірити видалені й зіставити з заявками."""
+    import ops_log
     import payments
-    state = payments.sync(check_keys=True)
+    with ops_log.timed("payments_sync_now") as info:
+        state = info["result"] = payments.sync(check_keys=True)
     if state.get("busy"):
         flash("Синхронізація вже йде — оновіть сторінку за хвилину", "success")
     elif state.get("error"):

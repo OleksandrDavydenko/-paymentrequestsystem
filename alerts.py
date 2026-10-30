@@ -62,7 +62,13 @@ def recipients():
 
 def report(exc, where, user=None, base_url=None):
     """Повідомити адміністраторів про помилку exc (where — «GET /requests/5» або «фонова задача …»).
-    Ніколи не кидає винятків. Повертає список адрес, кому поставлено лист."""
+    Ніколи не кидає винятків. Повертає список адрес, кому поставлено лист. Помилка завжди йде й у журнал роботи
+    сайту (ops_log), навіть коли листи вимкнено."""
+    try:
+        import ops_log
+        ops_log.record("error", where, None, "error", f"{type(exc).__name__}: {exc}")
+    except Exception:
+        logger.exception("Не вдалося записати помилку в журнал роботи")
     try:
         if not app_settings.get("error_alerts"):
             return []
