@@ -66,20 +66,29 @@ class CachedTable:
             return None, None
 
     def refresh(self):
-        """Завантажити з Power BI зараз (синхронно). Повертає True, якщо вдалося."""
+        """Завантажити з Power BI зараз (синхронно). Повертає True, якщо вдалося. Тривалість (окремо — запит до
+        Power BI й розбір) — у журнал роботи сайту: великі довідники (контрагенти) навантажують процес."""
+        import ops_log
         with self._lock:
             if not expense_items._configured():
                 self._state.update(items=self.mock(), loaded_at=time.time(), source="mock", updated=None, error=None)
                 return True
+            t0 = time.monotonic()
             try:
-                items = self.parse(self.fetch(self.table) if self.fetch else expense_items.query_table(self.table))
+                rows = self.fetch(self.table) if self.fetch else expense_items.query_table(self.table)
+                t1 = time.monotonic()
+                items = self.parse(rows)
                 if not items:
                     raise RuntimeError(f"Power BI повернув порожню таблицю «{self.table}» або в ній немає потрібних колонок")
                 updated = clock.now().isoformat(timespec="seconds")
                 self._state.update(items=items, loaded_at=time.time(), source="powerbi", updated=updated, error=None)
                 self._save_copy(items, updated)
+                ops_log.record("job", f"Довідник з Power BI: {self.table}", (time.monotonic() - t0) * 1000, "ok",
+                               f"рядків {len(items)} · запит {t1 - t0:.1f} с · розбір і збереження {time.monotonic() - t1:.1f} с")
                 return True
             except Exception as e:  # мережа, права, формат — показуємо в адмінці
+                ops_log.record("job", f"Довідник з Power BI: {self.table}", (time.monotonic() - t0) * 1000, "error",
+                               f"{type(e).__name__}: {e}")
                 logger.exception("Помилка завантаження довідника %s з Power BI", self.key)
                 self._state["error"] = str(e)
                 self._state["loaded_at"] = time.time()

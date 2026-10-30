@@ -335,10 +335,15 @@ def _token():
 
 
 def _azure_connect():
+    import ops_log
     import pyodbc
+    t0 = time.monotonic()
     conn_str = (f"Driver={{{_driver()}}};Server=tcp:{os.environ['SQL_SERVER']},1433;"
                 f"Database={os.environ['SQL_DATABASE']};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30")
-    return pyodbc.connect(conn_str, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: _token()})
+    try:
+        return pyodbc.connect(conn_str, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: _token()})
+    finally:
+        ops_log.add_timing("db_connect", time.monotonic() - t0)  # нове з'єднання (з токеном Entra) — у підсумок запиту
 
 
 def engine():

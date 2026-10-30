@@ -1,0 +1,12 @@
+{# Картка заявки, «Прив'язати платіж з 1С вручну»: варіанти платежів (payments.payment_options, вантажиться при відкритті) #}
+{% for p in link_candidates %}
+<label class="pm-option {{ 'is-best' if p.score == 3 }}">
+  <input type="radio" name="payment_guid" value="{{ p.guid }}" required>
+  <span><strong>{{ p.amount | money }} {{ p.currency }}</strong> · {{ p.date | d }} · {{ 'каса' if p.kind == 'Cash' else 'банк' }} № {{ p.number }}
+    {% for cp in p.counterparties %} · {{ cp_name(cp) }}{% endfor %}
+    {% if p.score >= 2 %}<span class="badge green">той самий контрагент</span>{% endif %}
+    <span class="muted pm-purpose">{{ p.purpose | truncate(120) }}</span></span>
+</label>
+{% else %}
+<p class="muted pm-empty">Неприв'язаних платежів у {{ req.currency }} за 60 днів немає.</p>
+{% endfor %}

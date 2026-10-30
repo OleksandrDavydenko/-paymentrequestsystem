@@ -26,7 +26,8 @@ logger = logging.getLogger(__name__)
 
 SLOW_MS = 3000          # запит, довший за 3 с, — у журнал
 KEEP_DAYS = 30
-KINDS = {"slow": "Повільний запит", "job": "Фонова задача", "startup": "Старт сайту", "error": "Помилка"}
+KINDS = {"slow": "Повільний запит", "job": "Фонова задача", "startup": "Старт сайту", "error": "Помилка",
+         "profile": "Профіль запиту"}
 JOB_NAMES = {"payments_sync": "Звірка з платежами 1С", "payments_sync_now": "Звірка з 1С («Синхронізувати зараз»)",
              "payments_sync_soon": "Звірка з 1С (після платіжки з обробки)", "handover_reminders": "Нагадування про готівку",
              "approver_reminders": "Нагадування погоджувачам", "onec_sync": "Довідники з 1С",
@@ -101,7 +102,7 @@ def summary(result):
     return "ok", "" if result is None else str(result)[:500]
 
 
-TIMING_LABELS = {"db": "база", "pbi": "Power BI"}
+TIMING_LABELS = {"db": "база", "db_connect": "нові з'єднання з базою", "pbi": "Power BI"}
 
 
 def add_timing(kind, seconds):

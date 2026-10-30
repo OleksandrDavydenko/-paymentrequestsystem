@@ -15,7 +15,7 @@ import storage as db
 import workflow as wf
 
 from web import background
-from web.auth import login_required, requires
+from web.auth import _load_visible, login_required, requires
 from web.listing import _date_filter, _filtered, _in_period, _page, _ref_keys, currency_totals, date_presets, payment_plan, recent_presets
 from web.formatting import money
 from web.request_helpers import _pay_guard, _try_live_link
@@ -248,6 +248,18 @@ def payment_link_candidates(*, context):
                        "author": b["author"], "pay_date": fmt(b["pay_date"]), "by_number": b["by_number"],
                        "same_cp": b["same_cp"], "same_amount": b["same_amount"],
                        "url": url_for("requests.request_card", request_id=b["id"])} for b in found]}
+
+
+@bp.route("/requests/<int:request_id>/payment-options")
+@login_required
+@requires(*wf.ACCOUNTANT_ROLES, "cfo", "admin")
+def payment_options(request_id, *, context):
+    """Картка заявки, «Прив'язати платіж з 1С вручну»: список неприв'язаних платежів (HTML) — вантажиться лише при
+    відкритті кнопки, бо це тисячі рядків розшифровки платежів за 60 днів."""
+    req = _load_visible(request_id)
+    if not payments.can_pick(req, g.roles):
+        abort(403)
+    return render_template("request/_payment_options.html", req=req, link_candidates=payments.link_candidates(req))
 
 
 @bp.route("/payments/allow", methods=["POST"])

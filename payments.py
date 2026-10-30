@@ -216,8 +216,9 @@ class _MemoryStore:
         for k in keys:
             self.lines[k]["removed"] = True
 
-    def lines_since(self, d):
-        return [dict(ln) for ln in self.lines.values() if ln["pay_date"] and ln["pay_date"] >= d]
+    def lines_since(self, d, currency=None):
+        return [dict(ln) for ln in self.lines.values() if ln["pay_date"] and ln["pay_date"] >= d
+                and (currency is None or ln["currency"] == currency)]
 
     def lines_of(self, guids):
         return [dict(ln) for k, ln in self.lines.items() if k[0] in guids]
@@ -317,8 +318,9 @@ class _SqlStore:
         with self._eng().connect() as c:
             return [dict(r._mapping) for r in c.execute(sa.select(self.P).where(where))]
 
-    def lines_since(self, d):
-        return self._select(self.P.c.pay_date >= d)
+    def lines_since(self, d, currency=None):
+        where = self.P.c.pay_date >= d
+        return self._select(where if currency is None else sa.and_(where, self.P.c.currency == currency))
 
     def lines_of(self, guids):
         out = []
@@ -923,11 +925,18 @@ def can_link_any(roles):
                 or ("accountant" in who and set(roles) & wf.ACCOUNTANT_ROLES))
 
 
+def can_pick(req, roles):
+    """Картка заявки: кнопка «Прив'язати платіж з 1С вручну» — «До оплати», бухгалтер заявки в режимі «Автоматично»
+    чи «Обидва» і користувач може прив'язувати. Сам список (link_candidates) вантажиться лише при відкритті кнопки."""
+    return bool(req.get("id") and req["status"] == "to_pay" and pay_mode(wf.accountant_role(req)) in ("auto", "both")
+                and can_link(req, roles))
+
+
 def link_candidates(req, days=60):
     """Неприв'язані платежі у валюті заявки за останні days днів — для вибору вручну: спершу той самий контрагент
-    і сума, далі новіші."""
+    і сума, далі новіші. Тисячі рядків розшифровки — тому не в самій картці, а окремим запитом (can_pick)."""
     s = store()
-    docs = documents(s.lines_since(max(since(), clock.today() - timedelta(days=days))))
+    docs = documents(s.lines_since(max(since(), clock.today() - timedelta(days=days)), req.get("currency") or ""))
     links, amount = s.all_links(), Decimal(req.get("amount") or 0)
     out = []
     for d in docs.values():

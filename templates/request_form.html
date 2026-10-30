@@ -136,7 +136,7 @@
 </div>
 {% endif %}
 
-{% if pay_marker or payment_links or link_candidates %}
+{% if pay_marker or payment_links or can_pick_payment %}
 {% set MATCH_LABELS = {"number": "за #номером у призначенні", "auto": "за сумою й контрагентом", "manual": "прив'язано вручну"} %}
 <div class="card pay-match" id="pay-match">
   {% for p in payment_links %}
@@ -157,7 +157,7 @@
     — тоді платіж з 1С сам знайде цю заявку{{ ' і позначить її оплаченою' if pay_auto in ('auto', 'both') }}.
     {% if pay_auto == 'auto' %}<span class="muted">Кнопки «Оплачено» немає: статус ставиться автоматично.</span>{% endif %}</div>
   {% endif %}
-  {% if link_candidates %}
+  {% if can_pick_payment %}
   <details class="pm-pick">
     <summary class="btn btn-sm">Прив'язати платіж з 1С вручну</summary>
     <form method="post" action="{{ url_for('payments.payment_link') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -165,18 +165,9 @@
       <p class="muted" style="margin:6px 0">Платіж не знайшовся сам (немає #номера, інша сума чи контрагент)? Виберіть його:
         неприв'язані платежі у {{ req.currency }} за 60 днів, спершу того самого контрагента й суми. Заявка стане оплаченою.</p>
       <input type="search" class="pm-search" placeholder="Пошук: № документа, призначення" aria-label="Пошук платежу" autocomplete="off">
-      <div class="pm-list">
-        {% for p in link_candidates %}
-        <label class="pm-option {{ 'is-best' if p.score == 3 }}">
-          <input type="radio" name="payment_guid" value="{{ p.guid }}" required>
-          <span><strong>{{ p.amount | money }} {{ p.currency }}</strong> · {{ p.date | d }} · {{ 'каса' if p.kind == 'Cash' else 'банк' }} № {{ p.number }}
-            {% for cp in p.counterparties %} · {{ cp_name(cp) }}{% endfor %}
-            {% if p.score >= 2 %}<span class="badge green">той самий контрагент</span>{% endif %}
-            <span class="muted pm-purpose">{{ p.purpose | truncate(120) }}</span></span>
-        </label>
-        {% endfor %}
-      </div>
-      <button type="submit" class="btn btn-primary btn-sm">Прив'язати й позначити оплаченою</button>
+      {# Список — окремим запитом при першому відкритті: тисячі рядків платежів не гальмують саму картку #}
+      <div class="pm-list" data-url="{{ url_for('payments.payment_options', request_id=req.id) }}"><p class="muted">Завантаження платежів…</p></div>
+      <button type="submit" class="btn btn-primary btn-sm" disabled>Прив'язати й позначити оплаченою</button>
     </form>
   </details>
   {% endif %}
@@ -721,7 +712,21 @@ refresh();
   input.addEventListener('blur', () => setTimeout(() => { list.hidden = true; }, 150));
 })();
 
-// Ручна прив'язка платежу: пошук у списку
+// Ручна прив'язка платежу: список вантажиться при першому відкритті, далі — пошук у ньому
+document.querySelectorAll('.pm-pick').forEach(box => box.addEventListener('toggle', async () => {
+  const list = box.querySelector('.pm-list');
+  if (!box.open || list.dataset.loaded) return;
+  list.dataset.loaded = '1';
+  try {
+    const r = await fetch(list.dataset.url, {headers: {'X-Requested-With': 'fetch'}});
+    if (!r.ok || r.redirected) throw new Error(r.status);  // redirected — сесія закінчилась (сторінка входу)
+    list.innerHTML = await r.text();
+    box.querySelector('button[type=submit]').disabled = !list.querySelector('.pm-option');
+  } catch (e) {
+    delete list.dataset.loaded;  // наступне відкриття — ще спроба
+    list.innerHTML = '<p class="muted">Не вдалося завантажити платежі. Закрийте й відкрийте ще раз.</p>';
+  }
+}));
 document.querySelectorAll('.pm-search').forEach(s => s.addEventListener('input', () => {
   const q = s.value.trim().toLowerCase();
   s.closest('form').querySelectorAll('.pm-option').forEach(o => { o.hidden = q && !o.textContent.toLowerCase().includes(q); });

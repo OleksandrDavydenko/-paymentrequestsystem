@@ -155,12 +155,17 @@ check("unlink: link removed, history entry, status kept", G(7) not in payments.s
 # ---------- картка: вибір платежу вручну (режим «Автоматично»)
 login("res@ftpua.com")
 html = page("/requests/12")
-check("card: manual pick lists USD payments, same counterparty first", "Прив'язати платіж з 1С вручну" in html
-      and html.find("ОТП-000141") > 0 and 'value="pay"' not in html)
+check("card: manual pick button, the list is not in the card itself", "Прив'язати платіж з 1С вручну" in html
+      and 'data-url="/requests/12/payment-options"' in html and 'class="pm-option' not in html and 'value="pay"' not in html)
+opts = page("/requests/12/payment-options")
+first = (opts.split('class="pm-option')[1:] or [""])[0].split("</label>")[0]
+check("pick list (on open): USD payments only, same counterparty first", "ОТП-000141" in first and "той самий контрагент" in first
+      and " UAH" not in opts and "USD" in opts)
 c.post("/payments/link", data={"payment_guid": G(3), "request_id": "12"})
 check("accountant picks the #12 payment -> paid, issue cleared", status(12) == "paid" and G(3) not in payments.store().all_issues())
 app_settings.set("payment_link_roles", ["admin"], "t")
-check("accountant not in link roles -> no pick list", "Прив'язати платіж з 1С вручну" not in page("/requests/16"))
+check("accountant not in link roles -> no pick list", "Прив'язати платіж з 1С вручну" not in page("/requests/16")
+      and c.get("/requests/16/payment-options").status_code == 403)
 
 # ---------- тестовий режим: демо-коди, яких немає в живому довіднику 1С, показуються назвами з демо-довідника
 app_settings.set("data_mode", "test", "t")
