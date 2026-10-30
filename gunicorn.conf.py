@@ -1,9 +1,10 @@
 """Налаштування gunicorn для локального запуску (`gunicorn app:app` читає цей файл з поточної папки).
 
-На App Service цей файл НЕ читається: команду запуску генерує Oryx (`Using worker: sync` у лозі — ознака, що
-налаштування не діють). Там ті самі параметри задано змінною App Service `GUNICORN_CMD_ARGS` (README, «Налаштування
-Azure»): gunicorn читає її за будь-якої команди запуску, і вона має пріоритет над файлом конфігурації. Змінюючи щось
-тут, змініть і її.
+На App Service цей файл НЕ читається: команду запуску генерує Oryx, і власний GUNICORN_CMD_ARGS він теж перезаписує.
+Там процеси й потоки задано змінними App Service PYTHON_ENABLE_GUNICORN_MULTIWORKERS=true,
+PYTHON_GUNICORN_CUSTOM_WORKER_NUM=1, PYTHON_GUNICORN_CUSTOM_THREAD_NUM=8 (README, «Налаштування Azure»); у лозі запуску
+має бути `Using worker: gthread`. Змінюючи workers / threads тут, змініть і їх. Формат рядка лога (нижче) на App
+Service не діє — повільні запити з тривалістю видно в «Журналі роботи».
 
 Один процес з кількома потоками: запити обробляються паралельно — поки одна сторінка чекає на базу,
 Power BI чи Microsoft Graph, інші не стоять у черзі (з воркером sync — один запит за раз: усі, зокрема Health check

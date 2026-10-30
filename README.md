@@ -34,10 +34,15 @@ Authorized redirect URIs: `https://paydesk.ftp.ua/auth/google/callback`, ста�
 | FLASK_SECRET_KEY | випадковий рядок |
 | REDIRECT_URI | `https://paydesk.ftp.ua/getAToken` |
 | APP_BASE_URL | `https://paydesk.ftp.ua` — адреса сайту в листах і Telegram (фонові задачі) |
-| GUNICORN_CMD_ARGS | `--worker-class=gthread --threads=8 --access-logformat='%(t)s "%(m)s %(U)s" %(s)s %(B)s %(M)sms'` — ті самі параметри, що в `gunicorn.conf.py`: команду запуску на App Service генерує Oryx, і файл там не читається (без цієї змінної — `Using worker: sync`, один запит за раз) |
+| PYTHON_ENABLE_GUNICORN_MULTIWORKERS | `true` — інакше App Service не бере дві змінні нижче |
+| PYTHON_GUNICORN_CUSTOM_WORKER_NUM | `1` — один процес (`gunicorn.conf.py`: чому) |
+| PYTHON_GUNICORN_CUSTOM_THREAD_NUM | `8` — потоки: запити обробляються паралельно |
 | SCM_DO_BUILD_DURING_DEPLOYMENT | `true` |
 
-Startup command: `gunicorn --bind=0.0.0.0 --timeout 600 app:app`
+Startup command — порожня: команду запуску gunicorn генерує Oryx (`Generating gunicorn command for 'app:app'` у лозі).
+Файл `gunicorn.conf.py` там не читається, а власний `GUNICORN_CMD_ARGS` Oryx перезаписує своїм — тому кількість процесів
+і потоків задається лише трьома змінними `PYTHON_*` вище. Перевірка — у лозі запуску (Kudu, `LogFiles/*_default_docker.log`):
+`Using worker: gthread`; `Using worker: sync` означає один запит за раз (усі, зокрема Health check, чекають у черзі).
 
 ## Структура коду
 - `app.py` — лише створення й налаштування додатку (gunicorn `app:app`).
@@ -91,8 +96,8 @@ SMTP, незалежно від «Розсилка увімкнена»; вим�
   Довідники з Power BI (контрагенти тощо) — окремими записами: рядків, запит, розбір.
 - **Профіль сторінки** — адміністратор відкриває її з `?_profile=1` (наприклад, `/requests/2?_profile=1`): у журналі
   («Профіль запиту») — функції, що забрали найбільше часу, повний звіт cProfile — у Kudu, `/home/LogFiles/paydesk-profiles`.
-- **Лог App Service** — кожен запит з тривалістю (`gunicorn.conf.py`: `accesslog`, шлях без параметрів). Видно в
-  «Log stream»; у файли `/home/LogFiles` пишеться, коли ввімкнено «App Service logs → Application logging (File System)».
+- **Лог App Service** — кожен запит (стандартний рядок gunicorn, без тривалості: формат з `gunicorn.conf.py` на App
+  Service не діє) і старти сайту. Видно в «Log stream» і в Kudu, `LogFiles/*_default_docker.log`.
 - **Перевірка доступності** — App Service → Health check (шлях `/health`, щохвилини) і правило оповіщення Azure Monitor
   `PayDesk-site-down` (група дій `PayDesk-admins`, лист на `od@ftpua.com`): «Health check status» у середньому менше
   50% за 15 хвилин, тобто сайт не відповідає ~8 хв і довше (перезапуск після деплою — ~1 хв — листа не дає). Ловить
