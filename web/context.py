@@ -11,6 +11,7 @@ import holidays
 import notifications
 import organizations
 import payment_accounts
+import request_numbers
 import settings_schema
 import storage as db
 import workflow as wf
@@ -100,7 +101,8 @@ def inject_roles():
 
 def init_app(app):
     """Фільтри, глобальні функції й змінні для всіх шаблонів."""
-    for name, fn in (("money", money), ("d", fmt_date), ("dt", fmt_datetime), ("filesize", filesize)):
+    for name, fn in (("money", money), ("d", fmt_date), ("dt", fmt_datetime), ("filesize", filesize),
+                     ("reqno", request_numbers.label)):  # номер заявки для людей: префікс і нулі з налаштувань
         app.add_template_filter(fn, name)
     for fn in (url_with, visible_history, abs_static):
         app.add_template_global(fn)

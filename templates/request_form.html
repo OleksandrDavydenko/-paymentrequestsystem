@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 
-{% block title %}{{ 'Заявка № ' ~ req.number if req.number else 'Нова заявка' }}{% endblock %}
+{% block title %}{{ 'Заявка № ' ~ (req.number | reqno) if req.number else 'Нова заявка' }}{% endblock %}
 
 {% macro select_ref(name, items, selected, placeholder) -%}
   <select id="{{ name }}" name="{{ name }}" class="{{ 'invalid' if errors[name] }}">
@@ -42,7 +42,7 @@
 
 <div class="card req-head">
   <div class="title-row">
-    <h1>{% if req.number %}Заявка № {{ req.number }}{% else %}Нова заявка на оплату{% endif %}</h1>
+    <h1>{% if req.number %}Заявка № {{ req.number | reqno }}{% else %}Нова заявка на оплату{% endif %}</h1>
     <span class="badge {{ st[1] }}">{{ st[0] }}</span>
     {% if handover_pending %}<a href="#handover" class="badge amber" title="Автор ще не підтвердив, що передав готівку підряднику">⏳ передачу готівки не підтверджено</a>
     {% elif handover_done %}<span class="badge green" title="Передано {{ handover.date | d }}">✓ готівку передано підряднику</span>{% endif %}
@@ -241,7 +241,7 @@
     <button type="submit" name="action" value="withdraw" class="btn btn-orange">{{ ACTIONS['withdraw'][0] }}</button>
     {% endif %}
     <button type="submit" name="action" value="cancel" class="btn btn-red"
-            onclick="return confirm('Скасувати заявку № {{ req.number }}? Її не можна буде відправити знову.')">{{ ACTIONS['cancel'][0] }}</button>
+            onclick="return confirm('Скасувати заявку № {{ req.number | reqno }}? Її не можна буде відправити знову.')">{{ ACTIONS['cancel'][0] }}</button>
   </div>
 </form>
 {% endif %}
@@ -352,7 +352,7 @@
 <details class="card admin-status" id="admin-status" {{ 'open' if admin_comment }}>
   <summary><h2>Адміністратор: змінити статус</h2><span class="muted">поточний — {{ STATUSES[req.status][0] }}</span></summary>
   <form method="post" action="{{ url_for('requests.admin_change_status', request_id=req.id) }}"
-        data-msg="Змінити статус заявки № {{ req.number }}?" onsubmit="return confirm(this.dataset.msg)"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
+        data-msg="Змінити статус заявки № {{ req.number | reqno }}?" onsubmit="return confirm(this.dataset.msg)"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="version" value="{{ req.version or 0 }}">
     <p class="muted">Для виправлення помилок, наприклад якщо заявка помилково потрапила до оплати.
       Зміна записується в історію погодження разом із причиною.</p>
     <div class="admin-status-row">

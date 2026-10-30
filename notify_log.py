@@ -71,8 +71,11 @@ def update_ref(ref, status, detail=None):
 
 
 def query(limit=300, channel="", status="", q="", request_id=None):
-    """Найновіші записи з фільтрами: channel (email/telegram), status (problems/skipped/код), q (пошта або № заявки)."""
+    """Найновіші записи з фільтрами: channel (email/telegram), status (problems/skipped/код), q (пошта або № заявки —
+    у будь-якому вигляді: 123, #123, PD000123)."""
+    import request_numbers
     q = (q or "").strip().lower()
+    q = request_numbers.parse_query(q) or q
     if db_sql.configured():
         rows = db_sql.log_query(limit, channel, status, q, request_id, PROBLEMS)
     else:

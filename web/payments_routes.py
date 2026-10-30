@@ -10,6 +10,7 @@ import counterparties
 import notifications
 import payment_accounts
 import payments
+import request_numbers
 import storage as db
 import workflow as wf
 
@@ -89,7 +90,7 @@ def to_pay(*, context):
                  and r["id"] not in blocked and r["id"] not in no_account and r["id"] not in auto},
         # Мої заявки до оплати, які зараз не можна оплатити, — з причиною
         locked={r["id"]: ("Контрагента ще немає в 1С — оплату заблоковано" if r["id"] in blocked
-                          else f"«Оплачено» поставиться автоматично за платежем з 1С — у призначенні вкажіть #{int(r['number'])}"
+                          else f"«Оплачено» поставиться автоматично за платежем з 1С — у призначенні вкажіть {request_numbers.marker(r['number'])}"
                           if r["id"] in auto
                           else "Не вибрано «Вид оплати» — відкрийте заявку й виберіть рахунок або касу")
                 for r in rows if view == "to_pay" and wf.acting_role(r, roles, g.user["email"])
@@ -153,21 +154,21 @@ def to_pay_bulk(*, context):
         if not req:
             continue
         if not payments.manual_pay_allowed(req):  # режим «Автоматично» — «Оплачено» ставить звірка з 1С
-            skipped.append(req["number"])
+            skipped.append(request_numbers.label(req["number"]))
             continue
         try:
             _try_live_link(req, g.user, wf.history_role(req, g.roles, g.user["email"]))
             wf.apply_action(req, "pay", g.roles, g.user, comment, guard=_pay_guard(req))
         except wf.WorkflowError:
-            skipped.append(req["number"])
+            skipped.append(request_numbers.label(req["number"]))
             continue
         try:
             db.save_request(req)
         except db.StaleRequestError:  # заявку щойно змінив хтось інший
-            skipped.append(req["number"])
+            skipped.append(request_numbers.label(req["number"]))
             continue
         notifications.notify("pay", req, g.user)
-        paid.append(req["number"])
+        paid.append(request_numbers.label(req["number"]))
     if paid:
         flash(f"Позначено оплаченими: {', '.join('№ ' + n for n in paid)}", "success")
     if skipped:
@@ -215,7 +216,8 @@ def reconcile(*, context):
             return True
         hay = " ".join([d["number"] or "", d["purpose"] or "", d.get("operation") or ""]
                        + [counterparties.name(c) for c in d["counterparties"]]
-                       + [f"{r['number']} {r['counterparty']}" for r in d.get("requests") or []])
+                       + [f"{r['number']} {request_numbers.label(r['number'])} #{int(r['number'])} {r['counterparty']}"
+                          for r in d.get("requests") or []])
         return q in hay.lower()
 
     shown = {k: [d for d in v if keep(d)] for k, v in data.items()}
@@ -241,7 +243,7 @@ def payment_link_candidates(*, context):
     if not doc:
         abort(404)
     fmt = lambda d: d.strftime("%d.%m.%Y") if d else ""
-    return {"items": [{"id": b["id"], "number": b["number"], "status": b["status_label"], "status_color": b["status_color"],
+    return {"items": [{"id": b["id"], "number": b["number"], "label": request_numbers.label(b["number"]), "status": b["status_label"], "status_color": b["status_color"],
                        "counterparty": b["counterparty"], "amount": money(b["amount"]), "currency": b["currency"],
                        "author": b["author"], "pay_date": fmt(b["pay_date"]), "by_number": b["by_number"],
                        "same_cp": b["same_cp"], "same_amount": b["same_amount"],
@@ -287,10 +289,12 @@ def payment_link(*, context):
     """Прив'язати платіж з 1С до заявки вручну (з картки заявки або зі звірки за номером заявки)."""
     guid = (request.form.get("payment_guid") or "").strip().upper()
     raw = (request.form.get("request_id") or "").strip()
-    number = (request.form.get("request_number") or "").strip().lstrip("#")
+    number = (request.form.get("request_number") or "").strip()
     request_id = int(raw) if raw.isdigit() else None
-    if request_id is None and number.isdigit():
-        request_id = db.ids_by_numbers([f"{int(number):09d}"]).get(f"{int(number):09d}")
+    # Номер заявки — у будь-якому вигляді: 123, 000123, #123, PD123, PD-000123
+    canon = request_numbers.parse_query(number) or (request_numbers.canonical(number) if number.isdigit() and int(number) else None)
+    if request_id is None and canon:
+        request_id = db.ids_by_numbers([canon]).get(canon)
     if not guid or not request_id:
         flash("Вкажіть платіж і номер заявки", "error")
         return redirect(_next_url(url_for("payments.reconcile")))
@@ -299,7 +303,7 @@ def payment_link(*, context):
     except wf.WorkflowError as e:
         flash(str(e), "error")
         return redirect(_next_url(url_for("payments.reconcile")))
-    flash(f"Платіж прив'язано до заявки № {req['number']}" + (" — заявку позначено оплаченою" if req["status"] == "paid" else ""),
+    flash(f"Платіж прив'язано до заявки № {request_numbers.label(req['number'])}" + (" — заявку позначено оплаченою" if req["status"] == "paid" else ""),
           "success")
     return redirect(_next_url(url_for("requests.request_card", request_id=request_id)))
 

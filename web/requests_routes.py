@@ -20,6 +20,7 @@ import org_structure
 import organizations
 import payment_accounts
 import payments
+import request_numbers
 import settings_schema
 import storage as db
 import user_budget
@@ -112,7 +113,7 @@ def invoices_for_request(*, context):
     except invoices.InvoicesError as e:
         return {"invoices": [], "error": str(e) + ". Спробуйте ще раз трохи згодом."}
     usage = db.invoice_usage(cp, [i["number"] for i in found], rid)
-    return {"invoices": [{**i, "used_in": usage.get(i["number"], [])} for i in found],
+    return {"invoices": [{**i, "used_in": [request_numbers.label(n) for n in usage.get(i["number"], [])]} for i in found],
             "department": departments.get_name(dept)}
 
 
@@ -277,7 +278,7 @@ def request_card(request_id=None, *, context):
             if action == "submit":
                 wf.apply_action(req, "submit", roles, user, **_route_settings(req))
             new_id = db.save_request(req)
-            number = db.get_request(new_id)["number"]
+            number = request_numbers.label(db.get_request(new_id)["number"])
             for email in added_participants:
                 notifications.notify("participant_add", db.get_request(new_id), user, target=email)
             if action == "submit":
@@ -337,7 +338,7 @@ def _render_card(req, existing, errors, user, roles, budget_items, contractor_li
         can_attach=req["id"] is not None and wf.can_attach(req, roles, user["email"]),
         # «Оплачено» вручну — лише якщо для бухгалтера заявки не ввімкнено режим «Автоматично» (звірка з 1С)
         actions=[a for a in available if a != "submit" and (a != "pay" or payments.manual_pay_allowed(req))],
-        pay_marker=f"#{int(req['number'])}" if req.get("number") and req["status"] == "to_pay"
+        pay_marker=request_numbers.marker(req['number']) if req.get("number") and req["status"] == "to_pay"
         and wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES else None,
         pay_auto=payments.pay_mode(wf.accountant_role(req)) if req.get("id") else "manual",
         payment_links=payments.links_of_request(req["id"]) if req.get("id") and req["status"] in ("to_pay", "paid") else [],
@@ -480,7 +481,7 @@ def request_handover(request_id, *, context):
                 abort(403)
             wf.confirm_handover(req, g.user, g.roles, _parse_date(request.form.get("date")),
                                 request.form.get("comment"))
-            message = f"Заявка № {req['number']}: передачу готівки підряднику підтверджено"
+            message = f"Заявка № {request_numbers.label(req['number'])}: передачу готівки підряднику підтверджено"
     except wf.WorkflowError as e:
         flash(str(e), "error")
         return redirect(back)
@@ -633,7 +634,7 @@ def request_action(request_id, *, context):
         return redirect(url_for("requests.request_card", request_id=request_id))
     db.save_request(req)
     notifications.notify(action, req, g.user)
-    flash(f"Заявка № {req['number']}: {wf.ACTIONS[action][1].lower()}", "success")
+    flash(f"Заявка № {request_numbers.label(req['number'])}: {wf.ACTIONS[action][1].lower()}", "success")
     return redirect(url_for("payments.to_pay") if action == "pay" or request.form.get("next") == "to_pay"
                     else url_for("lists.approvals"))
 
@@ -659,7 +660,7 @@ def author_action(request_id, *, context):
         return redirect(url_for("requests.request_card", request_id=request_id) + "#author-actions")
     db.save_request(req)
     notifications.notify(action, req, g.user, comment=comment, before=before)
-    flash(f"Заявка № {req['number']}: " + ("відкликано — виправте й відправте на погодження знову"
+    flash(f"Заявка № {request_numbers.label(req['number'])}: " + ("відкликано — виправте й відправте на погодження знову"
                                           if action == "withdraw" else "скасовано"), "success")
     return redirect(url_for("requests.request_card", request_id=request_id))
 
@@ -716,7 +717,7 @@ def admin_change_status(request_id, *, context):
         flash(str(e), "error")
         session["admin_comment"] = request.form.get("comment", "")
         return redirect(url_for("requests.request_card", request_id=request_id) + "#admin-status")
-    flash(f"Заявка № {req['number']}: статус змінено на «{wf.STATUSES[new_status][0]}»", "success")
+    flash(f"Заявка № {request_numbers.label(req['number'])}: статус змінено на «{wf.STATUSES[new_status][0]}»", "success")
     return redirect(url_for("requests.request_card", request_id=request_id))
 
 

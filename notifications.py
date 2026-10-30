@@ -18,6 +18,7 @@ import departments
 import dept_settings
 import mailer
 import notify_log
+import request_numbers
 import org_structure
 import secret_box
 import telegram_notify
@@ -152,7 +153,7 @@ def telegram_text(args):
     """Коротка версія листа для Telegram (HTML-розмітка Telegram)."""
     esc = html_lib.escape
     req = args["req"]
-    lines = [f"<b>Заявка № {esc(req['number'])}</b> — {esc(args['headline'])}"]
+    lines = [f"<b>Заявка № {esc(request_numbers.label(req['number']))}</b> — {esc(args['headline'])}"]
     if args.get("event") == "handover_reminder":
         lines.append(f"Ви отримали готівку {args.get('handover_days', 0)} дн. тому — підтвердіть передачу підряднику.")
     elif args.get("actor") and args["actor"].get("name"):
@@ -332,7 +333,7 @@ def _notify(event, req, actor, comment, target=None, before=None):
 
     for email, (pref, reason, subject_tail) in recipients.items():
         handover_ask = event == "pay" and wf.needs_handover(req) and email == req["author_email"].lower()
-        _send(email, f"Заявка № {req['number']}: {subject_tail}", {
+        _send(email, f"Заявка № {request_numbers.label(req['number'])}: {subject_tail}", {
             "req": req,
             "event": event,
             "handover_ask": handover_ask,
@@ -347,10 +348,10 @@ def _notify(event, req, actor, comment, target=None, before=None):
             if os.environ.get("APP_BASE_URL") else url_for("settings.notification_settings", _external=True),
         })
     for who, why in skipped.items():
-        notify_log.record("-", who, "skipped", f"Заявка № {req['number']}: {notify_log.EVENT_LABELS.get(event, event)}",
+        notify_log.record("-", who, "skipped", f"Заявка № {request_numbers.label(req['number'])}: {notify_log.EVENT_LABELS.get(event, event)}",
                           req.get("id"), req.get("number"), event, detail=why)
     if not recipients and not skipped:
-        notify_log.record("-", "", "skipped", f"Заявка № {req['number']}: {notify_log.EVENT_LABELS.get(event, event)}",
+        notify_log.record("-", "", "skipped", f"Заявка № {request_numbers.label(req['number'])}: {notify_log.EVENT_LABELS.get(event, event)}",
                           req.get("id"), req.get("number"), event, detail="для цієї події одержувачів немає")
     return list(recipients)
 
@@ -376,11 +377,11 @@ def send_approver_reminder(req, days):
     sent = []
     for email, reason in recipients.items():
         if not user_prefs.get(email)["enabled"] or not user_prefs.wants(email, "task_reminder"):
-            notify_log.record("-", email, "skipped", f"Заявка № {req['number']}: нагадування погоджувачу", req.get("id"),
+            notify_log.record("-", email, "skipped", f"Заявка № {request_numbers.label(req['number'])}: нагадування погоджувачу", req.get("id"),
                               req.get("number"), "approver_reminder", detail=f"{reason}, але нагадування вимкнено в налаштуваннях")
             continue
         try:
-            _send(email, f"Заявка № {req['number']}: {SUBJECTS['approver_reminder']} {days} дн.", {
+            _send(email, f"Заявка № {request_numbers.label(req['number'])}: {SUBJECTS['approver_reminder']} {days} дн.", {
                 "req": req, "event": "approver_reminder", "handover_ask": False, "handover_days": days,
                 "actor": wf.SYSTEM_USER, "comment": "", "status": wf.STATUSES[req["status"]][0],
                 "headline": f"Заявка чекає вашого рішення {days} дн.", "reason": reason, "link": _link(req),
@@ -400,7 +401,7 @@ def send_handover_reminder(req, days):
     if not enabled() or test_mode():  # нагадування про готівку в тестовому режимі — ніколи
         return False
     try:
-        _send(req["author_email"], f"Заявка № {req['number']}: {SUBJECTS['handover_reminder']}", {
+        _send(req["author_email"], f"Заявка № {request_numbers.label(req['number'])}: {SUBJECTS['handover_reminder']}", {
             "req": req,
             "event": "handover_reminder",
             "handover_ask": True,

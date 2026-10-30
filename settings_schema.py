@@ -266,6 +266,10 @@ _LIST = [
     Setting("no_self_approval", "Автор не може погоджувати свою заявку", "approval", "bool", False,
             marker="no_self_approval_sent"),
     # ---- Заявка
+    # Номер заявки для людей (request_numbers.py): префікс і нулі — лише показ, у базі номер той самий
+    Setting("request_prefix", "Префікс номера заявки", "request", "text", ""),
+    Setting("request_digits", "Цифр у номері заявки (з нулями попереду)", "request", "int", 9, min=1, max=9),
+    Setting("request_prefix_history", "Колишні префікси номера заявки", "request", "json", [], managed=True),
     Setting("org_field_mode", "Що вибирає ініціатор у заявці", "request", "choice", "organization", _wf("ORG_FIELD_MODES")),
     Setting("req_document", "Документ (рахунок) перед відправкою", "request", "choice", "no", _doc_modes),
     Setting("req_document_limit", "Документ обов'язковий від суми", "request", "int", 1000, min=1, max=10**9),

@@ -22,6 +22,7 @@ import expense_items
 import organizations
 import payment_accounts
 import payment_types
+import request_numbers
 import storage as db
 import workflow as wf
 
@@ -90,8 +91,9 @@ def _ref(guid, **extra):
 
 
 def purpose(req):
-    """Призначення платежу: рахунки й договори (або стаття), в кінці — #номер заявки для звірки з платежами 1С."""
-    marker = f"#{int(req['number'])}" if req.get("number") else ""
+    """Призначення платежу: рахунки й договори (або стаття), в кінці — позначка заявки для звірки з платежами 1С
+    (PD000123 або #123 — request_numbers.marker)."""
+    marker = request_numbers.marker(req.get("number"))
     lines = req.get("lines") or []
     invoices = [f"№ {ln['invoice']}" for ln in lines if ln.get("invoice")]
     deals = list(dict.fromkeys(ln["deal"] for ln in lines if ln.get("deal")))
@@ -126,7 +128,10 @@ def order(req, base_url=""):
     emp = employees.by_email(req.get("author_email"))  # співробітник 1С — кому видають готівку
     o = req.get("onec_order") or {}
     return {
-        "request_id": req["id"], "number": req["number"], "marker": f"#{int(req['number'])}",
+        # number — як у базі (000000123); number_label — для людей (PD000123); marker — що писати в Примечание;
+        # markers — усі позначки (нові й колишні), за якими шукати вже створену платіжку
+        "request_id": req["id"], "number": req["number"], "number_label": request_numbers.label(req["number"]),
+        "marker": request_numbers.marker(req["number"]), "markers": request_numbers.markers(req["number"]),
         "status": req["status"], "status_name": wf.STATUSES.get(req["status"], (req["status"],))[0],
         "payment_form": req.get("payment_form"), "pay_date": req["pay_date"].isoformat() if req.get("pay_date") else None,
         "amount": f"{req.get('amount') or 0:.2f}", "currency": req.get("currency"),
@@ -260,7 +265,7 @@ def mark_created(request_id, data):
                 and req["status"] in ("to_pay", "paid"):
             return False  # повторний виклик
         if req["status"] != "to_pay":
-            raise ApiError(f"Заявка № {req['number']} не «До оплати» ({wf.STATUSES[req['status']][0]}) — платіжку не створюють")
+            raise ApiError(f"Заявка № {request_numbers.label(req['number'])} не «До оплати» ({wf.STATUSES[req['status']][0]}) — платіжку не створюють")
         if o.get("state") == "created" and not data.get("replace"):
             raise ApiError(f"Для заявки вже створено платіжку № {o.get('doc_number')} — передайте replace: true, "
                            "якщо її замінили новою")

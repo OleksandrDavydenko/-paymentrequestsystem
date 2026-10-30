@@ -43,7 +43,7 @@
         <td data-label="Час" data-sort="{{ r.at.isoformat() if r.at }}">{{ r.at | dt }}</td>
         <td data-label="Канал">{{ CHANNEL_LABELS.get(r.channel, r.channel) }}</td>
         <td data-label="Кому">{{ r.recipient or '—' }}</td>
-        <td data-label="Заявка">{% if r.request_id %}<a href="{{ url_for('requests.request_card', request_id=r.request_id) }}">{{ r.request_number }}</a>{% else %}—{% endif %}</td>
+        <td data-label="Заявка">{% if r.request_id %}<a href="{{ url_for('requests.request_card', request_id=r.request_id) }}">{{ r.request_number | reqno }}</a>{% else %}—{% endif %}</td>
         <td data-label="Подія" title="{{ r.subject }}">{{ EVENT_LABELS.get(r.event, r.subject or r.event or '—') }}</td>
         <td data-label="Результат"><span class="badge {{ st[1] }}">{{ st[0] }}</span></td>
         <td data-label="Деталі" class="muted">{{ r.detail or '' }}</td>

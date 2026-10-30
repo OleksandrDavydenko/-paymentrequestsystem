@@ -75,7 +75,9 @@ def payment_checks():
     except ValueError:
         return _error("since — дата у форматі РРРР-ММ-ДД", 400)
     items = onec_api.checks(since, _base())
-    return {"ok": True, "since": since.isoformat(), "count": len(items), "items": items}
+    # prefixes — префікси номера заявки (поточний і колишні): обробка шукає «PD000123» у примечаннях, не лише «#123»
+    return {"ok": True, "since": since.isoformat(), "count": len(items), "items": items,
+            "prefixes": onec_api.request_numbers.all_prefixes()}
 
 
 @bp.route("/payment-orders/<int:request_id>")

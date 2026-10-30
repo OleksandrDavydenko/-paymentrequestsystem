@@ -28,6 +28,7 @@ import expense_items
 import notifications
 import payment_match
 import pbi_cache
+import request_numbers
 import storage as db
 import workflow as wf
 
@@ -949,14 +950,14 @@ def request_candidates(guid, roles, q="", days=60, limit=50):
     taken = {rid for v in s.all_links().values() for rid in v}
     ids = [i for i in db.payment_candidate_ids(clock.today() - timedelta(days=days)) if i not in taken]
     wanted = set(payment_match.numbers_in(doc["purpose"]))
-    q = (q or "").strip().lower().lstrip("#")
+    q = (q or "").strip()
     out = []
     for req in db.get_many(ids).values():
         if req.get("currency") != doc["currency"] or req["status"] not in ("to_pay", "paid") or not can_link(req, roles):
             continue
         b = _brief(req)
-        if q and q not in " ".join([b["number"], str(int(b["number"])), b["counterparty"], b["author"],
-                                    f"{b['amount']:.2f}", b["expense_code"]]).lower():
+        if q and not request_numbers.matches(q, b["number"]) and q.lower().lstrip("#") not in " ".join(
+                [b["counterparty"], b["author"], f"{b['amount']:.2f}", b["expense_code"]]).lower():
             continue
         b.update(by_number=b["number"] in wanted, same_cp=bool(b["counterparty_id"]) and b["counterparty_id"] in doc["counterparties"],
                  same_amount=abs(b["amount"] - doc["amount"]) < Decimal("0.01"))
@@ -1008,9 +1009,9 @@ def link_manual(guid, request_id, user, roles):
     if not can_link(req, roles):
         raise wf.WorkflowError("Прив'язувати платежі до цієї заявки вам не дозволено («Налаштування → Інтеграція з 1С»)")
     if req["status"] not in ("to_pay", "paid"):
-        raise wf.WorkflowError(f"Заявка № {req['number']} не «До оплати» й не оплачена — платіж прив'язати не можна")
+        raise wf.WorkflowError(f"Заявка № {request_numbers.label(req['number'])} не «До оплати» й не оплачена — платіж прив'язати не можна")
     if req.get("currency") != doc["currency"]:
-        raise wf.WorkflowError(f"Платіж у {doc['currency']}, а заявка № {req['number']} — у {req.get('currency')}")
+        raise wf.WorkflowError(f"Платіж у {doc['currency']}, а заявка № {request_numbers.label(req['number'])} — у {req.get('currency')}")
     s.add_link(guid, request_id, "manual", user["name"])
     if req["status"] == "to_pay":
         if not _pay(request_id, doc, user=user):

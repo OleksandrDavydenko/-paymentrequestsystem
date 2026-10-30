@@ -88,7 +88,7 @@
 
         {% if tab == 'linked' %}
         <td data-label="Заявка">{% for r in d.requests %}
-          <div class="rc-req"><a href="{{ url_for('requests.request_card', request_id=r.id) }}"><strong>№ {{ r.number }}</strong></a>
+          <div class="rc-req"><a href="{{ url_for('requests.request_card', request_id=r.id) }}"><strong>№ {{ r.number | reqno }}</strong></a>
             <span class="badge {{ r.status_color }}">{{ r.status_label }}</span>
             <div class="muted">{{ r.match_label }}{{ ' — ' ~ r.by_name if r.match == 'manual' and r.by_name }}</div>
             {% if r.paid_here %}<div class="rc-ok">✓ «Оплачено» поставив PayDesk за цим платежем</div>
@@ -99,7 +99,7 @@
         {% elif tab == 'issues' %}
         <td data-label="Що не так"><span class="badge amber rc-issue">{{ d.issue_label }}</span>
           {% for r in d.requests %}
-          <div class="rc-req"><a href="{{ url_for('requests.request_card', request_id=r.id) }}"><strong>№ {{ r.number }}</strong></a>
+          <div class="rc-req"><a href="{{ url_for('requests.request_card', request_id=r.id) }}"><strong>№ {{ r.number | reqno }}</strong></a>
             <span class="badge {{ r.status_color }}">{{ r.status_label }}</span>
             <div class="rc-compare">у заявці: <strong>{{ r.amount | money }} {{ r.currency }}</strong> · {{ r.counterparty or '—' }}</div>
             <div class="rc-compare muted">у платежі: {{ d.amount | money }} {{ d.currency }} · {% for cp in d.counterparties %}{{ cp_name(cp) }}{{ ', ' if not loop.last }}{% else %}—{% endfor %}</div></div>
@@ -213,7 +213,7 @@
         const radio = el('input'); radio.type = 'radio'; radio.name = 'request_id'; radio.value = it.id;
         radio.addEventListener('change', () => { submit.disabled = false; });
         const main = el('span', 'rc-opt-main');
-        const num = el('a', null, `№ ${it.number}`); num.href = it.url; num.target = '_blank'; num.rel = 'noopener';
+        const num = el('a', null, `№ ${it.label || it.number}`); num.href = it.url; num.target = '_blank'; num.rel = 'noopener';
         main.append(num, ' ', el('span', `badge ${it.status_color}`, it.status), ' ', el('span', 'rc-opt-cp', it.counterparty),
                     ' ', el('strong', null, `${it.amount} ${it.currency}`));
         const meta = el('span', 'muted rc-opt-meta', [it.author, it.pay_date && `оплата ${it.pay_date}`].filter(Boolean).join(' · '));

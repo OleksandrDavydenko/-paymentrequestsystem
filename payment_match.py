@@ -1,18 +1,19 @@
 """Зіставлення платежу з 1С із заявками PayDesk (чисті функції; дані готує payments.py).
 
 Порядок:
-  1. «#номер» у призначенні платежу (#5 → заявка 000000005; кілька номерів — один платіж на кілька заявок).
+  1. Номер заявки в призначенні платежу — після «#» або з префіксом (#5, PD000005, PD-5 → заявка 000000005;
+     request_numbers.numbers_in; кілька номерів — один платіж на кілька заявок).
      Заявку прив'язуємо, лише якщо збігаються валюта, сума (документа = сумі заявок) і — для безготівки —
      контрагент; інакше розбіжність, заявка не закривається.
   2. Без «#» — за реквізитами: валюта й сума, контрагент (для готівки — або одержувач-автор заявки), вид оплати
      (якщо вже вибраний у заявці), дата платежу між відправкою заявки й «датою оплати» + 45 днів.
      Один кандидат — прив'язка, кілька — розбіжність «неоднозначно», жодного — платіж без заявки.
 """
-import re
 from datetime import timedelta
 from decimal import Decimal
 
-NUMBER_RE = re.compile(r"#\s?(\d{1,9})(?!\d)")
+import request_numbers
+
 CENT = Decimal("0.01")
 DAYS_AFTER_PAY_DATE = 45
 
@@ -28,8 +29,9 @@ ISSUES = {
 
 
 def numbers_in(purpose):
-    """Номери заявок із призначення платежу: «#5», «# 12» → ["000000005", "000000012"]."""
-    return sorted({f"{int(n):09d}" for n in NUMBER_RE.findall(purpose or "")})
+    """Номери заявок із призначення платежу: «#5», «# 12», «PD000007», «PD-12» → ["000000005", "000000007", "000000012"]
+    (усі вигляди — request_numbers.numbers_in)."""
+    return request_numbers.numbers_in(purpose)
 
 
 def _same_amount(a, b):
@@ -92,7 +94,7 @@ def _by_attributes(doc, cands, ctx):
     if len(found) == 1:
         return {"issue": None, "match": "auto", "requests": [found[0]["id"]]}
     if len(found) > 1:
-        return {"issue": "ambiguous", "detail": ", ".join(sorted(r["number"] for r in found)), "requests": []}
+        return {"issue": "ambiguous", "detail": ", ".join(request_numbers.label(n) for n in sorted(r["number"] for r in found)), "requests": []}
     return {"issue": None, "match": None, "requests": []}
 
 

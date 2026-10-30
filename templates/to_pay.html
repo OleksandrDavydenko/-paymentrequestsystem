@@ -131,13 +131,13 @@
         <td class="chk">
           {% if r.id in payable %}
           <input type="checkbox" name="ids" value="{{ r.id }}" data-amount="{{ r.amount }}" data-cur="{{ r.currency }}"
-                 aria-label="Вибрати заявку {{ r.number }}">
+                 aria-label="Вибрати заявку {{ r.number | reqno }}">
           {% elif r.id in locked %}
           <span class="pay-lock" title="{{ locked[r.id] }}" aria-label="{{ locked[r.id] }}">🔒</span>
           {% endif %}
         </td>
         {% endif %}
-        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('requests.request_card', request_id=r.id) }}">{{ r.number }}</a></td>
+        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('requests.request_card', request_id=r.id) }}">{{ r.number | reqno }}</a></td>
         <td data-label="Дата оплати" data-sort="{{ r.pay_date.isoformat() }}">
           {{ r.pay_date | d }}
           {% if overdue %}<span class="badge red">прострочено</span>{% elif due_today %}<span class="badge amber">сьогодні</span>{% endif %}

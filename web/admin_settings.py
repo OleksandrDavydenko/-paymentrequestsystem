@@ -28,6 +28,7 @@ import org_structure
 import organizations
 import payment_types
 import rates
+import request_numbers
 import settings_log
 import settings_schema as schema
 import storage as db
@@ -90,6 +91,22 @@ def _message(key, value):
     return f"{schema.label(key)}: {schema.value_label(key, value)}"
 
 
+def _parse_request_prefix(changes, errors):
+    """Префікс номера заявки: до 6 латинських літер (великими). Колишній непорожній — в історію: звірка й пошук
+    розпізнають його й далі (позначки в 1С і виписках лишаються старі)."""
+    new = changes["request_prefix"].strip().upper()
+    old = str(app_settings.get("request_prefix") or "").upper()
+    if not request_numbers.PREFIX_RE.fullmatch(new):
+        errors["request_prefix"] = "«Префікс номера заявки»: до 6 латинських літер (A–Z), без цифр, риски й пробілів"
+    elif new == old:
+        changes.pop("request_prefix")
+    else:
+        changes["request_prefix"] = new
+        if old:
+            history = [p for p in app_settings.get("request_prefix_history") or [] if p not in (old, new)]
+            changes["request_prefix_history"] = history + [old]
+
+
 def _apply(changes, who):
     """Зберегти зміни з побічними діями й повідомленнями. Повертає кількість змін."""
     for key, value in changes.items():
@@ -124,6 +141,9 @@ def _context(tab):
                    APPROVAL_MODES=wf.APPROVAL_MODES, HEAD_MODES=wf.HEAD_MODES, CFO_MODES=wf.CFO_MODES,
                    no_self_approval=app_settings.get("no_self_approval"))
     elif tab == "request":
+        ctx.update(request_prefix=request_numbers.prefix(), request_digits=request_numbers.digits(),
+                   request_prefix_history=[p for p in request_numbers.all_prefixes() if p != request_numbers.prefix()],
+                   number_example=request_numbers.label(123), marker_example=request_numbers.marker(123))
         ctx.update(org_mode=app_settings.get("org_field_mode"), ORG_FIELD_MODES=wf.ORG_FIELD_MODES,
                    **{k: app_settings.get(k) for k in ("req_document", "req_document_limit", "req_min_pay_days",
                                                        "req_lines_required", "withdraw_mode", "cancel_mode",
@@ -366,6 +386,8 @@ def admin_settings(*, context):
             changes["payments_since"] = date_cls.fromisoformat(changes["payments_since"]).isoformat()
         except ValueError:
             errors["payments_since"] = "«Звіряти платежі з 1С від дати»: вкажіть дату"
+    if "request_prefix" in changes:
+        _parse_request_prefix(changes, errors)
     if "app_name" in changes and not changes["app_name"]:
         errors["app_name"] = "Вкажіть назву системи"
     elif len(changes.get("app_name") or "") > 40:
@@ -411,7 +433,8 @@ def payments_sync_now(*, context):
         paid = state.get("paid_last") or []
         flash(f"Платежі з 1С синхронізовано: рядків у копії {state.get('rows', 0)}, нових або змінених "
               f"{state.get('loaded_last', 0)}, прив'язано платежів {state.get('linked_last', 0)}"
-              + (f", позначено оплаченими: {', '.join('№ ' + n for n in paid)}" if paid else ""), "success")
+              + (f", позначено оплаченими: {', '.join('№ ' + request_numbers.label(n) for n in paid)}" if paid else ""),
+              "success")
     return redirect(settings_url("reconcile"))
 
 

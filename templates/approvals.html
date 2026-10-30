@@ -50,7 +50,7 @@
       {% for r in requests %}
       {% set st = STATUSES[r.status] %}
       <tr class="clickable" onclick="location.href='{{ url_for('requests.request_card', request_id=r.id) }}'">
-        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('requests.request_card', request_id=r.id) }}">{{ r.number }}</a></td>
+        <td data-label="Номер" data-sort="{{ r.number }}"><a href="{{ url_for('requests.request_card', request_id=r.id) }}">{{ r.number | reqno }}</a></td>
         <td data-label="Автор">{{ r.author_name }}{% if r.department %}<div class="muted">{{ dept_name(r.department) }}</div>{% endif %}</td>
         <td data-label="Дата оплати" data-sort="{{ r.pay_date.isoformat() }}">{{ r.pay_date | d }}</td>
         {% if show_org %}<td data-label="Організація">{{ payer_label(r) }}</td>{% endif %}

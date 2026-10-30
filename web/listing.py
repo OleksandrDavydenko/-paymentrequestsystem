@@ -10,6 +10,7 @@ import currencies
 import departments
 import organizations
 import payment_accounts
+import request_numbers
 import storage as db
 import workflow as wf
 
@@ -56,6 +57,8 @@ def search_rows(rows, q):
     words = [w for w in (q or "").lower().split() if w]
     if not words:
         return rows
+    # Слово з «#» чи префіксом (#123, PD123, pd-000123) — номер заявки: порівнюємо точно, а не підрядком
+    exact = {w: request_numbers.parse_query(w) for w in words}
     out = []
     labels = {}  # підписи з довідників — один раз на значення
 
@@ -69,12 +72,12 @@ def search_rows(rows, q):
         cp = label("cp", r.get("counterparty_id"), lambda v: counterparties.get(v) or {})
         amount = r.get("amount")
         hay = " ".join(str(x or "") for x in (
-            r.get("number"), r.get("author_name"), r.get("author_email"), cp.get("name"), cp.get("edrpou"),
+            r.get("number"), request_numbers.label(r.get("number")), r.get("author_name"), r.get("author_email"), cp.get("name"), cp.get("edrpou"),
             label("exp", r.get("expense_code"), expense_label), label("dep", r.get("department"), departments.get_name),
             label("org", r.get("organization_id"), lambda v: organizations.name(v) if v else ""), r.get("note"),
             amount, money(amount) if amount is not None else "", money(amount).replace(" ", "") if amount is not None else "",
         )).lower()
-        if all(w in hay for w in words):
+        if all(r.get("number") == exact[w] if exact[w] else w in hay for w in words):
             out.append(r)
     return out
 
