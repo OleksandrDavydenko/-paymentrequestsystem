@@ -152,7 +152,9 @@ def startup_imported():
 
 
 def first_request():
-    """Перший запит процесу: записати старт (раз на процес)."""
+    """Перший запит процесу: записати старт (раз на процес) — у фоні: запис відкриває перше з'єднання з базою
+    (токен Entra, ~3 с), і перший запит (зазвичай перевірка App Service після перезапуску) на нього не чекає, а
+    наступні вже беруть готове з'єднання."""
     if _started["logged"] or _started["t0"] is None:
         return
     with _lock:
@@ -160,5 +162,6 @@ def first_request():
             return
         _started["logged"] = True
     total = time.monotonic() - _started["t0"]
-    record("startup", "Старт сайту", total * 1000, "ok",
-           f"додаток завантажився за {(_started['import_s'] or 0):.1f} с; перший запит — через {total:.1f} с після старту")
+    detail = f"додаток завантажився за {(_started['import_s'] or 0):.1f} с; перший запит — через {total:.1f} с після старту"
+    threading.Thread(target=record, args=("startup", "Старт сайту", total * 1000, "ok", detail),
+                     name="ops-startup", daemon=True).start()

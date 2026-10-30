@@ -19,8 +19,13 @@ c = m.app.test_client()
 rows = lambda kind="": ops_log.query(100, kind, 24)
 
 # ---------- старт сайту — з першим запитом, раз на процес
+import threading, time
 c.get("/login")
 c.get("/login")
+for _ in range(50):  # записується у фоні (перше з'єднання з базою — не в першому запиті)
+    if not any(t.name == "ops-startup" for t in threading.enumerate()):
+        break
+    time.sleep(0.1)
 st = rows("startup")
 check("startup recorded once, with timings", len(st) == 1 and st[0]["duration_ms"] is not None
       and "додаток завантажився за" in st[0]["detail"])
@@ -34,6 +39,10 @@ check("slow request: path without query string", slow and slow[0]["name"] == "GE
       and "SECRET" not in str(slow[0]))
 c.get("/login")
 check("fast request: not recorded", len(rows("slow")) == len(slow))
+ops_log.SLOW_MS = 0
+c.get("/robots933456.txt")  # перевірка App Service після перезапуску — не користувач
+ops_log.SLOW_MS = 10 ** 9
+check("App Service warm-up probe: not recorded", len(rows("slow")) == len(slow))
 ops_log.SLOW_MS = 0
 c.get("/admin/ops-log")  # сторінка, що читає базу: у записі — хто й куди пішов час
 ops_log.SLOW_MS = 10 ** 9

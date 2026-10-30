@@ -18,6 +18,9 @@ import clock
 import ops_log
 
 PROFILE_ARG = "_profile"
+# Службова перевірка App Service після перезапуску (чи піднявся контейнер; 404 — нормально): не користувач, і старт
+# сайту з його тривалістю й так у журналі («Старт сайту»)
+PLATFORM_PROBES = ("/robots933456.txt",)
 _WRAPPERS = ("flask", "werkzeug", "jinja2", "flask_session", "flask_wtf", "cProfile", "pstats")
 
 
@@ -43,7 +46,7 @@ def _finish(response):
         user = getattr(g, "user", None) or {}
         if prof is not None and "admin" in (getattr(g, "roles", None) or ()):
             _save_profile(prof, ms, response.status_code)
-        if ms >= ops_log.SLOW_MS:
+        if ms >= ops_log.SLOW_MS and request.path not in PLATFORM_PROBES:
             detail = " · ".join(x for x in (user.get("email") or "", ops_log.timing_summary(g.get("timings"))) if x)
             ops_log.record("slow", f"{request.method} {request.path}", ms, response.status_code, detail)
     return response
