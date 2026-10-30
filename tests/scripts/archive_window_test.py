@@ -45,11 +45,35 @@ d_from = (paid["created_at"] - shift - timedelta(days=1)).date().isoformat()
 html = c.get(f"/admin/requests?period=all&from={d_from}").get_data(as_text=True)
 check("typed dates win over 'all'", old_no in numbers(html))
 
+# вибраний швидкий період запам'ятовується за користувачем (для кожного списку свій), введені дати — ні
+import clock
+today = clock.today().isoformat()
+def active(html):
+    m_ = re.search(r'class="chip active[^"]*"[^>]*>([^<]+)<', html)
+    return m_.group(1).strip() if m_ else ""
+html = c.get("/admin/requests").get_data(as_text=True)
+check("remembered: 'all time' after a new visit", old_no in numbers(html) and active(html) == "За весь час")
+c.get("/admin/requests?period=today")
+check("remembered: today", active(c.get("/admin/requests").get_data(as_text=True)) == "Сьогодні")
+html = c.get(f"/admin/requests?from={d_from}").get_data(as_text=True)
+check("typed dates: shown, not remembered", active(html) == "" and old_no in numbers(html)
+      and active(c.get("/admin/requests").get_data(as_text=True)) == "Сьогодні")
+html = c.get(f"/admin/requests?period=today&from={today}&to={today}&status=paid").get_data(as_text=True)
+check("form submit (other filter) keeps the chip", active(html) == "Сьогодні" and 'name="period" value="today"' in html)
+html = c.get(f"/admin/requests?period=today&from={d_from}&to={today}").get_data(as_text=True)
+check("dates changed in the form -> own period", active(html) == "" and old_no in numbers(html))
+c.get("/admin/requests?period=all")
+
 login("res@ftpua.com", ["g-r", "g-f"])
 html = c.get("/to-pay?view=paid").get_data(as_text=True)
 check("paid list: default 12 months", old_no not in numbers(html) and "За весь час" in html)
 check("paid list: all time", old_no in numbers(c.get("/to-pay?view=paid&period=all").get_data(as_text=True)))
 check("to-pay (active) keeps 'Усі' default", ">Усі</a>" in c.get("/to-pay").get_data(as_text=True))
+c.get("/to-pay?view=paid&period=month")
+check("paid list: remembered per user and list", active(c.get("/to-pay?view=paid").get_data(as_text=True)) == "Цей місяць"
+      and active(c.get("/to-pay").get_data(as_text=True)) == "Усі")
+check("other user's choice is separate (admin chose 'all time')",
+      active(c.get("/admin/requests").get_data(as_text=True)) == "12 місяців")
 html = c.get("/approvals?view=processed").get_data(as_text=True)
 check("processed: default 12 months", old_no not in numbers(html) and "За весь час" in html)
 check("processed: all time", old_no in numbers(c.get("/approvals?view=processed&period=all").get_data(as_text=True)))

@@ -69,7 +69,7 @@ def _requests_overview(scope, title, table_id, **extra):
     today = clock.today()
     args = request.args
     date_field = "pay" if args.get("date_field") == "pay" else "created"
-    period, d_from, d_to = _date_filter(args, today, recent=True)
+    period, d_from, d_to = _date_filter(args, today, recent=True, remember=f"requests_{scope}_period")
     source = db.scope_rows(scope, g.roles, g.user["email"], period=(date_field, d_from, d_to))
     in_period = [r for r in source
                  if _in_period(r["pay_date"] if date_field == "pay" else r["created_at"].date(), d_from, d_to)]

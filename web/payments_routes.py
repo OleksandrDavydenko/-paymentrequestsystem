@@ -35,7 +35,7 @@ def to_pay(*, context):
     handover_rows = _handover_rows(roles)
     if view == "handover":
         return _handover_view(handover_rows, today)
-    period, d_from, d_to = _date_filter(request.args, today, recent=view == "paid")
+    period, d_from, d_to = _date_filter(request.args, today, recent=view == "paid", remember="paid_period" if view == "paid" else None)
     if view == "paid":
         all_rows = db.scope_rows("paid", roles, g.user["email"], period=("paid", d_from, d_to))
     else:

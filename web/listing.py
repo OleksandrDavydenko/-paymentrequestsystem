@@ -2,7 +2,7 @@
 from datetime import date, timedelta
 from decimal import Decimal
 
-from flask import request, url_for
+from flask import g, request, url_for
 
 import app_settings
 import counterparties
@@ -12,6 +12,7 @@ import organizations
 import payment_accounts
 import request_numbers
 import storage as db
+import user_prefs
 import workflow as wf
 
 from web.formatting import expense_label, money, url_without
@@ -224,20 +225,30 @@ def recent_presets(today):
     return {"recent": ("12 місяців", today - timedelta(days=RECENT_DAYS), None), **date_presets(today)}
 
 
-def _date_filter(args, today, recent=False):
+def _date_filter(args, today, recent=False, remember=None):
     """Період з параметрів ?period= або ?from=&to=. Повертає (код пресету, з, по).
-    recent — архівний список: без параметрів — останні 12 місяців, ?period=all — за весь час."""
+    recent — архівний список: без параметрів — останні 12 місяців, ?period=all — за весь час.
+    remember — ключ у user_prefs: вибраний швидкий період запам'ятовується за користувачем, і без параметрів список
+    відкривається з ним (після нового входу, з іншого пристрою). Він відносний — «Сьогодні» завтра означає завтра;
+    дати, введені вручну, — лише для цього перегляду."""
     presets = recent_presets(today) if recent else date_presets(today)
+    if recent:
+        presets = {"all": ("За весь час", None, None), **presets}
     period = args.get("period", "")
     d_from, d_to = _parse_date(args.get("from")), _parse_date(args.get("to"))
-    if recent and (d_from or d_to):
-        return "", d_from, d_to  # введені дати — важливіші за «За весь час» (воно передається прихованим полем)
     if period in presets:
-        _, d_from, d_to = presets[period]
-        return period, d_from, d_to
-    if recent:
-        return ("all", None, None) if period == "all" else ("recent", *presets["recent"][1:])
-    return "", d_from, d_to
+        _, p_from, p_to = presets[period]
+        # форма шле код пресету (приховане поле) і поля дат: змінили дати — це вже свій період
+        if (d_from if "from" in args else p_from) == p_from and (d_to if "to" in args else p_to) == p_to:
+            if remember:
+                user_prefs.set_view(g.user["email"], remember, period)
+            return period, p_from, p_to
+    if d_from or d_to:
+        return "", d_from, d_to
+    saved = user_prefs.view(g.user["email"], remember) if remember else ""
+    if saved in presets:
+        return saved, *presets[saved][1:]
+    return ("recent", *presets["recent"][1:]) if recent else ("", None, None)
 
 
 def _in_period(value, d_from, d_to):
