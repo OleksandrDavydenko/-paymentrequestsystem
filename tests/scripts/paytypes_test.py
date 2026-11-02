@@ -3,9 +3,9 @@ sys.path.insert(0, os.getcwd())
 tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, APP_SETTINGS_FILE=os.path.join(tmp, "s.json"), USER_PREFS_FILE=os.path.join(tmp, "p.json"),
                   USER_DIRECTORY_FILE=os.path.join(tmp, "d.json"), ORG_STRUCTURE_FILE=os.path.join(tmp, "o.json"),
-                  COUNTERPARTIES_PENDING_FILE=os.path.join(tmp, "cp.json"), USER_ONEC_FILE=os.path.join(tmp, "u.json"),
+                  COUNTERPARTIES_PENDING_FILE=os.path.join(tmp, "cp.json"),
                   GROUP_ADMIN="g-a", GROUP_INITIATOR="g-i", GROUP_ACC_RESIDENT="g-r", GROUP_CFO="g-f", ADMIN_EMAILS="")
-import app as m, storage as db, payment_accounts as pa, payment_types as pt, user_onec
+import app as m, storage as db, payment_accounts as pa, payment_types as pt
 import user_budget; user_budget.get = lambda oid: {"direct": True, "all_departments": True, "departments": []}
 ok = True
 def check(label, cond):
@@ -26,33 +26,39 @@ def admin_page():
 BASE = {"pay_date": "2026-10-20", "counterparty_id": "1", "organization_id": "1", "expense_code": "01.001",
         "currency": "UAH", "amount": "500", "payment_form": "bank"}
 
-check("suggest by name", pt.suggest_user("Iryna Chagan")["name"] == "Irina.Chagan")
+# Користувач 1С — лише з 1С (пошта → співробітник → його користувач 1С); у картці тільки показується
 login("od@ftpua.com", ["g-a"])
 page = c.get("/admin/users/irina").get_data(as_text=True)
-check("card: 1C section with suggestion", "Користувач 1С" in page and "Підібрано за схожістю" in page and 'value="U-IRINA" selected' in page)
-check("accountant: 1C field active", 'id="uc-onec-fields" >' in page or ('id="uc-onec-fields"' in page
-      and 'id="uc-onec-fields" disabled' not in page))
+onec_box = page.split('id="uc-onec-section"')[1].split("</section>")[0]
+check("card: not linked in 1C — the reason, nothing to choose", "Не зв'язано в 1С" in onec_box
+      and "Співробітник <strong>Чаган Ірина</strong> у 1С є" in onec_box and "<select" not in onec_box)
 user_roles.set_roles("ini-x", "ini-x@ftpua.com", "Ini X", ["initiator", "cfo"], "t")
 page = c.get("/admin/users/ini-x").get_data(as_text=True)
-check("not an accountant: 1C field inactive with hint", 'id="uc-onec-fields" disabled' in page
-      and 'class="card uc-section is-disabled" id="uc-onec-section"' in page and "Потрібно лише бухгалтерам" in page)
-c.post("/admin/users/ini-x", data={"roles": ["initiator", "cfo"], "onec_user": "U-IRINA", "mode": "none"})
-check("not an accountant: 1C link not saved", user_onec.guid_for("ini-x") is None)
+check("not an accountant: 1C section dimmed with hint", 'class="card uc-section is-disabled" id="uc-onec-section"' in page
+      and "Потрібно лише бухгалтерам" in page)
+check("no employee with this email: says what to fill in 1C", "У 1С немає співробітника з поштою" in page)
+import re
+check("list filter: accountant without 1C user", re.search(r'data-flags="[^"]*acc-no1c', admin_page()))
 login("i@ftpua.com", ["g-i"]); c.post("/requests/new", data={**BASE, "action": "submit"}); rid = db.last_id()
 
 login("i.chagan@ftpua.com", ["g-r"], "irina")
 page = c.get(f"/requests/{rid}").get_data(as_text=True)
-check("not linked: no options, hint shown", "ще не зв&#39;язано з користувачем 1С" in page)
+check("not linked: no options, hint shown", "У 1С вас не зв&#39;язано з користувачем 1С" in page)
 c.post(f"/requests/{rid}/action", data={"action": "approve"})
 check("not linked: approval allowed without account", db.get_request(rid)["status"] == "cfo")
-# повернемо і зв'яжемо
+# повернемо; у 1С в картці користувача Irina.Chagan вказали співробітника — зв'язок з'являється сам
 login("od@ftpua.com", ["g-a"])
 _r = db.get_request(rid); _r["status"] = "accountant"; db.save_request(_r)
-c.post("/admin/users/irina", data={"roles": ["acc_resident"], "onec_user": "U-IRINA", "mode": "none"})
-check("link saved", user_onec.guid_for("irina") == "U-IRINA")
+for a in pt._access.items():
+    if a["user"] == "U-IRINA":
+        a["employee"] = "EMP-IRINA"
+page = c.get("/admin/users/irina").get_data(as_text=True)
+check("card: link from 1C with payment types", "✓ З 1С" in page and "Irina.Chagan" in page
+      and "Види оплати в 1С (3)" in page and "співробітник Чаган Ірина" in page)
 check("list shows 1C link", "1С: Irina.Chagan" in admin_page())
 login("i.chagan@ftpua.com", ["g-r"], "irina")
-opts = [a["name"] for a in pa.options_for(db.get_request(rid), {"oid": "irina"}, frozenset({"acc_resident"}))]
+opts = [a["name"] for a in pa.options_for(db.get_request(rid), {"email": "i.chagan@ftpua.com", "oid": "irina"},
+                                          frozenset({"acc_resident"}))]
 check("accountant sees only her 1C payment types", opts == ["КАРТА", "НАЛ", "ПУМБ ФТП, ТОВ"])
 c.post(f"/requests/{rid}/action", data={"action": "approve"})
 check("linked: approval needs payment type", db.get_request(rid)["status"] == "accountant")

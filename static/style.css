@@ -791,6 +791,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .org-table .org-acc.is-active { border-color: var(--primary); background: var(--primary-50); }
 .org-table tr.org-item:has(input[name=allowed]:not(:checked)) .org-name { color: var(--muted); text-decoration: line-through; }
 .uc-suggest { color: var(--amber-ink); }
+.uc-onec-link { margin-bottom: 6px; }
 
 /* Передача готівки підряднику */
 .handover-pending { border-left: 4px solid var(--warn); }

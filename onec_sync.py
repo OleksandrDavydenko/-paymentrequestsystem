@@ -7,9 +7,9 @@
     (у відділу один керівник: попередній замінюється);
   • статті бюджету: з розподілом свого відділу (відділи статей за DepartmentGUID), а співробітникам
     профітцентрів (Departments.Profitcenter) — ще й прямі;
-  • бухгалтеру — користувач 1С для «Видів оплати» (UserPaymentTypes.EmployeeGUID).
-Далі все це можна змінити в картці користувача. Тих, хто вже є, сторінка показує з розбіжностями з 1С (відділ,
-керівник відділу, користувач 1С), а звільнених у 1С, які ще мають ролі, — окремо, щоб закрити їм доступ.
+Далі все це можна змінити в картці користувача. Користувача 1С (для «Видів оплати» бухгалтера) не задають — він
+береться з 1С сам (payment_types.onec_link); сторінка лише показує його. Тих, хто вже є, сторінка показує з
+розбіжностями з 1С (відділ, керівник відділу), а звільнених у 1С, які ще мають ролі, — окремо, щоб закрити їм доступ.
 Що людина очолює інші відділи (не з 1С), сторінка не чіпає.
 
 Автоматично (налаштування onec_auto_sync; фонова задача раз на годину, а також одразу після ввімкнення й після
@@ -30,7 +30,6 @@ import org_structure
 import payment_types
 import user_budget
 import user_directory
-import user_onec
 import user_roles
 import workflow as wf
 
@@ -80,16 +79,13 @@ def overview():
             continue
         dept_now = org_structure.department_of(u["id"])
         is_acc = bool(u["roles"] & wf.ACCOUNTANT_ROLES)
-        link = user_onec.get(u["id"])
         issues = []
         if e["department"] and dept_now != e["department"]:
             issues.append("dept")
         if e["head"] and e["department"] and e["department"] not in org_structure.head_departments(u["id"]):
             issues.append("head")
-        if is_acc and onec and (not link or link["guid"] != onec["guid"]):
-            issues.append("onec")
         existing.append({**e, "id": u["id"], "user_name": u["name"], "roles": u["roles"], "dept_now": dept_now,
-                         "onec": onec, "link": link, "is_accountant": is_acc, "issues": issues})
+                         "onec": onec, "is_accountant": is_acc, "issues": issues})
     existing.sort(key=lambda p: (not p["issues"], p["name"].lower()))
     return {"new": new, "existing": existing, "dismissed": dismissed,
             "not_in_onec": sum(1 for email in people if email not in staff)}
@@ -131,9 +127,6 @@ def _add(emails, who):
         budget = rule_budget(e["department"])
         if budget["direct"] or budget["departments"]:
             user_budget.save_settings(uid, email, e["name"], updated_by=who, **budget)
-        onec = payment_types.onec_user_for_employee(e["guid"])
-        if onec and set(r["roles"]) & wf.ACCOUNTANT_ROLES:
-            user_onec.set_link(uid, email, onec["guid"], onec["name"], who)
         added += 1
     return added
 
@@ -144,7 +137,7 @@ def _existing(ids):
 
 
 def fix_from_onec(ids, who):
-    """Відділ, керівника відділу і (бухгалтерам) користувача 1С — як у 1С. Повертає кількість змінених людей."""
+    """Відділ і керівника відділу — як у 1С. Повертає кількість змінених людей."""
     with docstore.batch():
         return _fix_from_onec(ids, who)
 
@@ -158,8 +151,6 @@ def _fix_from_onec(ids, who):
             org_structure.set_department(p["id"], p["email"], p["user_name"], p["department"], who)
         if "head" in p["issues"]:
             _make_head(p["id"], p["email"], p["user_name"], p["department"], who)
-        if "onec" in p["issues"]:
-            user_onec.set_link(p["id"], p["email"], p["onec"]["guid"], p["onec"]["name"], who)
         changed += 1
     return changed
 

@@ -80,7 +80,7 @@
     </tbody>
   </table>
   </div>
-  <p class="muted onec-hint">Користувач 1С зв'язується, лише якщо правило дає роль бухгалтера.</p>
+  <p class="muted onec-hint">Користувач 1С — з 1С (за співробітником): бухгалтер бачить його види оплати.</p>
   {% else %}
   <p class="muted">Усі працюючі співробітники з поштою вже є в системі.</p>
   {% endif %}
@@ -93,7 +93,7 @@
     <span class="sec-summary muted">{{ data.existing | length }}{% if issues %} · розбіжностей з 1С: {{ issues | length }}{% endif %}{% if data.not_in_onec %} · ще {{ data.not_in_onec }} немає в 1С (зовнішні тощо){% endif %}</span>
     <span class="spacer"></span>
     {% if data.existing %}
-    <button type="submit" name="action" value="fix" class="btn btn-sm">Взяти з 1С: відділ, керівника, користувача 1С</button>
+    <button type="submit" name="action" value="fix" class="btn btn-sm">Взяти з 1С: відділ і керівника</button>
     <button type="submit" name="action" value="apply_rule" class="btn btn-sm">Застосувати правило</button>
     {% endif %}
   </div>
@@ -113,8 +113,7 @@
           {% if 'dept' in p.issues %}<span class="onec-diff">у 1С: {{ dept_name(p.department) }}</span>{% endif %}
           {% if 'head' in p.issues %}<span class="onec-diff">у 1С — керівник відділу «{{ dept_name(p.department) }}»{% set cur = dept_head(p.department) %}{% if cur %} (зараз: {{ cur.name }}){% endif %}</span>{% endif %}</td>
         <td data-label="Користувач 1С">
-          {% if p.link %}{{ p.link.name }}{% elif p.is_accountant %}<span class="muted">не зв'язано</span>{% else %}<span class="muted">—</span>{% endif %}
-          {% if 'onec' in p.issues %}<span class="onec-diff">у 1С: {{ p.onec.name }}</span>{% endif %}</td>
+          {% if p.onec %}{{ p.onec.name }}{% elif p.is_accountant %}<span class="muted">не зв'язано в 1С</span>{% else %}<span class="muted">—</span>{% endif %}</td>
       </tr>
     {% endfor %}
     </tbody>

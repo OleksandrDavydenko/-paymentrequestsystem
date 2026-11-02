@@ -7,7 +7,7 @@ tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, ADMIN_EMAILS="admin@ftpua.com")
 import app as m
 import app_settings, departments, employees, expense_items, onec_sync, org_structure, payment_types, user_budget
-import user_onec, user_roles
+import user_roles
 import storage as db
 
 ok = True
@@ -78,10 +78,11 @@ check("not a profit center: only own department items", not bo["direct"] and bo[
 data = onec_sync.overview()
 ex = {p["email"]: p for p in data["existing"]}
 check("mismatch: department", ex["i.petrenko@ftpua.com"]["issues"] == ["dept"])
-check("mismatch: accountant without 1C user (and no department)", ex["o.bondar@ftpua.com"]["issues"] == ["dept", "onec"])
+check("accountant: 1C user shown from 1C, not a mismatch", ex["o.bondar@ftpua.com"]["issues"] == ["dept"]
+      and ex["o.bondar@ftpua.com"]["onec"]["guid"] == "U-OLENA")
 check("added people have no issues", not ex["m.koval@ftpua.com"]["issues"])
 c.post("/admin/users/onec", data={"action": "fix", "ids": ["oid-ip", "oid-ob"]})
-check("fixed from 1C", org_structure.department_of("oid-ip") == "LOG" and user_onec.guid_for("oid-ob") == "U-OLENA")
+check("fixed from 1C", org_structure.department_of("oid-ip") == "LOG")
 c.post("/admin/users/onec", data={"action": "apply_rule", "ids": ["oid-ip"]})
 bi = user_budget.get("oid-ip")
 check("rule applied to existing: adds, keeps roles", bi["direct"] and bi["departments"] == ["Логістика"]
@@ -105,9 +106,9 @@ c.post(f"/admin/users/{od['id']}", data={"roles": ["initiator"], "department": "
                                          "departments": ["БАА"]})
 check("request departments saved (main first)", org_structure.request_departments_of(od["id"]) == ["BA", "LOG"])
 user_roles.set_roles("oid-ob", "o.bondar@ftpua.com", "Олена Бондар", ["acc_cash"], "t")
-user_onec.set_link("oid-ob", "o.bondar@ftpua.com", "", "", "t")
 html = page("/admin/users/oid-ob")
-check("card: exact 1C user via employee", "Знайдено в 1С за співробітником" in html and 'value="U-OLENA" selected' in html)
+check("card: 1C user via employee, shown only", "✓ З 1С" in html and "Olena.Bondar" in html
+      and "Види оплати в 1С (2)" in html and 'name="onec_user"' not in html)
 
 # ---------- поле «Відділ» у заявці
 app_settings.set("dept_head_mode", "approve", "t")

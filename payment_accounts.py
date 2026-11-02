@@ -1,14 +1,13 @@
 """«Вид оплати» — з чого платимо. Бачать і вибирають бухгалтер, фіндиректор і адмін; ініціатор поля не бачить.
 
 Коли Power BI підключений — це «Види оплати» з 1С (payment_types): бухгалтер бачить лише ті,
-до яких має доступ у 1С (через зв'язок з користувачем 1С у його картці), фіндиректор — усі.
+до яких має доступ у 1С (його користувач 1С — за поштою, payment_types.onec_link), фіндиректор — усі.
 Без Power BI — мокові рахунки й каси організацій (для локальної розробки й тестів).
 Ідентифікатор виду оплати в заявці — рядок (GUID з 1С або номер мокового рахунку).
 """
 import expense_items
 import organizations
 import payment_types
-import user_onec
 
 # organization_id — код організації з довідника organizations (мокові дані)
 MOCK_ACCOUNTS = [
@@ -86,7 +85,8 @@ def options_for(req, user=None, roles=frozenset()):
     if roles & {"cfo", "admin"}:
         rows = payment_types.types()
     elif roles & ACCOUNTANT_ROLES and user:
-        rows = payment_types.types_for_user(user_onec.guid_for(user.get("oid")))
+        onec = payment_types.onec_user_for_email(user.get("email"))
+        rows = payment_types.types_for_user(onec["guid"]) if onec else []
     else:
         rows = []
     return [{"id": t["id"], "name": t["name"], "currency": "", "iban": "", "kind": "type",
@@ -114,6 +114,7 @@ def no_options_hint(req, user=None, roles=frozenset()):
     """Чому список порожній — для примітки в картці заявки."""
     if not use_types():
         return f"Для цієї організації в довіднику ще немає {'кас' if req.get('payment_form') == 'cash' else 'рахунків'}"
-    if user and not user_onec.guid_for(user.get("oid")):
-        return "Вас ще не зв'язано з користувачем 1С — адміністратор робить це в картці користувача"
+    if user and not payment_types.onec_user_for_email(user.get("email")):
+        return ("У 1С вас не зв'язано з користувачем 1С: у картці співробітника має бути ваша робоча пошта, а в картці "
+                "користувача 1С — цей співробітник")
     return "У 1С вам не призначено жодного виду оплати (картка користувача 1С → вкладка «Виды оплаты»)"

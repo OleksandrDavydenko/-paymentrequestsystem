@@ -31,7 +31,6 @@ import storage as db
 import telegram_notify
 import user_budget
 import user_directory
-import user_onec
 import user_prefs
 import user_roles
 import workflow as wf
@@ -175,10 +174,16 @@ def _migrate_legacy_departments():
               + ", ".join(departments.get_name(v) for v in mapping.values()), "success")
 
 
-def _user_filters(users, tg_on):
+def _onec_links(users):
+    """{id: користувач 1С} бухгалтерів, яких 1С зв'язує з користувачем 1С (payment_types.onec_link)."""
+    return {uid: onec for uid, u in users.items() if u["roles"] & wf.ACCOUNTANT_ROLES and u["email"]
+            and (onec := payment_types.onec_user_for_email(u["email"]))}
+
+
+def _user_filters(users, tg_on, links):
     """Відбори списку користувачів: {id: {"roles", "depts", "budget", "flags"}} (рядки для data-атрибутів) і
     відділи для вибору [(код, назва)]."""
-    out, deps, links = {}, set(), user_onec.all_links()
+    out, deps = {}, set()
     for uid, u in users.items():
         b = user_budget.get(uid) or {}
         req_deps = org_structure.request_departments_of(uid)
@@ -204,7 +209,8 @@ def _user_filters(users, tg_on):
 def admin_users(*, context):
     _migrate_legacy_departments()
     users = _users()
-    filters, filter_depts = _user_filters(users, telegram_notify.enabled())
+    onec_links = _onec_links(users)
+    filters, filter_depts = _user_filters(users, telegram_notify.enabled(), onec_links)
     return render_template(
         "admin_users.html",
         user_name=g.user["name"],
@@ -218,7 +224,7 @@ def admin_users(*, context):
         request_departments={uid: org_structure.request_departments_of(uid) for uid in users},
         filters=filters,
         filter_depts=filter_depts,
-        onec_links=user_onec.all_links(),
+        onec_links=onec_links,
         head_departments={uid: org_structure.head_departments(uid) for uid in users},
         alt_addresses=user_prefs.confirmed_addresses() if app_settings.get("allow_custom_email") else {},
         tg_on=telegram_notify.enabled(),
@@ -431,6 +437,7 @@ def admin_user_card(user_id, *, context):
     if request.method == "POST":
         return _save_user_card(person)
     allow_alt = app_settings.get("allow_custom_email")
+    onec = payment_types.onec_link(person["email"])  # «Користувач 1С» — лише з 1С, у картці тільки показується
     return render_template(
         "admin_user_card.html",
         user_name=g.user["name"],
@@ -460,15 +467,10 @@ def admin_user_card(user_id, *, context):
         tg_lookup=user_prefs.telegram_lookup(person["email"]),
         tg_linked=telegram_notify.is_linked(user_prefs.telegram_lookup(person["email"])),
         tg_channel=telegram_notify.CHANNELS.get(user_prefs.channel(person["email"])),
-        onec_link=user_onec.get(user_id),
-        onec_users=payment_types.onec_users(),
-        onec_exact=None if user_onec.get(user_id) else payment_types.onec_user_for_email(person["email"]),
-        onec_suggested=None if user_onec.get(user_id) or payment_types.onec_user_for_email(person["email"])
-        else payment_types.suggest_user(person["name"], person["email"]),
+        onec=onec,
+        onec_types=[t["name"] for t in payment_types.types_for_user(onec["user"]["guid"])] if onec["user"] else [],
         onec_employee=employees.by_email(person["email"]) if person["email"] else None,
         request_deps=org_structure.request_departments_of(user_id),
-        onec_types={u["guid"]: [t["name"] for t in payment_types.types_for_user(u["guid"])]
-                    for u in payment_types.onec_users()},
         is_accountant=bool(set(person["roles"]) & wf.ACCOUNTANT_ROLES),
         ACC_MODES=user_roles.ACC_MODES,
         no_approver=user_roles.accountants_without_approver(),
@@ -561,15 +563,6 @@ def _save_user_card(person):
         elif tg != (user_prefs.get(email)["telegram_email"] or ""):
             user_prefs.set_telegram_email(email, tg, who)
             changes.append(f"пошта для Telegram — {tg}" if tg else "пошта для Telegram — автоматично за робочою")
-
-    # Користувач 1С (для «Видів оплати») — лише бухгалтерам; без ролі бухгалтера поле вимкнене, зв'язок лишається
-    if "onec_user" in f and wanted & wf.ACCOUNTANT_ROLES:
-        guid = (f.get("onec_user") or "").strip()
-        known_onec = {u["guid"]: u["name"] for u in payment_types.onec_users()}
-        current_link = user_onec.guid_for(uid)
-        if guid != (current_link or "") and (not guid or guid in known_onec):
-            user_onec.set_link(uid, email, guid, known_onec.get(guid, ""), who)
-            changes.append("користувач 1С — " + (known_onec[guid] if guid else "не зв'язано"))
 
     # Статті бюджету
     mode = f.get("mode")

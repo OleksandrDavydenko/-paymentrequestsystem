@@ -4,13 +4,10 @@
 - PaymentTypes: GUID, Code, Name, IsDeleted — довідник «Види оплати» (НАЛ, КАРТА, КАСА, NLB LITBIA…);
 - UserPaymentTypes: UserGUID, UserName, PaymentTypeGUID, IsDeleted, EmployeeGUID — вкладка «Виды оплаты»
   в картці користувача 1С (до яких видів оплати в нього є доступ) і хто це зі співробітників (Employees).
-Користувача системи зв'язує з користувачем 1С адмін у картці користувача (user_onec.py): пошта не збігається з
-логіном 1С, тож точний збіг — через співробітника (пошта → Employees → EmployeeGUID), інакше — підбір за
-схожістю імені. Без Power BI — мокові дані в тому ж форматі.
+Хто з користувачів 1С бухгалтер системи — лише з 1С (onec_link): пошта входу → співробітник (Employees.Email) →
+його користувач 1С (EmployeeGUID). Вручну не задається: щоб зв'язок з'явився, у 1С заповнюють пошту співробітника
+і співробітника в картці користувача 1С. Без Power BI — мокові дані в тому ж форматі.
 """
-import difflib
-import re
-
 import pbi_cache
 
 MOCK_TYPES = [
@@ -92,10 +89,6 @@ def onec_users():
     return sorted(({"guid": g, "name": n} for g, n in seen.items()), key=lambda u: u["name"].lower())
 
 
-def onec_user_name(guid):
-    return next((u["name"] for u in onec_users() if u["guid"] == guid), guid or "")
-
-
 def onec_user_for_employee(employee_guid):
     """Користувач 1С співробітника (UserPaymentTypes.EmployeeGUID): {"guid", "name"} або None."""
     employee_guid = (employee_guid or "").strip().upper()
@@ -107,9 +100,24 @@ def onec_user_for_employee(employee_guid):
 
 def onec_user_for_email(email):
     """Користувач 1С за поштою співробітника (Employees → EmployeeGUID) або None."""
+    return onec_link(email)["user"]
+
+
+def onec_link(email):
+    """Зв'язок користувача системи з користувачем 1С — лише з 1С, ланцюжком: пошта входу → співробітник 1С з цією
+    поштою (Employees.Email) → користувач 1С цього співробітника з видами оплати (UserPaymentTypes.EmployeeGUID).
+    {"user": {"guid", "name"} або None, "employee": співробітник або None,
+     "reason": "" | "no_email" | "no_employee" | "dismissed" | "no_user" — на якому кроці ланцюжок обірвався}."""
     import employees
+    if not (email or "").strip():
+        return {"user": None, "employee": None, "reason": "no_email"}
     e = employees.by_email(email)
-    return onec_user_for_employee(e["guid"]) if e and not e["deleted"] else None
+    if not e:
+        return {"user": None, "employee": None, "reason": "no_employee"}
+    if e["deleted"]:
+        return {"user": None, "employee": e, "reason": "dismissed"}
+    user = onec_user_for_employee(e["guid"])
+    return {"user": user, "employee": e, "reason": "" if user else "no_user"}
 
 
 def types_for_user(onec_guid):
@@ -118,53 +126,6 @@ def types_for_user(onec_guid):
         return []
     allowed = {a["type"] for a in _access.items() if a["user"] == onec_guid and not a["deleted"]}
     return [t for t in types() if t["id"] in allowed]
-
-
-_TRANSLIT = {"а": "a", "б": "b", "в": "v", "г": "h", "ґ": "g", "д": "d", "е": "e", "є": "ie", "ж": "zh", "з": "z",
-             "и": "y", "і": "i", "ї": "i", "й": "i", "к": "k", "л": "l", "м": "m", "н": "n", "о": "o", "п": "p",
-             "р": "r", "с": "s", "т": "t", "у": "u", "ф": "f", "х": "kh", "ц": "ts", "ч": "ch", "ш": "sh",
-             "щ": "shch", "ь": "", "ю": "iu", "я": "ia", "ё": "e", "ы": "y", "э": "e", "ъ": ""}
-
-
-def _letters(value):
-    """Лише літери для порівняння імен (латиниця й кирилиця; Iryna ≈ Irina)."""
-    return re.sub(r"[^a-z]", "", "".join(_TRANSLIT.get(ch, ch) for ch in (value or "").lower()))
-
-
-def _tokens(value):
-    """Слова імені для порівняння: транслітерація, г/h/g і и/y/i — однаково, без ініціалів."""
-    out = []
-    for word in re.split(r"[\s._\-]+", value or ""):
-        w = _letters(word).replace("y", "i").replace("h", "g")
-        if len(w) > 1:
-            out.append(w)
-    return out
-
-
-def _score(a_tokens, b_tokens):
-    """Схожість двох імен: кожне слово першого має мати пару в другому; 0..1 (мінімум по словах)."""
-    if not a_tokens or not b_tokens:
-        return 0.0
-    best = [max(difflib.SequenceMatcher(None, a, b).ratio() for b in b_tokens) for a in a_tokens]
-    score = min(best) if len(a_tokens) > 1 else best[0] * 0.9  # одне слово — менше довіри
-    # Зайві слова в кандидата («Test.Ivan.Isaienko») — трохи менше довіри, ніж точному збігу
-    return score - 0.06 * max(0, len(b_tokens) - len(a_tokens))
-
-
-def suggest_user(full_name, email=""):
-    """Найсхожіший користувач 1С для користувача системи або None.
-    Обидва слова (ім'я і прізвище) мають бути схожі, а відрив від другого кандидата — помітний."""
-    sources = [t for t in (_tokens(full_name), _tokens((email or "").split("@")[0])) if t]
-    scored = []
-    for u in onec_users():
-        cand = _tokens(u["name"])
-        scored.append((max(_score(src, cand) for src in sources) if sources else 0.0, u))
-    scored.sort(key=lambda x: -x[0])
-    if not scored or scored[0][0] < 0.8:
-        return None
-    if len(scored) > 1 and scored[0][0] - scored[1][0] < 0.05:
-        return None  # двоє однаково схожих — хай адмін вибере сам
-    return scored[0][1]
 
 
 def refresh():

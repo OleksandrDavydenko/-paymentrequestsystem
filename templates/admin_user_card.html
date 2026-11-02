@@ -196,29 +196,29 @@
   <section class="card uc-section {{ 'is-disabled' if not is_accountant }}" id="uc-onec-section">
     <div class="uc-title"><span class="uc-num">5</span><h2>Користувач 1С</h2></div>
     <p class="uc-explain">Хто ця людина в 1С. Від цього залежить, які «Види оплати» бухгалтер бачить у заявках — ті самі, що на
-      вкладці «Виды оплаты» в його картці користувача 1С. Пошта і логін 1С різні, тому зв'язок задається тут один раз.</p>
+      вкладці «Виды оплаты» в його картці користувача 1С. Зв'язок береться з 1С сам: пошта входу → співробітник 1С з цією
+      поштою → користувач 1С цього співробітника. Тут він лише показується; змінюється — у 1С.</p>
     <div class="callout orange uc-onec-off" id="uc-onec-off" {{ 'hidden' if is_accountant }}>Потрібно лише бухгалтерам —
-      відмітьте роль бухгалтера в пункті 1, і поле стане активним (фіндиректор бачить усі види оплати).</div>
-    <fieldset class="uc-onec-fields" id="uc-onec-fields" {{ 'disabled' if not is_accountant }}>
-    {% set guess = onec_exact or onec_suggested %}
-    {% set selected = onec_link.guid if onec_link else (guess.guid if guess else '') %}
-    <select name="onec_user" id="uc-onec" class="uc-select">
-      <option value="">— не зв'язано —</option>
-      {% for u in onec_users %}
-      <option value="{{ u.guid }}" {{ 'selected' if u.guid == selected }}>{{ u.name }}</option>
-      {% endfor %}
-      {% if onec_link and onec_link.guid not in onec_users | map(attribute='guid') | list %}
-      <option value="{{ onec_link.guid }}" selected>{{ onec_link.name or onec_link.guid }} (немає в 1С)</option>
-      {% endif %}
-    </select>
-    {% if onec_exact and not onec_link %}
-    <div class="uc-note uc-suggest">Знайдено в 1С за співробітником: <strong>{{ onec_exact.name }}</strong> — натисніть «Зберегти».</div>
-    {% elif onec_suggested and not onec_link %}
-    <div class="uc-note uc-suggest">Підібрано за схожістю імені: <strong>{{ onec_suggested.name }}</strong> — перевірте й натисніть «Зберегти».</div>
+      відмітьте роль бухгалтера в пункті 1 (фіндиректор бачить усі види оплати).</div>
+    <div class="uc-onec-fields" id="uc-onec-fields">
+    {% if onec.user %}
+    <div class="uc-onec-link"><span class="badge green">✓ З 1С</span> <strong>{{ onec.user.name }}</strong>
+      <span class="muted">— співробітник {{ onec.employee.name }}{{ ' (' ~ onec.employee.code ~ ')' if onec.employee.code }}</span></div>
+    <div class="uc-note">{% if onec_types %}Види оплати в 1С ({{ onec_types | length }}): {{ onec_types | join(', ') }}
+      {% else %}У цього користувача 1С немає видів оплати (картка користувача 1С → вкладка «Виды оплаты»).{% endif %}</div>
+    {% else %}
+    <div class="uc-onec-link"><span class="badge amber">Не зв'язано в 1С</span></div>
+    <div class="uc-note">
+      {% if onec.reason == 'no_email' %}У користувача немає пошти — 1С не має за чим його знайти.
+      {% elif onec.reason == 'no_employee' %}У 1С немає співробітника з поштою <strong>{{ person.email }}</strong> — заповніть
+        її в картці співробітника 1С (поле Email).
+      {% elif onec.reason == 'dismissed' %}Співробітник <strong>{{ onec.employee.name }}</strong> у 1С звільнений.
+      {% else %}Співробітник <strong>{{ onec.employee.name }}</strong> у 1С є, але жоден користувач 1С з видами оплати до нього
+        не прив'язаний — у картці користувача 1С вкажіть цього співробітника.{% endif %}
+      Поки зв'язку немає, бухгалтер не бачить видів оплати (поле «Вид оплати» в заявці необов'язкове). Після змін у 1С
+      зв'язок з'явиться сам з оновленням довідників.</div>
     {% endif %}
-    <div class="uc-note" id="uc-onec-types"></div>
-    </fieldset>
-    <script type="application/json" id="onec-types">{{ onec_types | tojson }}</script>
+    </div>
   </section>
 
   <section class="card uc-section" id="uc-telegram">
