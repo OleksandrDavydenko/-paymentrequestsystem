@@ -25,6 +25,7 @@ import organizations
 import payment_types
 import rates
 import secret_box
+import sections
 import settings_log
 import settings_schema as schema
 import storage as db
@@ -35,7 +36,7 @@ import user_prefs
 import user_roles
 import workflow as wf
 
-from web.auth import login_required, requires
+from web.auth import ADMIN_EMAILS, login_required, requires
 from web.request_helpers import _link_counterparty
 
 
@@ -174,6 +175,19 @@ def _migrate_legacy_departments():
               + ", ".join(departments.get_name(v) for v in mapping.values()), "success")
 
 
+def _login_roles(person):
+    """Ролі, які людина матиме на вході (web/auth.requires): збережені + адміністратор з ADMIN_EMAILS + керівник
+    відділу / перегляд заявок відділу з оргструктури — для типового доступу до розділів у картці."""
+    roles = set(person["roles"])
+    if (person.get("email") or "").lower() in ADMIN_EMAILS:
+        roles.add("admin")
+    if org_structure.head_departments(person["id"]):
+        roles.add("dept_head")
+    if org_structure.viewer_departments(person["id"]):
+        roles.add("dept_viewer")
+    return roles
+
+
 def _onec_links(users):
     """{id: користувач 1С} бухгалтерів, яких 1С зв'язує з користувачем 1С (payment_types.onec_link)."""
     return {uid: onec for uid, u in users.items() if u["roles"] & wf.ACCOUNTANT_ROLES and u["email"]
@@ -193,6 +207,7 @@ def _user_filters(users, tg_on, links):
             ("noemail", not u["email"]),
             ("not1c", not (u["email"] and employees.by_email(u["email"]))),
             ("acc-no1c", bool(u["roles"] & wf.ACCOUNTANT_ROLES) and uid not in links),
+            ("sections", bool(u.get("sections"))),
             ("notg", tg_on and not telegram_notify.is_linked(user_prefs.telegram_lookup(u["email"])))) if on]
         out[uid] = {"roles": " ".join(sorted(u["roles"]) + (["dept_head"] if org_structure.head_departments(uid) else []))
                     or "none",
@@ -230,6 +245,7 @@ def admin_users(*, context):
         tg_on=telegram_notify.enabled(),
         tg_overrides=user_prefs.telegram_overrides(),
         tg_linked=lambda e: telegram_notify.is_linked(user_prefs.telegram_lookup(e)),
+        describe_sections=sections.describe,
         budgets={uid: user_budget.get(uid) for uid in users},
         budget_summary=user_budget.summary,
         google_domain=(google_login.allowed_domains() or [None])[0],
@@ -438,6 +454,7 @@ def admin_user_card(user_id, *, context):
         return _save_user_card(person)
     allow_alt = app_settings.get("allow_custom_email")
     onec = payment_types.onec_link(person["email"])  # «Користувач 1С» — лише з 1С, у картці тільки показується
+    overrides = user_roles.section_overrides(person["id"])
     return render_template(
         "admin_user_card.html",
         user_name=g.user["name"],
@@ -468,6 +485,9 @@ def admin_user_card(user_id, *, context):
         tg_linked=telegram_notify.is_linked(user_prefs.telegram_lookup(person["email"])),
         tg_channel=telegram_notify.CHANNELS.get(user_prefs.channel(person["email"])),
         onec=onec,
+        # «Доступ до розділів»: типово — за ролями, які людина матиме на вході (sections.py), і винятки
+        section_rows=[{"code": c, "label": s.label, "hint": s.hint, "override": overrides.get(c),
+                       "by_role": sections.by_role(c, _login_roles(person))} for c, s in sections.SECTIONS.items()],
         onec_types=[t["name"] for t in payment_types.types_for_user(onec["user"]["guid"])] if onec["user"] else [],
         onec_employee=employees.by_email(person["email"]) if person["email"] else None,
         request_deps=org_structure.request_departments_of(user_id),
@@ -509,6 +529,14 @@ def _save_user_card(person):
         changes.append("додано ролі: " + ", ".join(added))
     if removed:
         changes.append("знято ролі: " + ", ".join(removed))
+
+    # Доступ до розділів-звітів: зберігаються лише винятки («За роллю» — без запису)
+    if "sections_sent" in f and user_roles.get(uid) is not None:
+        new_ov = {code: f.get(f"section_{code}") == "1" for code in sections.SECTIONS
+                  if f.get(f"section_{code}") in ("1", "0")}
+        if new_ov != user_roles.section_overrides(uid):
+            user_roles.set_section_overrides(uid, new_ov, who)
+            changes.append("доступ до розділів — " + (sections.describe(new_ov) or "усе за роллю"))
 
     # Бухгалтер: погоджує і оплачує / лише оплачує (поле є, лише коли в картці вибрано роль бухгалтера)
     mode = f.get("acc_mode")
@@ -578,7 +606,7 @@ def _save_user_card(person):
 
     if changes:
         flash(f"{name}: " + "; ".join(changes) + ".", "success")
-        if current and not wanted:
+        if current and not wanted and not sections.effective(wanted, user_roles.section_overrides(uid)):
             flash(f"{name} більше не має жодної ролі — доступу до системи немає.", "success")
     else:
         flash("Змін немає", "success")

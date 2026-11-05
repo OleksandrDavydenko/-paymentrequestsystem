@@ -63,6 +63,7 @@
       <option value="noemail">Без пошти</option>
       <option value="not1c">Немає в 1С</option>
       <option value="acc-no1c">Бухгалтер без користувача 1С</option>
+      <option value="sections">Має винятки доступу до розділів</option>
       {% if tg_on %}<option value="notg">Без Telegram</option>{% endif %}
     </select>
     <span class="muted users-shown" id="users-shown"></span>
@@ -92,6 +93,7 @@
           <div class="muted">{{ u.email }}{% if u.email and external(u.email) %} <span class="bchip bchip-none" title="Пошта не з домену компанії — входить своїм акаунтом Google">Зовнішній</span>{% endif %}</div>
           {% if alt_addresses.get(u.email | lower) %}<div class="muted alt-addr" title="Користувач підтвердив іншу адресу для сповіщень">✉ листи на: {{ alt_addresses[u.email | lower] }}</div>{% endif %}
           {% if onec_links.get(u.id) %}<div class="muted alt-addr" title="Користувач 1С (для видів оплати)">1С: {{ onec_links[u.id].name }}</div>{% endif %}
+          {% if u.sections %}<div class="muted alt-addr" title="Доступ до розділів — винятки з картки користувача">Розділи: {{ describe_sections(u.sections) }}</div>{% endif %}
           {% if tg_on and tg_linked(u.email) %}<div class="muted alt-addr" title="Знайдено в Telegram-боті {{ 'за поштою, вказаною вручну' if tg_overrides.get(u.email | lower) else 'автоматично за робочою поштою' }}">✈ Telegram{{ ' (вручну: ' ~ tg_overrides[u.email | lower] ~ ')' if tg_overrides.get(u.email | lower) }}</div>{% endif %}
         </td>
         <td data-label="Ролі">

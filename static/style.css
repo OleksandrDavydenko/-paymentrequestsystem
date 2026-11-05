@@ -792,6 +792,9 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .org-table tr.org-item:has(input[name=allowed]:not(:checked)) .org-name { color: var(--muted); text-decoration: line-through; }
 .uc-suggest { color: var(--amber-ink); }
 .uc-onec-link { margin-bottom: 6px; }
+.uc-sec-row { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; padding: 8px 0; border-top: 1px solid var(--line); }
+.uc-sec-name { flex: 1 1 260px; }
+.uc-sec-row .uc-select { flex: 0 1 280px; }
 
 /* Передача готівки підряднику */
 .handover-pending { border-left: 4px solid var(--warn); }

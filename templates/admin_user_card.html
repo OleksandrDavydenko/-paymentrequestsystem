@@ -221,6 +221,24 @@
     </div>
   </section>
 
+  <section class="card uc-section" id="uc-sections">
+    <div class="uc-title"><span class="uc-num">6</span><h2>Доступ до розділів</h2></div>
+    <p class="uc-explain">Розділи-звіти типово бачать за роллю (фіндиректор, адміністратор). Тут їх можна відкрити чи
+      закрити саме цій людині. Це лише перегляд: дії в заявках і звірці й далі визначають ролі та налаштування.
+      «На погодження» й «До оплати» випливають з ролей, «Заявки відділу» — з пункту 3.</p>
+    <input type="hidden" name="sections_sent" value="1">
+    {% for s in section_rows %}
+    <div class="uc-sec-row">
+      <div class="uc-sec-name"><strong>{{ s.label }}</strong><div class="muted">{{ s.hint }}</div></div>
+      <select name="section_{{ s.code }}" class="uc-select" aria-label="Доступ: {{ s.label }}">
+        <option value="" {{ 'selected' if s.override is none }}>За роллю (зараз: {{ 'бачить' if s.by_role else 'не бачить' }})</option>
+        <option value="1" {{ 'selected' if s.override == true }}>Дозволити</option>
+        <option value="0" {{ 'selected' if s.override == false }}>Заборонити</option>
+      </select>
+    </div>
+    {% endfor %}
+  </section>
+
   <section class="card uc-section" id="uc-telegram">
     <div class="uc-title"><span class="uc-num">✈</span><h2>Telegram</h2></div>
     {% if not tg_on %}

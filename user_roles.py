@@ -1,7 +1,8 @@
 """Ролі користувачів — у самій системі (адмінка → картка користувача); групи Azure не використовуються.
 
-{id користувача: {"email", "name", "roles": [...], "acc_mode", "updated_by", "updated_at"}}. acc_mode — що робить
-бухгалтер: "both" (погоджує і оплачує, за замовчуванням) або "pay" (лише оплачує). id — Entra object id для тих,
+{id користувача: {"email", "name", "roles": [...], "acc_mode", "sections", "updated_by", "updated_at"}}. acc_mode — що
+робить бухгалтер: "both" (погоджує і оплачує, за замовчуванням) або "pay" (лише оплачує). sections — винятки доступу
+до розділів-звітів ({код: true|false}, sections.py; типово — за роллю). id — Entra object id для тих,
 кого колись перенесено з груп Azure, або пошта (нижнім регістром) для доданих в адмінці; людину на вході
 знаходимо за поштою, тож однаково працює вхід і через Google, і через Microsoft. Зовнішні користувачі
 (пошта не з домену компанії) входять лише тоді, коли тут є запис хоча б з однією роллю.
@@ -14,6 +15,7 @@ import threading
 
 import clock
 import docstore
+import sections
 import user_directory
 
 ROLES = ("admin", "initiator", "acc_cash", "acc_resident", "acc_nonresident", "cfo")
@@ -62,7 +64,8 @@ def _person(uid, u):
         known = user_directory.lookup(uid) or {}
         email, name = email or known.get("email") or "", name or known.get("name") or ""
     return {"id": uid, "email": email, "name": display_name(email, name) or email or uid,
-            "roles": set(u.get("roles") or []), "acc_mode": u.get("acc_mode") if u.get("acc_mode") in ACC_MODES else "both"}
+            "roles": set(u.get("roles") or []), "acc_mode": u.get("acc_mode") if u.get("acc_mode") in ACC_MODES else "both",
+            "sections": sections.clean(u.get("sections"))}
 
 
 def all_users():
@@ -115,6 +118,8 @@ def set_roles(uid, email, name, roles, updated_by):
                      "roles": roles, "updated_by": updated_by, "updated_at": clock.now().isoformat(timespec="seconds")}
         if prev.get("acc_mode") in ACC_MODES:
             data[uid]["acc_mode"] = prev["acc_mode"]
+        if prev.get("sections"):
+            data[uid]["sections"] = prev["sections"]
         docstore.write("user_roles", _path(), data)
     return set(roles)
 
@@ -129,6 +134,27 @@ def set_acc_mode(uid, mode, updated_by):
             return
         data[uid] = {**data[uid], "acc_mode": mode, "updated_by": updated_by,
                      "updated_at": clock.now().isoformat(timespec="seconds")}
+        docstore.write("user_roles", _path(), data)
+
+
+def section_overrides(uid):
+    """Винятки доступу до розділів-звітів: {код: True — дозволено, False — заборонено} (sections.py)."""
+    with _lock:
+        u = _load().get(uid) or {}
+    return sections.clean(u.get("sections"))
+
+
+def set_section_overrides(uid, overrides, updated_by):
+    """Записати винятки (лише відомі розділи; порожньо — усе за роллю). Запис ролей має вже бути."""
+    overrides = sections.clean(overrides)
+    with _lock:
+        data = _load()
+        if uid not in data:
+            return
+        entry = {k: v for k, v in data[uid].items() if k != "sections"}
+        if overrides:
+            entry["sections"] = overrides
+        data[uid] = {**entry, "updated_by": updated_by, "updated_at": clock.now().isoformat(timespec="seconds")}
         docstore.write("user_roles", _path(), data)
 
 

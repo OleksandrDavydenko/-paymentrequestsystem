@@ -16,7 +16,7 @@ import user_prefs
 import workflow as wf
 
 from web import background
-from web.auth import _load_visible, login_required, requires
+from web.auth import _load_visible, login_required, requires, requires_section
 from web.listing import _date_filter, _filtered, _in_period, _page, _ref_keys, currency_totals, date_presets, payment_plan, recent_presets
 from web.formatting import money
 from web.request_helpers import _pay_guard, _try_live_link
@@ -229,7 +229,7 @@ def _reconcile_period(args, today):
 
 @bp.route("/payments/reconcile")
 @login_required
-@requires("cfo", "admin")
+@requires_section("reconcile")
 def reconcile(*, context):
     """Платежі з 1С за період: без заявки, розбіжності, зіставлені з заявками, дозволені без заявки
     (фіндиректор і адміністратор)."""

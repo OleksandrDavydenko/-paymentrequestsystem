@@ -19,6 +19,7 @@ import dept_settings
 import google_login
 import notifications
 import org_structure
+import sections
 import storage as db
 import user_directory
 import user_roles
@@ -115,11 +116,27 @@ def requires(*needed):
                                     active=bool(roles))
             # Бухгалтер «Лише оплачує» (картка користувача): бухгалтерськими ролями — лише оплата
             pay_only = roles & wf.ACCOUNTANT_ROLES if user_roles.acc_mode(uid) == "pay" else ()
-            g.roles = wf.RoleSet(roles, heads, views, pay_only)
-            if not g.roles or (needed and not g.roles & set(needed)):
+            # Розділи-звіти: за роллю, з винятками з картки користувача (sections.py)
+            visible = sections.effective(roles, user_roles.section_overrides(uid))
+            g.roles = wf.RoleSet(roles, heads, views, pay_only, visible)
+            if (not g.roles and not visible) or (needed and not g.roles & set(needed)):
                 return render_template("no_access.html", user_name=g.user["name"], missing=needed), 403
             return view(*args, context=context, **kwargs)
         return wrapper
+    return deco
+
+
+def requires_section(code):
+    """Сторінка розділу-звіту (sections.py) замість @requires(ролі): видно за роллю або за винятком у картці
+    користувача — та сама перевірка, що й для пункту меню, тож вони не розходяться."""
+    def deco(view):
+        @wraps(view)
+        def inner(*args, context, **kwargs):
+            if code not in wf.sections_of(g.roles):
+                return render_template("no_access.html", user_name=g.user["name"], missing=(),
+                                       section=sections.SECTIONS[code].label), 403
+            return view(*args, context=context, **kwargs)
+        return requires()(inner)
     return deco
 
 
@@ -148,20 +165,18 @@ def _deciding_roles(roles):
     return deciding
 
 
-def _sees_all_requests(roles):
-    """«Усі заявки»: адміністратор і фіндиректор (лише перегляд)."""
-    return bool(roles & {"admin", "cfo"})
-
-
 def _home():
     if "initiator" not in g.roles and _deciding_roles(g.roles):
         return url_for("lists.approvals")
     if "initiator" not in g.roles and g.roles & {"dept_head", "dept_viewer"}:
         return url_for("lists.department_requests")
-    if g.roles == {"admin"} or ("initiator" not in g.roles and "cfo" in g.roles):
+    if (g.roles == {"admin"} or ("initiator" not in g.roles and "cfo" in g.roles))             and "all_requests" in wf.sections_of(g.roles):
         return url_for("lists.admin_requests")
     if "initiator" not in g.roles and wf.can_see_payments(g.roles):  # бухгалтер «Лише оплачує»
         return url_for("payments.to_pay")
+    if not g.roles and wf.sections_of(g.roles):  # без ролей, лише відкриті розділи-звіти
+        code = next(c for c in sections.SECTIONS if c in wf.sections_of(g.roles))
+        return url_for(sections.SECTIONS[code].endpoint)
     return url_for("requests.requests_list")
 
 

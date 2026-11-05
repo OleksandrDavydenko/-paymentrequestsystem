@@ -9,7 +9,7 @@ import storage as db
 import user_prefs
 import workflow as wf
 
-from web.auth import login_required, requires
+from web.auth import login_required, requires, requires_section
 from web.listing import RECENT_DAYS, _date_filter, _filtered, _in_period, _page, _ref_keys, currency_totals, recent_presets
 
 
@@ -59,7 +59,7 @@ def approvals(*, context):
 
 @bp.route("/admin/requests")
 @login_required
-@requires("admin", "cfo")
+@requires_section("all_requests")
 def admin_requests(*, context):
     return _requests_overview("all", title="Усі заявки", table_id="all-requests")
 

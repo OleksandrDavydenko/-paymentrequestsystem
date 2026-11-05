@@ -16,7 +16,7 @@ import settings_schema
 import storage as db
 import workflow as wf
 
-from web.auth import _deciding_roles, _sees_all_requests
+from web.auth import _deciding_roles
 from web.formatting import abs_static, expense_label, filesize, fmt_date, fmt_datetime, money, url_with, visible_history
 from web.request_helpers import pay_org, payer_label
 
@@ -70,8 +70,8 @@ def _payment_docs(rows):
 
 
 def _reconcile_count(roles):
-    """Платежі з 1С без заявки за 30 днів — у меню «Звірка» (фіндиректор, адміністратор)."""
-    if not roles & {"cfo", "admin"}:
+    """Платежі з 1С без заявки за 30 днів — у меню «Звірка» (кому розділ видно, sections.py)."""
+    if "reconcile" not in wf.sections_of(roles):
         return 0
     try:
         import payments
@@ -91,7 +91,8 @@ def inject_roles():
         "participating_count": db.count("participant", roles, g.user["email"]) if getattr(g, "user", None) else 0,
         "queue_count": db.count("queue", roles, g.user["email"]) if roles & wf.APPROVER_ROLES else 0,
         "can_see_payments": wf.can_see_payments(roles),
-        "sees_all_requests": _sees_all_requests(roles),
+        # Розділи-звіти («Усі заявки», «Звірка»…): за роллю з винятками з картки користувача
+        "nav_sections": wf.sections_of(roles),
         "test_mode": notifications.test_mode(),
         "reconcile_count": _reconcile_count(roles),
         "test_mail_muted": notifications.muted_by_test_mode(),

@@ -7,6 +7,7 @@ from datetime import date
 import app_settings
 import clock
 import organizations
+from sections import OPENS_CARDS, effective as _effective_sections
 
 ROLES = {
     "admin": "Адміністратор",
@@ -47,16 +48,24 @@ ROLE_GROUPS = [
 
 class RoleSet(frozenset):
     """Ролі користувача + коди відділів, які він очолює і заявки яких бачить, + бухгалтерські ролі, якими він лише
-    оплачує (pay_only: не погоджує, не бачить заявок на погодженні).
+    оплачує (pay_only: не погоджує, не бачить заявок на погодженні), + розділи-звіти, які він бачить (sections:
+    за роллю з винятками з картки користувача, sections.py).
 
     Поводиться як звичайна множина ролей, тож усі перевірки `"cfo" in roles` працюють як раніше.
     """
-    def __new__(cls, roles=(), head_departments=(), view_departments=(), pay_only=()):
+    def __new__(cls, roles=(), head_departments=(), view_departments=(), pay_only=(), sections=None):
         obj = super().__new__(cls, roles)
         obj.head_departments = frozenset(head_departments)
         obj.view_departments = frozenset(view_departments)
         obj.pay_only = frozenset(pay_only)
+        obj.sections = frozenset(sections) if sections is not None else _effective_sections(roles, {})
         return obj
+
+
+def sections_of(roles):
+    """Розділи-звіти, які бачить користувач (RoleSet.sections); для звичайної множини ролей — за роллю."""
+    found = getattr(roles, "sections", None)
+    return found if found is not None else _effective_sections(roles, {})
 
 
 def pays_only(roles):
@@ -695,9 +704,12 @@ def can_view(req, roles, user_email):
     # Учасник — заявки, до яких його додали (і чернетки теж).
     # Керівник і ті, хто бачить заявки відділу, — заявки свого відділу (крім чернеток).
     # Бухгалтер «Лише оплачує» — лише «До оплати» й оплачені свого виду (заявок на погодженні не бачить).
+    # Кому відкрито «Усі заявки» чи «Звірку» (картка користувача, sections.py) — усі заявки, лише перегляд.
     if is_author(req, user_email) or is_participant(req, user_email):
         return True
     if roles & ((ACCOUNTANT_ROLES - pays_only(roles)) | {"cfo", "admin"}):
+        return True
+    if sections_of(roles) & OPENS_CARDS:
         return True
     if pays_only(roles) and (in_payments(req, roles) or in_paid(req, roles)):
         return True
