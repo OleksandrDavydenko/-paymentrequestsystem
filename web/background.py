@@ -1,4 +1,5 @@
-"""Фонові задачі: нагадування про передачу готівки, щоденне обслуговування, синхронізація налаштувань,
+"""Фонові задачі: нагадування про передачу готівки, заявки «До оплати», які нікому оплатити (щогодини),
+щоденне обслуговування, синхронізація налаштувань,
 звірка з платежами 1С (як часто — «Налаштування → Звірка з 1С», за замовчуванням кожні 10 хвилин)."""
 import logging
 import os
@@ -19,6 +20,7 @@ import mailer
 import notifications
 import onec_sync
 import ops_log
+import pay_access
 import sessions_db
 import storage as db
 import workflow as wf
@@ -90,6 +92,13 @@ def run_approver_reminders(today=None):
     return sent
 
 
+def run_pay_orphans():
+    """Заявки «До оплати», які нікому з бухгалтерів оплатити (ролі й доступи в 1С могли змінитися), — лист
+    адміністраторам, раз на випадок (pay_access.py). Повертає номери заявок, про які щойно повідомлено."""
+    with _app.test_request_context(base_url=_public_base_url()):
+        return pay_access.run_check()
+
+
 def run_maintenance():
     """Щоденне обслуговування бази: перерахунок похідних колонок заявок (довідники з 1С могли змінитися),
     прибирання прострочених сеансів, надісланих листів і записів журналу роботи, старших за 30 днів (журнал сповіщень
@@ -106,6 +115,7 @@ def _reminder_loop():
     while True:
         for name, every, fn in (("handover_reminders", jobs.HOUR - timedelta(minutes=5), run_handover_reminders),
                                 ("approver_reminders", jobs.HOUR - timedelta(minutes=5), run_approver_reminders),
+                                ("pay_orphans", jobs.HOUR - timedelta(minutes=5), run_pay_orphans),
                                 ("onec_sync", jobs.HOUR - timedelta(minutes=5), onec_sync.auto_sync),
                                 ("maintenance", jobs.DAY - timedelta(minutes=5), run_maintenance)):
             try:

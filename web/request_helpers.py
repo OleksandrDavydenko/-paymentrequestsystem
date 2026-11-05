@@ -178,6 +178,11 @@ def _apply_payment_account(req, raw, user, roles):
     if not wf.can_see_payment_account(roles) or raw is None:
         return False
     raw = raw.strip()
+    # Заявку до оплати чужого виду оплати (режим «За роллю і видом оплати») бухгалтер собі не переводить
+    if raw != str(req.get("payment_account_id") or "") and req["status"] in ("to_pay", "paid") \
+            and not wf.pay_type_ok(req, roles):
+        raise wf.WorkflowError("Цю заявку оплачує інший бухгалтер — змінити «Вид оплати» може фіндиректор "
+                               "або адміністратор")
     if raw and raw != str(req.get("payment_account_id") or "") and not payment_accounts.valid_for(req, raw, user, roles):
         raise wf.WorkflowError("Такого виду оплати немає серед доступних вам — оберіть зі списку")
     new_id = raw or None

@@ -30,7 +30,8 @@ KINDS = {"slow": "Повільний запит", "job": "Фонова зада�
          "profile": "Профіль запиту"}
 JOB_NAMES = {"payments_sync": "Звірка з платежами 1С", "payments_sync_now": "Звірка з 1С («Синхронізувати зараз»)",
              "payments_sync_soon": "Звірка з 1С (після платіжки з обробки)", "handover_reminders": "Нагадування про готівку",
-             "approver_reminders": "Нагадування погоджувачам", "onec_sync": "Довідники з 1С",
+             "approver_reminders": "Нагадування погоджувачам", "pay_orphans": "Заявки, які нікому оплатити",
+             "onec_sync": "Довідники з 1С",
              "maintenance": "Щоденне обслуговування"}
 HOST = socket.gethostname()[:100]
 

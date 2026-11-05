@@ -286,7 +286,14 @@ def _scope_where(scope, roles, email):
         if "cfo" in roles:
             return [R.c.status == "paid"]
         acc = sorted(roles & wf.ACCOUNTANT_ROLES)
-        return [R.c.status == "paid", R.c.accountant_role.in_(acc)] if acc else [sa.false()]
+        if not acc:
+            return [sa.false()]
+        where = [R.c.status == "paid", R.c.accountant_role.in_(acc)]
+        types = wf.pay_types_of(roles)
+        if types is not None:  # лише свої види оплати з 1С (і заявки без виду) — як wf.pay_type_ok
+            none = sa.or_(R.c.payment_account_id.is_(None), R.c.payment_account_id == "")
+            where.append(sa.or_(none, R.c.payment_account_id.in_(sorted(types))) if types else none)
+        return where
     if scope == "processed":
         # IN (…), а не EXISTS: SQLite 3.51.0 повертає дублікати для EXISTS з IN-списками по індексу
         decided = lambda *where: sa.select(H.c.request_id).where(H.c.action.in_(sorted(wf.DECISION_ACTIONS)), *where)

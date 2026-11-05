@@ -286,6 +286,16 @@
     <h2>Вид оплати</h2>
     <span class="muted">бачать і змінюють лише бухгалтери, фіндиректор і адміністратор</span>
   </div>
+  {% if pay_type_note %}
+  <div class="callout orange" id="pay-type-note">Вид оплати «{{ pay_account_label(req.payment_account_id) }}» вам у 1С не
+    призначено — цю заявку оплачує бухгалтер, якому він призначений (так налаштовано: «Хто з бухгалтерів бачить заявки
+    до оплати» в адмінці). Змінити вид оплати може фіндиректор або адміністратор.</div>
+  {% endif %}
+  {% if pay_orphan_reason %}
+  <div class="callout red" id="pay-orphan">Цю заявку нікому з бухгалтерів оплатити: {{ pay_orphan_reason }}.
+    Виберіть інший вид оплати, призначте його бухгалтеру в 1С (картка користувача 1С → «Виды оплаты») або додайте
+    бухгалтера потрібної ролі в адмінці.</div>
+  {% endif %}
   <div class="pay-account-row">
     {{ account_select() }}
     <button type="submit" class="btn btn-sm">Зберегти</button>

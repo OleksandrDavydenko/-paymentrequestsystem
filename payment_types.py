@@ -128,6 +128,19 @@ def types_for_user(onec_guid):
     return [t for t in types() if t["id"] in allowed]
 
 
+def type_ids_for_user(onec_guid):
+    """id усіх видів оплати, до яких користувач 1С має доступ (і неактивних «---»: стара заявка з таким видом не має
+    зникнути в бухгалтера), — для видимості заявок «До оплати» й «Оплачені» (pay_access.py)."""
+    if not onec_guid:
+        return frozenset()
+    return frozenset(a["type"] for a in _access.items() if a["user"] == onec_guid and not a["deleted"])
+
+
+def access_loaded():
+    """Чи є дані «Виды оплаты» користувачів 1С (таблицю завантажено з Power BI чи з копії)."""
+    return bool(_access.items())
+
+
 def refresh():
     ok1, ok2 = _types.refresh(), _access.refresh()
     return ok1 and ok2

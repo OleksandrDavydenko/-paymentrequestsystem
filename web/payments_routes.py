@@ -8,6 +8,7 @@ import app_settings
 import clock
 import counterparties
 import notifications
+import pay_access
 import payment_accounts
 import payments
 import request_numbers
@@ -61,6 +62,9 @@ def to_pay(*, context):
     # Відмітки обробки 1С про платіжки (лише для «До оплати»: у легких рядках їх немає — беремо повні заявки сторінки)
     onec_orders = {} if view == "paid" else {i: r["onec_order"] for i, r in db.get_many([r["id"] for r in rows]).items()
                                              if r.get("onec_order")}
+    # Фіндиректору: заявки, які нікому з бухгалтерів оплатити (усі «До оплати», не лише відібрані), з причиною
+    orphans = {r["id"]: {"number": r["number"], "why": why} for r, why, _ in pay_access.orphans(rows=all_rows)} \
+        if view == "to_pay" and "cfo" in roles else {}
     background.kick_payments_sync()
 
     return render_template(
@@ -77,6 +81,7 @@ def to_pay(*, context):
         view=view,
         paid_entry=wf.paid_entry,
         onec_orders=onec_orders,
+        orphans=orphans,
         requests=rows,
         page=page,
         totals=currency_totals(found, today),
@@ -174,7 +179,7 @@ def to_pay_bulk(*, context):
         flash(f"Позначено оплаченими: {', '.join('№ ' + n for n in paid)}", "success")
     if skipped:
         flash("Не можна оплатити: " + ", ".join(skipped) +
-              " — не ваша форма оплати, вже змінено статус, не вибрано «Вид оплати» або контрагента ще немає в 1С",
+              " — не ваша форма чи вид оплати, вже змінено статус, не вибрано «Вид оплати» або контрагента ще немає в 1С",
               "error")
     if not paid and not skipped:
         flash("Оберіть заявки галочками", "error")

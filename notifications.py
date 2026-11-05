@@ -20,6 +20,7 @@ import mailer
 import notify_log
 import request_numbers
 import org_structure
+import pay_access
 import secret_box
 import telegram_notify
 import user_prefs
@@ -57,6 +58,7 @@ SUBJECTS = {
     "handover_reminder": "нагадування — підтвердіть передачу готівки підряднику",
     "approver_reminder": "чекає вашого рішення",
     "cp_new": "новий контрагент — потрібно завести в 1С",
+    "pay_orphan": "нікому з бухгалтерів оплатити",
 }
 
 # Склад груп ролей: role -> [{"email", "name"}]. Встановлюється з app.py (через Graph, з кешем).
@@ -156,6 +158,8 @@ def telegram_text(args):
     lines = [f"<b>Заявка № {esc(request_numbers.label(req['number']))}</b> — {esc(args['headline'])}"]
     if args.get("event") == "handover_reminder":
         lines.append(f"Ви отримали готівку {args.get('handover_days', 0)} дн. тому — підтвердіть передачу підряднику.")
+    elif args.get("event") == "pay_orphan":
+        lines.append("Жоден бухгалтер не може оплатити цю заявку — у його списку «До оплати» її не видно.")
     elif args.get("actor") and args["actor"].get("name"):
         lines.append(f"Від: {esc(args['actor']['name'])}")
     cp = counterparties.name(req.get("counterparty_id"))
@@ -220,7 +224,15 @@ telegram_notify.on_result = _telegram_result
 
 def notify(event, req, actor, comment="", target=None, before=None):
     """Надіслати листи після події event ("submit", "approve", "rework", "reject", "pay",
-    "admin_status", "comment", "participant_add" — target: пошта доданого). Помилки не ламають дію."""
+    "admin_status", "comment", "participant_add" — target: пошта доданого). Помилки не ламають дію.
+    Заявку «До оплати», яку нікому з бухгалтерів оплатити, — ще й адміністраторам (pay_access, раз на випадок)."""
+    try:
+        return _notify_enabled(event, req, actor, comment, target, before)
+    finally:
+        pay_access.check_now(req)
+
+
+def _notify_enabled(event, req, actor, comment, target, before):
     if muted_by_test_mode():
         return []
     if not enabled():
@@ -272,6 +284,9 @@ def _notify(event, req, actor, comment, target=None, before=None):
     # 2. Ті, хто тепер має діяти (нова заявка в їхній черзі чи «До оплати»)
     if event != "comment" and status_changed:
         kind = "task_pay" if req["status"] == "to_pay" else "task_new"
+        # «За роллю і видом оплати»: про оплату — лише бухгалтерам, яким вид оплати заявки призначено в 1С
+        can_pay = {p["email"].lower() for p in pay_access.payers(req)} \
+            if kind == "task_pay" and pay_access.strict() else None
         for role in responsible_roles(req):
             # Керівник відділу — лише керівники відділу автора, а не вся група
             members = dept_settings.approvers(req.get("department")) if role == "dept_head" \
@@ -279,6 +294,10 @@ def _notify(event, req, actor, comment, target=None, before=None):
             if not members:
                 no_members(role)
             for m in members:
+                if can_pay is not None and (m["email"] or "").lower() not in can_pay:
+                    skipped.setdefault((m["email"] or "").lower(), f"ви — {wf.ROLES.get(role, role).lower()}, але вид "
+                                       "оплати цієї заявки вам у 1С не призначено — оплачує інший бухгалтер")
+                    continue
                 if kind == "task_new" and wf.self_approval_blocked(req, m["email"]):
                     continue  # власну заявку погоджує інша людина (параметр «Розподіл обов'язків»)
                 if kind == "task_new" and m.get("pays_only"):
@@ -391,6 +410,46 @@ def send_approver_reminder(req, days):
             sent.append(email)
         except Exception:
             logger.exception("Не вдалося підготувати нагадування погоджувачу")
+    return sent
+
+
+def _admin_recipients():
+    out = []
+    for e in [m.get("email") for m in cached_role_members("admin")] + list(admin_emails()):
+        if e and e.lower() not in out:
+            out.append(e.lower())
+    return out
+
+
+def send_pay_orphan(req, reason):
+    """Адміністраторам: заявку «До оплати» нікому з бухгалтерів оплатити (reason — чому). Потрібен контекст запиту
+    Flask. Повертає список адрес, яким поставлено лист / повідомлення, або None, якщо розсилку вимкнено чи тестовий
+    режим (тоді повідомимо пізніше)."""
+    if not enabled() or test_mode():
+        return None
+    subject = f"Заявка № {request_numbers.label(req['number'])}: {SUBJECTS['pay_orphan']}"
+    sent = []
+    for email in _admin_recipients():
+        if not user_prefs.get(email)["enabled"] or not user_prefs.wants(email, "pay_orphan"):
+            notify_log.record("-", email, "skipped", subject, req.get("id"), req.get("number"), "pay_orphan",
+                              detail="ви адміністратор, але цю подію вимкнено в налаштуваннях")
+            continue
+        try:
+            _send(email, subject, {
+                "req": req, "event": "pay_orphan", "handover_ask": False, "handover_days": 0,
+                "actor": wf.SYSTEM_USER, "comment": f"Чому: {reason}.\nЩо зробити: виберіть у заявці інший вид оплати, "
+                "призначте його бухгалтеру в 1С (картка користувача 1С → «Виды оплаты») або додайте бухгалтера потрібної "
+                "ролі в картці користувача.",
+                "status": wf.STATUSES[req["status"]][0],
+                "headline": "Заявку «До оплати» нікому з бухгалтерів оплатити",
+                "reason": "ви адміністратор: заявка «До оплати» не видна жодному бухгалтеру, який міг би її оплатити",
+                "link": _link(req),
+                "settings_link": (os.environ.get("APP_BASE_URL", "").rstrip("/") + url_for("settings.notification_settings"))
+                if os.environ.get("APP_BASE_URL") else url_for("settings.notification_settings", _external=True),
+            })
+            sent.append(email)
+        except Exception:
+            logger.exception("Не вдалося підготувати лист про заявку, яку нікому оплатити")
     return sent
 
 

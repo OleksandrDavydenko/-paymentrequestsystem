@@ -19,6 +19,7 @@ import dept_settings
 import google_login
 import notifications
 import org_structure
+import pay_access
 import sections
 import storage as db
 import user_directory
@@ -118,7 +119,8 @@ def requires(*needed):
             pay_only = roles & wf.ACCOUNTANT_ROLES if user_roles.acc_mode(uid) == "pay" else ()
             # Розділи-звіти: за роллю, з винятками з картки користувача (sections.py)
             visible = sections.effective(roles, user_roles.section_overrides(uid))
-            g.roles = wf.RoleSet(roles, heads, views, pay_only, visible)
+            # «До оплати» й «Оплачені» — лише свої види оплати з 1С (режим «За роллю і видом оплати», pay_access.py)
+            g.roles = wf.RoleSet(roles, heads, views, pay_only, visible, pay_access.pay_types_for(roles, email))
             if (not g.roles and not visible) or (needed and not g.roles & set(needed)):
                 return render_template("no_access.html", user_name=g.user["name"], missing=needed), 403
             return view(*args, context=context, **kwargs)

@@ -26,6 +26,7 @@ import mailer
 import notify_log
 import org_structure
 import organizations
+import pay_access
 import payment_types
 import rates
 import request_numbers
@@ -83,6 +84,11 @@ def _message(key, value):
         return "Нових контрагентів у 1С заводить: " + ("адміністратор" if value == "admin" else "бухгалтер")
     if key == "pending_cp_payment":
         return f"Контрагент, якого ще немає в 1С, має бути в 1С: {schema.PENDING_CP_MODES[value]}"
+    if key == "pay_visibility":
+        text = "Заявки до оплати бухгалтер бачить: " + schema.PAY_VISIBILITY_MODES[value].split(":")[0].lower()
+        if value == "role_type" and not pay_access.data_ready():
+            text += " — поки діє за роллю: види оплати не з 1С або доступи користувачів 1С ще не завантажено"
+        return text
     if key == "login_methods":
         return "Вхід у систему: " + ("Google і Microsoft" if value == "both" else
                                      "лише Google (адміністратори з ADMIN_EMAILS — ще й через Microsoft)")
@@ -159,6 +165,14 @@ def _context(tab):
                    threshold_currency=cfo_rules.get()["currency"])
     elif tab == "payment":
         pending = counterparties.pending_items()
+        orphans, ready = pay_access.orphans(), pay_access.data_ready()
+        known = {r["id"] for r, _, _ in orphans}
+        ctx.update(pay_visibility=app_settings.get("pay_visibility"), PAY_VISIBILITY_MODES=schema.PAY_VISIBILITY_MODES,
+                   pay_data_ready=ready, pay_strict=pay_access.strict(), pay_orphans=orphans,
+                   # Попередній розрахунок: які ще заявки стануть нікому не видимими, якщо ввімкнути «За роллю і видом»
+                   pay_preview=[o for o in pay_access.orphans(strict_mode=True) if o[0]["id"] not in known]
+                   if ready and not pay_access.strict() else [],
+                   pay_no_onec=pay_access.accountants_without_onec() if ready else [])
         ctx.update(org_mode=app_settings.get("org_field_mode"),
                    require_payment_account=app_settings.get("require_payment_account"),
                    cash_handover_confirm=app_settings.get("cash_handover_confirm"),

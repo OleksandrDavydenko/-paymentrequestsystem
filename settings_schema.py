@@ -88,6 +88,18 @@ def _pending_cp_modes():
     return PENDING_CP_MODES
 
 
+# Хто з бухгалтерів бачить заявки «До оплати» й «Оплачені» (pay_access.py)
+PAY_VISIBILITY_MODES = {
+    "role": "Лише за роллю бухгалтера: бухгалтер бачить усі заявки своєї ролі (готівка / резидент / нерезидент)",
+    "role_type": "За роллю і видом оплати з 1С: бухгалтер бачить і оплачує лише заявки з видами оплати, "
+                 "призначеними йому в 1С",
+}
+
+
+def _pay_visibility_modes():
+    return PAY_VISIBILITY_MODES
+
+
 def _login_methods():
     return {"both": "Google і Microsoft",
             "google": "Лише Google"}
@@ -295,6 +307,8 @@ _LIST = [
             marker="cash_handover_sent"),
     Setting("cash_handover_remind_days", "Нагадувати про передачу готівки кожні N днів", "payment", "int", 1, min=0, max=30),
     Setting("handover_max_reminders", "Нагадувань про передачу готівки — не більше", "payment", "int", 5, min=1, max=20),
+    Setting("pay_visibility", "Хто з бухгалтерів бачить заявки до оплати", "payment", "choice", "role",
+            _pay_visibility_modes),
     Setting("pending_cp_payment", "Контрагент, якого ще немає в 1С", "payment", "choice", "block", _pending_cp_modes),
     Setting("cp_onec_owner", "Хто заводить нового контрагента в 1С", "payment", "choice", "accountant",
             _wf("CP_OWNER_MODES")),

@@ -18,6 +18,7 @@ import invoices
 import notifications
 import org_structure
 import organizations
+import pay_access
 import payment_accounts
 import payments
 import request_numbers
@@ -400,6 +401,11 @@ def _render_card(req, existing, errors, user, roles, budget_items, contractor_li
         account_options=payment_accounts.options_for(req, user, roles) if wf.can_see_payment_account(roles) else [],
         account_empty_hint=payment_accounts.no_options_hint(req, user, roles),
         account_org=payment_accounts.organization_of(req.get("payment_account_id")),
+        # Режим «За роллю і видом оплати»: вид оплати заявки цьому бухгалтеру в 1С не призначено — оплачує інший
+        pay_type_note=req["status"] == "to_pay" and wf.accountant_role(req) in roles and not wf.pay_type_ok(req, roles),
+        # Заявку «До оплати» нікому з бухгалтерів оплатити — фіндиректору й адміністратору з причиною
+        pay_orphan_reason=pay_access.nobody_reason(req) if req["status"] == "to_pay" and roles & {"cfo", "admin"}
+        else None,
         account_required=wf.acting_role(req, roles, user["email"]) in wf.ACCOUNTANT_ROLES
         and req["status"] in ("accountant", "approval") and bool(payment_accounts.options_for(req, user, roles))
         and bool(app_settings.get("require_payment_account")),
@@ -456,6 +462,7 @@ def request_payment_account(request_id, *, context):
         db.save_request(req)
         label = payment_accounts.label(req.get("payment_account_id")) or "не вибрано"
         flash(f"Вид оплати: {label}", "success")
+        pay_access.check_now(req)  # новий вид оплати нікому з бухгалтерів не призначено — адміністраторам
     else:
         flash("Змін немає", "success")
     return redirect(url_for("requests.request_card", request_id=request_id) + "#payment-account")

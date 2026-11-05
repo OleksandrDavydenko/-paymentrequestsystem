@@ -32,6 +32,14 @@
 
 {% include "_totals.html" %}
 
+{% if orphans %}
+<div class="callout red" id="pay-orphans">Нікому з бухгалтерів оплатити: {{ orphans | length }}
+  {{ 'заявку' if orphans | length == 1 else 'заявки' if orphans | length < 5 else 'заявок' }} —
+  {% for id, o in orphans.items() %}{% if loop.index <= 10 %}<a href="{{ url_for('requests.request_card', request_id=id) }}">№ {{ o.number | reqno }}</a> ({{ o.why }}){{ '; ' if not loop.last and loop.index < 10 }}{% endif %}{% endfor %}{{ ' …' if orphans | length > 10 }}.
+  Виберіть у заявці інший вид оплати, призначте його бухгалтеру в 1С або додайте бухгалтера потрібної ролі.
+  Адміністратори отримують про це лист.</div>
+{% endif %}
+
 {% if account_totals and view == "to_pay" %}
 <details class="card plan" id="by-account">
   <summary><h2>За видом оплати</h2><span class="muted">скільки потрібно з кожного рахунку чи каси</span></summary>
@@ -147,7 +155,8 @@
           <span class="badge amber" title="Контрагента ще немає в 1С{{ ' — оплату заблоковано' if pending_cp_mode == 'block' }}">новий</span>{% endif %}</td>
         <td data-label="Стаття витрат">{{ expense_name(r.expense_code) }}</td>
         <td data-label="Форма оплати">{{ CHANNELS[channel_of(r)] }}</td>
-        <td data-label="Вид оплати">{% if r.payment_account_id %}{{ pay_account_label(r.payment_account_id) }}{% else %}<span class="badge red">не вибрано</span>{% endif %}{% set oo = (onec_orders or {}).get(r.id) %}{% if oo %}<div class="{{ 'err' if oo.state == 'failed' else 'pm-doc' }}" title="{{ oo.message if oo.state == 'failed' else 'Платіжку створено в 1С' }}">{{ '⚠ помилка 1С' if oo.state == 'failed' else '1С: платіжка № ' ~ oo.doc_number }}</div>{% endif %}</td>
+        <td data-label="Вид оплати">{% if r.payment_account_id %}{{ pay_account_label(r.payment_account_id) }}{% else %}<span class="badge red">не вибрано</span>{% endif %}{% if r.id in orphans %}
+          <span class="badge red" title="{{ orphans[r.id].why }}">нікому оплатити</span>{% endif %}{% set oo = (onec_orders or {}).get(r.id) %}{% if oo %}<div class="{{ 'err' if oo.state == 'failed' else 'pm-doc' }}" title="{{ oo.message if oo.state == 'failed' else 'Платіжку створено в 1С' }}">{{ '⚠ помилка 1С' if oo.state == 'failed' else '1С: платіжка № ' ~ oo.doc_number }}</div>{% endif %}</td>
         {% set po = pay_org(r) %}
         <td data-label="Платимо з">{{ po.name if po else '—' }}</td>
         <td data-label="Сума" class="num" data-sort="{{ r.currency }}|{{ '%015.2f' % r.amount }}"><strong>{{ r.amount | money }}</strong> {{ r.currency }}</td>

@@ -912,10 +912,11 @@ def report(d_from, d_to):
 # ---------------------------------------------------------------- ручна прив'язка й відв'язка
 
 def can_link(req, roles):
-    """Хто може вручну прив'язати платіж до заявки («Звірка з 1С» → «Хто може прив'язати»)."""
+    """Хто може вручну прив'язати платіж до заявки («Звірка з 1С» → «Хто може прив'язати»). Бухгалтер — лише до
+    заявки свого виду оплати, якщо так налаштовано («Хто з бухгалтерів бачить заявки до оплати», pay_access.py)."""
     who = set(app_settings.get("payment_link_roles") or [])
     return bool(("admin" in who and "admin" in roles) or ("cfo" in who and "cfo" in roles)
-                or ("accountant" in who and wf.accountant_role(req) in roles))
+                or ("accountant" in who and wf.accountant_role(req) in roles and wf.pay_type_ok(req, roles)))
 
 
 def can_link_any(roles):

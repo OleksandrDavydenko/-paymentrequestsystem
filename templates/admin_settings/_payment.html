@@ -15,6 +15,48 @@
     </span>
   </label>
 
+  <div class="budget-section-title" id="pay-visibility">Хто з бухгалтерів бачить заявки до оплати</div>
+  {% for code, label in PAY_VISIBILITY_MODES.items() %}
+  <label class="mode-option">
+    <input type="radio" name="pay_visibility" value="{{ code }}" {{ 'checked' if pay_visibility == code }}>
+    <span>
+      <strong>{{ label.split(':')[0] }}</strong>{% if pay_visibility == code %}<span class="mode-saved">{{ 'діє зараз' if code == 'role' or pay_strict else 'вибрано, але поки діє за роллю' }}</span>{% endif %}
+      <span class="muted">— {{ label.split(':', 1)[1].strip() }}</span>
+      <span class="mode-hint">{% if code == 'role' %}Як було: «До оплати» й «Оплачені» бухгалтера — усі заявки його ролі, з будь-яким видом оплати.
+        Вид оплати з 1С обмежує лише те, що бухгалтер може вибрати в картці.{% else %}Бухгалтер бачить у «До оплати»,
+        «Оплачених» і лічильнику меню, позначає оплаченими й прив'язує платежі лише для заявок, «Вид оплати» яких йому
+        призначено в 1С (картка користувача 1С → «Виды оплаты»). Заявку без виду оплати бачать усі бухгалтери її ролі —
+        хто вибере свій вид, у того вона й лишиться. Фіндиректор і адміністратор бачать усе. Діє, лише коли види оплати
+        беруться з 1С; якщо доступи з 1С не завантажено — працює за роллю.{% endif %}</span>
+    </span>
+  </label>
+  {% endfor %}
+  {% if not pay_data_ready %}
+  <div class="callout orange">Види оплати зараз не з 1С (або доступи користувачів 1С ще не завантажено) — правило
+    «За роллю і видом оплати» поки не діє, бухгалтери бачать заявки за роллю. Перевірте «Довідники з 1С» на вкладці
+    «Система й дизайн».</div>
+  {% endif %}
+  {% if pay_orphans %}
+  <div class="callout red" id="pay-orphans">Зараз нікому з бухгалтерів оплатити:
+    {% for r, why, _ in pay_orphans %}<a href="{{ url_for('requests.request_card', request_id=r.id) }}">№ {{ r.number | reqno }}</a> — {{ why }}{{ '; ' if not loop.last }}{% endfor %}.
+    Адміністратори отримують про кожен такий випадок лист (подія «Заявку «До оплати» нікому з бухгалтерів оплатити»
+    в особистих налаштуваннях сповіщень); фіндиректор бачить такі заявки з позначкою в «До оплати».</div>
+  {% else %}
+  <p class="muted">Заявок «До оплати», які нікому з бухгалтерів оплатити, зараз немає. Якщо така з'явиться (у ролі немає
+    людей або її вид оплати нікому з них не призначено в 1С), адміністратори отримають лист, а фіндиректор побачить
+    позначку в «До оплати».</p>
+  {% endif %}
+  {% if pay_preview %}
+  <div class="callout orange" id="pay-preview">Якщо ввімкнути «За роллю і видом оплати», нікому з бухгалтерів не буде
+    видно {{ pay_preview | length }} {{ 'заявку' if pay_preview | length == 1 else 'заявки' if pay_preview | length < 5 else 'заявок' }} «До оплати»:
+    {% for r, why, _ in pay_preview %}{% if loop.index <= 10 %}<a href="{{ url_for('requests.request_card', request_id=r.id) }}">№ {{ r.number | reqno }}</a> — {{ why }}{{ '; ' if not loop.last and loop.index < 10 }}{% endif %}{% endfor %}{{ ' …' if pay_preview | length > 10 }}.</div>
+  {% endif %}
+  {% if pay_no_onec %}
+  <p class="muted" id="pay-no-onec">Бухгалтери без користувача 1С (за правилом «За роллю і видом оплати» бачать лише
+    заявки без виду оплати):
+    {% for u in pay_no_onec %}<a href="{{ url_for('admin.admin_user_card', user_id=u.id) }}">{{ u.name }}</a>{{ ', ' if not loop.last }}{% endfor %}.</p>
+  {% endif %}
+
   <div class="budget-section-title">Готівка через автора заявки</div>
   <input type="hidden" name="cash_handover_sent" value="1">
   <label class="mode-option">

@@ -49,17 +49,31 @@ ROLE_GROUPS = [
 class RoleSet(frozenset):
     """Ролі користувача + коди відділів, які він очолює і заявки яких бачить, + бухгалтерські ролі, якими він лише
     оплачує (pay_only: не погоджує, не бачить заявок на погодженні), + розділи-звіти, які він бачить (sections:
-    за роллю з винятками з картки користувача, sections.py).
+    за роллю з винятками з картки користувача, sections.py), + види оплати з 1С, заявки з якими бухгалтер бачить
+    і оплачує (pay_types: None — без обмеження; лише в режимі «За роллю і видом оплати», pay_access.py).
 
     Поводиться як звичайна множина ролей, тож усі перевірки `"cfo" in roles` працюють як раніше.
     """
-    def __new__(cls, roles=(), head_departments=(), view_departments=(), pay_only=(), sections=None):
+    def __new__(cls, roles=(), head_departments=(), view_departments=(), pay_only=(), sections=None, pay_types=None):
         obj = super().__new__(cls, roles)
         obj.head_departments = frozenset(head_departments)
         obj.view_departments = frozenset(view_departments)
         obj.pay_only = frozenset(pay_only)
         obj.sections = frozenset(sections) if sections is not None else _effective_sections(roles, {})
+        obj.pay_types = frozenset(pay_types) if pay_types is not None else None
         return obj
+
+
+def pay_types_of(roles):
+    """Види оплати, заявки з якими бухгалтер бачить і оплачує (RoleSet.pay_types), або None — без обмеження."""
+    return getattr(roles, "pay_types", None)
+
+
+def pay_type_ok(req, roles):
+    """Чи підходить заявці вид оплати бухгалтера: обмеження немає, вид у заявці не вибрано (тоді бачать усі бухгалтери
+    ролі — хто вибере свій, у того вона й лишиться) або він серед видів оплати, призначених бухгалтеру в 1С."""
+    types = pay_types_of(roles)
+    return types is None or not req.get("payment_account_id") or str(req["payment_account_id"]) in types
 
 
 def sections_of(roles):
@@ -356,6 +370,8 @@ def acting_role(req, roles, user_email, ignore_self=False):
         return actor if heads_department(req, roles) and not is_author(req, user_email) else None
     if actor in pays_only(roles) and req["status"] != "to_pay":  # «Лише оплачує» — не погоджує
         return None
+    if req["status"] == "to_pay" and not pay_type_ok(req, roles):  # вид оплати заявки бухгалтеру в 1С не призначено
+        return None
     return actor if actor in roles else None
 
 
@@ -401,8 +417,9 @@ def can_see_payments(roles):
 
 
 def in_payments(req, roles):
-    """Розділ «До оплати»: фіндиректор бачить усі, бухгалтер — лише свою форму оплати."""
-    return req["status"] == "to_pay" and ("cfo" in roles or stage_actor(req) in roles)
+    """Розділ «До оплати»: фіндиректор бачить усі, бухгалтер — лише свою форму оплати (і, в режимі «За роллю і видом
+    оплати», лише свої види оплати з 1С)."""
+    return req["status"] == "to_pay" and ("cfo" in roles or (stage_actor(req) in roles and pay_type_ok(req, roles)))
 
 
 DECISION_ACTIONS = {"approve", "rework", "reject", "pay"}
@@ -418,9 +435,10 @@ def processed_entry(req, roles):
 
 
 def in_paid(req, roles):
-    """Оплачені заявки: фіндиректор бачить усі, бухгалтер — свого каналу оплати."""
+    """Оплачені заявки: фіндиректор бачить усі, бухгалтер — свого каналу оплати (і своїх видів оплати — як у
+    «До оплати»)."""
     return req["status"] == "paid" and (
-        "cfo" in roles or accountant_role(req) in roles)
+        "cfo" in roles or (accountant_role(req) in roles and pay_type_ok(req, roles)))
 
 
 def paid_entry(req):

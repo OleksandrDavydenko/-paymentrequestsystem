@@ -104,6 +104,20 @@ for roles_ in ({"acc_resident"}, {"cfo"}, {"acc_cash", "dept_head"}):
     decided_ok &= want == got
 check("processed: decision-date window in SQL is exact", decided_ok)
 
+# ---------- «За роллю і видом оплати»: лише свої види оплати (і заявки без виду) — у базі так само, як у пам'яті
+typed_ok, typed_seen = True, 0
+for roles_, types in itertools.product(({"acc_resident"}, {"acc_cash", "acc_nonresident"}, {"acc_resident", "cfo"}),
+                                       (frozenset(), frozenset({"1", "5"}), frozenset({"3", "10", "nope"}))):
+    roles = RoleSet(roles_, pay_types=types)
+    for scope in ("paid", "to_pay"):
+        a, b = mem.scope_rows(scope, roles, ""), dbs.scope_rows(scope, roles, "")
+        typed_ok &= [id_map[i] for i in ids(a)] == ids(b) and mem.count(scope, roles, "") == dbs.count(scope, roles, "")
+        typed_seen += len(a)
+        typed_ok &= all("cfo" in roles_ or not r["payment_account_id"] or r["payment_account_id"] in types for r in a)
+narrow = len(mem.scope_rows("paid", RoleSet({"acc_resident"}, pay_types=frozenset()), ""))
+check("pay types: paid / to-pay identical in db, only own types", typed_ok and typed_seen
+      and narrow < len(mem.scope_rows("paid", RoleSet({"acc_resident"}), "")))
+
 # ---------- reindex не змінює результат, а після зміни похідних колонок — відновлює
 import sqlalchemy as sa, db_sql
 with db_sql.engine().begin() as c:

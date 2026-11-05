@@ -29,9 +29,12 @@ def notification_settings(*, context):
         groups.append("department")
     if g.roles & wf.ACCOUNTANT_ROLES and app_settings.get("cash_handover_confirm"):
         groups.append("cash")
-    if "admin" in g.roles and app_settings.get("cp_onec_owner") == "admin":
+    if "admin" in g.roles:
         groups.append("admin")
-    events = [(code, label, group) for code, (label, group, _) in user_prefs.EVENTS.items() if group in groups]
+    # Новий контрагент — адміністраторам, лише якщо в 1С його заводять вони
+    hidden = {"cp_new"} if app_settings.get("cp_onec_owner") != "admin" else set()
+    events = [(code, label, group) for code, (label, group, _) in user_prefs.EVENTS.items()
+              if group in groups and code not in hidden]
     if request.method == "POST":
         enabled = request.form.get("enabled") == "1"
         prev = user_prefs.get(email)["events"]
@@ -40,7 +43,7 @@ def notification_settings(*, context):
         new_events = {code: (code in chosen) if enabled else prev[code] for code in user_prefs.EVENTS}
         # Події не своєї ролі не чіпаємо
         for code, (_, group, _) in user_prefs.EVENTS.items():
-            if group not in groups:
+            if group not in groups or code in hidden:
                 new_events[code] = prev[code]
         user_prefs.save(email, enabled, new_events)
         if telegram_notify.enabled() and request.form.get("channel") in user_prefs.CHANNEL_VALUES:
