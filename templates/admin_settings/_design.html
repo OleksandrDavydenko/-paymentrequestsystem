@@ -110,7 +110,7 @@ document.querySelectorAll('.theme-try').forEach(b => b.addEventListener('click',
 }));
 // Назва системи: одразу в шапці цієї сторінки (для всіх — після «Зберегти»)
 const nameInput = document.getElementById('app-name'), brandName = document.querySelector('header .brand-name');
-if (nameInput && brandName) nameInput.addEventListener('input', () => { brandName.textContent = nameInput.value.trim() || 'PayDesk'; });
+if (nameInput && brandName) nameInput.addEventListener('input', () => { brandName.textContent = nameInput.value.trim() || {{ app_name|tojson }}; });
 // «Спробувати» свято: оформлення на цій сторінці (шапка), до збереження нічого не змінюється
 const savedHoliday = document.documentElement.dataset.holiday || '';
 document.querySelectorAll('.holiday-try').forEach(b => b.addEventListener('click', e => {

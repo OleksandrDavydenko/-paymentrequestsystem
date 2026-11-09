@@ -217,10 +217,16 @@ def _fmt_cfo_rules(value):
     return cfo_rules.describe_rows(value, app_settings.get("cfo_currency") or "USD")
 
 
-DEPT_DEFAULT_MODES = {
-    "connected": "уже працюють через PayDesk — платіж без заявки показується як проблема",
-    "pending": "ще не працюють через PayDesk — їхні платежі без заявки дозволені",
-}
+DEFAULT_APP_NAME = "PayDesk"  # типова назва системи; змінюється в «Налаштування → Дизайн»
+
+
+def dept_default_modes():
+    import app_settings  # app_settings імпортує цей модуль — імпорт тут, щоб не було циклу
+    name = app_settings.app_name()
+    return {
+        "connected": f"уже працюють через {name} — платіж без заявки показується як проблема",
+        "pending": f"ще не працюють через {name} — їхні платежі без заявки дозволені",
+    }
 OK_UNTIL_KINDS = {"payments_ok_departments": "відділи статей", "payments_ok_items": "статті",
                   "payments_ok_operations": "види операцій", "payments_ok_payment_types": "види оплати"}
 
@@ -330,8 +336,8 @@ _LIST = [
     # До якої дати платежу діє виняток: {ключ винятку: {значення: ISO-дата}}; без дати — завжди (зберігає форма «Звірки»)
     Setting("payments_ok_until", "Без заявки дозволено: діє до", "reconcile", "json", {}, fmt=_fmt_ok_until),
     # Відділ у документі платежу без дати «заявки обов'язкові з» («Відділи → Звірка з 1С»): уже працює чи ще ні
-    Setting("payments_dept_default", "Відділи без дати підключення до PayDesk", "reconcile", "choice", "connected",
-            lambda: DEPT_DEFAULT_MODES, managed=True),
+    Setting("payments_dept_default", "Відділи без дати підключення до системи", "reconcile", "choice", "connected",
+            dept_default_modes, managed=True),
     # ---- API для обробки 1С «Платіжки із заявок PayDesk» (onec_api.py); ключ — лише SHA-256, створює адміністратор
     Setting("onec_api_enabled", "API для 1С увімкнено", "onec_api", "bool", False),
     Setting("onec_api_ips", "API для 1С: дозволені IP", "onec_api", "text", ""),
@@ -340,7 +346,7 @@ _LIST = [
     # ---- Сповіщення (пошта — власна форма)
     Setting("mail_enabled", "Розсилка увімкнена", "notify", "bool", False, managed=True),
     Setting("mail_sender", "Пошта відправника", "notify", "text", "", managed=True),
-    Setting("mail_sender_name", "Ім'я відправника", "notify", "text", "PayDesk", managed=True),
+    Setting("mail_sender_name", "Ім'я відправника", "notify", "text", DEFAULT_APP_NAME, managed=True),
     Setting("smtp_host", "SMTP-сервер", "notify", "text", "smtp.gmail.com", managed=True),
     Setting("smtp_port", "SMTP-порт", "notify", "int", 587, min=1, max=65535, managed=True),
     Setting("smtp_security", "Шифрування SMTP", "notify", "choice", "starttls", _security, managed=True),
@@ -354,7 +360,7 @@ _LIST = [
     Setting("approver_remind_cfo_copy", "Копія нагадування фіндиректору, якщо заявка чекає бухгалтера", "notify",
             "bool", False),
     # ---- Дизайн
-    Setting("app_name", "Назва системи", "design", "text", "PayDesk"),
+    Setting("app_name", "Назва системи", "design", "text", DEFAULT_APP_NAME),
     Setting("card_design", "Дизайн картки заявки", "design", "choice", "classic", _card_designs),
     Setting("color_theme", "Кольорова тема", "design", "choice", "blue", _color_themes),
     # Святкове оформлення: відмічені свята — самі у свої дні; «Показати зараз» — будь-яке вручну

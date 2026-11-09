@@ -811,7 +811,8 @@ def not_connected_reason(doc, ok):
     name = departments.get_name(codes[0]) or codes[0]
     start = since.get(codes[0])
     detail = f"заявки обов'язкові з {start:%d.%m.%Y}" if start else "дату підключення ще не задано"
-    return _why("Відділ ще не працює через PayDesk", name, f"відділ «{name}» ще не працює через PayDesk ({detail})",
+    app = app_settings.app_name()
+    return _why(f"Відділ ще не працює через {app}", name, f"відділ «{name}» ще не працює через {app} ({detail})",
                 detail=detail)
 
 

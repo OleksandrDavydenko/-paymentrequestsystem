@@ -214,7 +214,7 @@ def _context(tab):
                    ok_payment_types=app_settings.get("payments_ok_payment_types") or [],
                    ok_until=app_settings.get("payments_ok_until") or {},
                    dept_default=app_settings.get("payments_dept_default") or "connected",
-                   DEPT_DEFAULT_MODES=schema.DEPT_DEFAULT_MODES,
+                   DEPT_DEFAULT_MODES=schema.dept_default_modes(),
                    OK_PAYMENT_TYPES=schema.SETTINGS["payments_ok_payment_types"].choices(),
                    cp_stage=app_settings.get("pending_cp_payment"), PENDING_CP_TITLES=schema.PENDING_CP_TITLES)
     elif tab == "design":

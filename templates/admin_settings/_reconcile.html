@@ -1,6 +1,6 @@
 <div class="card process-settings">
   <div class="toolbar"><h2 style="margin:0">Звірка з платежами 1С</h2></div>
-  <p class="muted" style="margin-top:0">PayDesk забирає з 1С документи списання (банк і каса) з таблиці Power BI
+  <p class="muted" style="margin-top:0">{{ app_name }} забирає з 1С документи списання (банк і каса) з таблиці Power BI
     <code>{{ sync_state.table }}</code> і шукає для кожного платежу заявку: спершу <strong>#номер</strong> у призначенні
     платежу (<code>#5</code> → заявка 000000005, якщо збігаються сума, валюта й — для безготівки — контрагент), потім за
     реквізитами (сума, валюта, контрагент або одержувач готівки — автор заявки, вид оплати, дата). Знайдений платіж
@@ -21,7 +21,7 @@
     <form method="post" action="{{ url_for('admin.payments_sync_now') }}"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button type="submit" class="btn btn-sm">⟳ Синхронізувати зараз</button>
       <span class="muted">Сама синхронізація — кожні {{ sync_state.every_minutes }} хв (змінити — нижче, у «Звідки й як часто звіряти»);
-        платежі, видалені в 1С зовсім, — щоразу за 14 днів і раз на добу за 90. Платіжку з обробки 1С PayDesk забирає за
+        платежі, видалені в 1С зовсім, — щоразу за 14 днів і раз на добу за 90. Платіжку з обробки 1С {{ app_name }} забирає за
         пів хвилини після створення.</span>
     </form>
   </div>
@@ -72,7 +72,7 @@
     {% endfor %}
   </span></div>
 
-  <div class="budget-section-title">Відділи, які ще не працюють через PayDesk</div>
+  <div class="budget-section-title">Відділи, які ще не працюють через {{ app_name }}</div>
   <p class="muted" style="margin-top:0">Відділ — той, що вказаний у самому документі списання в 1С. Для кожного відділу в
     <a href="{{ url_for('admin.admin_departments', view='reconcile') }}">«Відділи» → «Звірка з 1С»</a> задається дата,
     з якої його заявки обов'язкові: платежі раніше цієї дати — «Дозволені без заявки», пізніше — ні. Відділи без дати зараз
@@ -116,7 +116,7 @@
     <span><strong>Синхронізувати з 1С кожні
       <input type="number" name="payments_sync_minutes" value="{{ sync_state.every_minutes }}" min="5" max="120" style="width:64px"
              aria-label="Синхронізувати кожні N хвилин"> хв</strong>
-      <span class="mode-hint">Від 5 до 120 хвилин. PayDesk бачить нові платіжки, коли їх уже є в Power BI, тож частіша
+      <span class="mode-hint">Від 5 до 120 хвилин. {{ app_name }} бачить нові платіжки, коли їх уже є в Power BI, тож частіша
         синхронізація допомагає, лише якщо Power BI оновлюється частіше. Будь-коли — «Синхронізувати зараз» вище.</span></span>
   </label>
   <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>

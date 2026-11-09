@@ -103,7 +103,7 @@
   {% endif %}
 
   <section class="dept-panel" data-panel="reconcile" {{ 'hidden' if view != 'reconcile' }}>
-  <p class="muted" style="margin-top:0">Відділи переходять на PayDesk поступово. Для кожного вкажіть дату, з якої його заявки
+  <p class="muted" style="margin-top:0">Відділи переходять на {{ app_name }} поступово. Для кожного вкажіть дату, з якої його заявки
     обов'язкові: у звірці з 1С платежі цього відділу раніше дати без заявки — «Дозволені без заявки», з цієї дати — уже
     проблема («Без заявки»). Відділ — той, що вказаний у самому документі списання в 1С; платежі без відділу в документі
     звіряються як звичайно. Минулі платежі від зміни дати не ламаються: дата лише відділяє «до» й «після».</p>
@@ -125,7 +125,7 @@
           <input type="date" name="requests_since-{{ r.code }}" value="{{ r.settings.requests_since or '' }}" class="dept-since"
                  aria-label="Заявки обов'язкові з: {{ r.name }}"></td>
         <td data-label="Зараз у звірці">
-          {% if r.since %}{% if r.since <= today %}<span class="badge green">працює через PayDesk з {{ r.since | d }}</span>
+          {% if r.since %}{% if r.since <= today %}<span class="badge green">працює через {{ app_name }} з {{ r.since | d }}</span>
           {% else %}<span class="badge amber">ще ні — заявки з {{ r.since | d }}</span>{% endif %}
           {% elif dept_default == 'pending' %}<span class="badge grey">ще не працює — дати немає</span>
           {% else %}<span class="badge green">працює (дати немає — як для всіх без дати)</span>{% endif %}</td>

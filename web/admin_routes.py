@@ -295,9 +295,9 @@ def admin_departments(*, context):
         for message in errors:
             flash(message, "error")
         mode = f.get("payments_dept_default")
-        if mode in schema.DEPT_DEFAULT_MODES and not errors and mode != app_settings.get("payments_dept_default"):
+        if mode in schema.dept_default_modes() and not errors and mode != app_settings.get("payments_dept_default"):
             app_settings.set("payments_dept_default", mode, who)
-            flash("Відділи без дати підключення: " + schema.DEPT_DEFAULT_MODES[mode], "success")
+            flash("Відділи без дати підключення: " + schema.dept_default_modes()[mode], "success")
         if "contractor_default" in f and not errors:
             default = _codes(f.get("contractor_default"))
             if default != app_settings.get("contractor_expense_codes"):
@@ -322,7 +322,7 @@ def admin_departments(*, context):
     items = [{"code": i["code"], "name": i["name"]} for i in expense_items.get_items()]
     return render_template("admin_departments.html", user_name=g.user["name"], rows=rows, items=items,
                            view=request.args.get("view") if request.args.get("view") in ("direct", "reconcile") else "approval",
-                           DEPT_DEFAULT_MODES=schema.DEPT_DEFAULT_MODES, today=clock.today(),
+                           DEPT_DEFAULT_MODES=schema.dept_default_modes(), today=clock.today(),
                            dept_default=app_settings.get("payments_dept_default") or "connected",
                            invoices_on=app_settings.get("invoices_mode") != "off",
                            contractor_default=app_settings.get("contractor_expense_codes") or [],

@@ -3,6 +3,7 @@ from functools import wraps
 
 from flask import Blueprint, jsonify, request
 
+import app_settings
 import onec_api
 import ratelimit
 
@@ -25,17 +26,17 @@ def guarded(fn):
     @wraps(fn)
     def wrapper(*args, **kwargs):
         if not onec_api.enabled():
-            return _error("API для 1С вимкнено або ключ ще не створено («Налаштування → API для 1С» у PayDesk)", 403)
+            return _error(f"API для 1С вимкнено або ключ ще не створено («Налаштування → API для 1С» у {app_settings.app_name()})", 403)
         ip = client_ip()
         if ratelimit.API_BAD_KEYS.blocked(ip):
             return _error("Забагато спроб з невірним ключем — спробуйте за 10 хвилин", 429)
         if not ratelimit.API_REQUESTS.hit(ip):
-            return _error("Забагато запитів до PayDesk — спробуйте за хвилину", 429)
+            return _error(f"Забагато запитів до {app_settings.app_name()} — спробуйте за хвилину", 429)
         if not onec_api.key_ok(request.headers.get("X-Api-Key")):
             ratelimit.API_BAD_KEYS.hit(ip)
             return _error("Невірний ключ API — перевірте його в налаштуваннях обробки", 403)
         if not onec_api.ip_allowed(ip):
-            return _error(f"Доступ з IP {ip} не дозволено («Налаштування → API для 1С» у PayDesk)", 403)
+            return _error(f"Доступ з IP {ip} не дозволено («Налаштування → API для 1С» у {app_settings.app_name()})", 403)
         onec_api.touch(ip, request.path)
         try:
             return fn(*args, **kwargs)

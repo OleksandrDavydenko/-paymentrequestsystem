@@ -9,7 +9,7 @@
 {% set TILE_HINTS = {
   'unlinked': 'Платіж є в 1С, а заявки під нього не знайдено. Знайдіть заявку або дозвольте такі платежі.',
   'issues': 'Платіж вказує на заявку, але щось не збігається. Заявка сама не закривається — перевірте.',
-  'linked': 'Платіж знайшов свою заявку. Тут видно, як саме і чи поставив PayDesk «Оплачено».',
+  'linked': 'Платіж знайшов свою заявку. Тут видно, як саме і чи поставив ' ~ app_name ~ ' «Оплачено».',
   'allowed': 'Платежі, яким заявка не потрібна (комісії, податки…) — за винятками в налаштуваннях.'} %}
 {% set TILE_COLORS = {'unlinked': 'amber', 'issues': 'red', 'linked': 'green', 'allowed': 'grey'} %}
 
@@ -23,7 +23,7 @@
   <details class="rc-how">
     <summary>Як працює звірка</summary>
     <ol>
-      <li>Кожні {{ sync.every_minutes }} хв PayDesk забирає з 1С документи списання — з банку й каси.</li>
+      <li>Кожні {{ sync.every_minutes }} хв {{ app_name }} забирає з 1С документи списання — з банку й каси.</li>
       <li>Для кожного платежу шукає заявку: спершу за <strong>#номером у призначенні</strong> (<code>#15</code> → заявка
         000000015), потім за сумою, валютою, контрагентом (для готівки — кому видано), видом оплати й датою.</li>
       <li><strong>Знайшов</strong> — платіж прив'язується до заявки (вкладка «Зіставлені»). Якщо для бухгалтера заявки
@@ -100,7 +100,7 @@
           <div class="rc-req"><a href="{{ url_for('requests.request_card', request_id=r.id) }}"><strong>№ {{ r.number | reqno }}</strong></a>
             <span class="badge {{ r.status_color }}">{{ r.status_label }}</span>
             <div class="muted">{{ r.match_label }}{{ ' — ' ~ r.by_name if r.match == 'manual' and r.by_name }}</div>
-            {% if r.paid_here %}<div class="rc-ok">✓ «Оплачено» поставив PayDesk за цим платежем</div>
+            {% if r.paid_here %}<div class="rc-ok">✓ «Оплачено» поставив {{ app_name }} за цим платежем</div>
             {% elif r.status == 'paid' %}<div class="muted">заявку вже позначив оплаченою бухгалтер — платіж лише прив'язано</div>
             {% else %}<div class="muted">статус ставить бухгалтер (режим «Вручну»)</div>{% endif %}</div>
           {% endfor %}</td>
@@ -113,7 +113,7 @@
             <div class="rc-compare">у заявці: <strong>{{ r.amount | money }} {{ r.currency }}</strong> · {{ r.counterparty or '—' }}</div>
             <div class="rc-compare muted">у платежі: {{ d.amount | money }} {{ d.currency }} · {% for cp in d.counterparties %}{{ cp_name(cp) }}{{ ', ' if not loop.last }}{% else %}—{% endfor %}</div></div>
           {% endfor %}
-          {% for n in d.missing_numbers %}<div class="muted">Заявки № {{ n }} немає в PayDesk</div>{% endfor %}</td>
+          {% for n in d.missing_numbers %}<div class="muted">Заявки № {{ n }} немає в {{ app_name }}</div>{% endfor %}</td>
 
         {% elif tab == 'allowed' %}
         <td data-label="Чому дозволено">{% set why = d.allowed %}<div class="rc-why">
@@ -151,7 +151,7 @@
               <label class="rc-allow-until muted">діє до <input type="date" name="until" aria-label="Виняток діє до дати">
                 <span>— порожньо: завжди</span></label>
               {% if d.departments %}<a class="rc-allow-dept" href="{{ url_for('admin.admin_departments', view='reconcile') }}">Відділ
-                ще не працює через PayDesk? — дата підключення в «Відділи»</a>{% endif %}
+                ще не працює через {{ app_name }}? — дата підключення в «Відділи»</a>{% endif %}
             </form>
           </details>
           {% endif %}

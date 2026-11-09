@@ -54,7 +54,7 @@ def inject_refs():
 
 def app_name():
     """Назва системи («Налаштування → Дизайн»): шапка, заголовки сторінок, вхід, листи, ярлик на телефоні."""
-    return (app_settings.get("app_name") or "").strip() or "PayDesk"
+    return app_settings.app_name()
 
 
 def theme_context(theme):

@@ -152,5 +152,10 @@ man = c.get("/site.webmanifest")
 check("phone shortcut name", man.status_code == 200 and man.get_json()["short_name"] == "FTP PayDesk")
 claims.clear()
 check("login page", "<h1>FTP PayDesk</h1>" in page("/login"))
+app_settings.set("app_name", "Kermo", "t")
+login("a@ftpua.com")
+admin_pages = [page(u) for u in ("/admin/settings?tab=onec_api", "/admin/settings?tab=reconcile", "/admin/departments?view=reconcile")]
+check("admin texts take the system name, not a hardcoded one",
+      all("Kermo" in p and "PayDesk" not in p for p in admin_pages))
 app_settings.set("app_name", "PayDesk", "t")
 print("ALL OK" if ok else "SOME FAILED")

@@ -61,6 +61,11 @@ def get(key):
     return entry["value"] if entry else DEFAULTS.get(key)
 
 
+def app_name():
+    """Назва системи («Налаштування → Дизайн»); порожня — типова (settings_schema.DEFAULT_APP_NAME)."""
+    return (get("app_name") or "").strip() or settings_schema.DEFAULT_APP_NAME
+
+
 def info(key):
     """Значення разом із тим, хто і коли його змінив."""
     with _lock:
