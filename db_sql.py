@@ -334,6 +334,19 @@ def _token():
     return struct.pack(f"<I{len(raw)}s", len(raw), raw)
 
 
+# Тимчасові збої Azure SQL, після яких Microsoft радить просто підключитися ще раз: база на мить недоступна
+# (перемикання, оновлення платформи — 40613, 40197, 40501, 49918–49920, 4221, 10928/10929), обірване з'єднання.
+TRANSIENT_ERRORS = ("40613", "40197", "40501", "40540", "49918", "49919", "49920", "4221", "10928", "10929",
+                    "10053", "10054", "10060")
+TRANSIENT_STATES = ("08S01", "HYT00")
+CONNECT_RETRY_DELAYS = (1, 3, 6)  # секунд між спробами; разом — до ~10 с, далі помилка як була
+
+
+def _transient(e):
+    text = str(e)
+    return (bool(e.args) and e.args[0] in TRANSIENT_STATES) or any(f"({code})" in text for code in TRANSIENT_ERRORS)
+
+
 def _azure_connect():
     import ops_log
     import pyodbc
@@ -341,9 +354,21 @@ def _azure_connect():
     conn_str = (f"Driver={{{_driver()}}};Server=tcp:{os.environ['SQL_SERVER']},1433;"
                 f"Database={os.environ['SQL_DATABASE']};Encrypt=yes;TrustServerCertificate=no;Connection Timeout=30")
     try:
-        return pyodbc.connect(conn_str, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: _token()})
+        for delay in (*CONNECT_RETRY_DELAYS, None):
+            try:
+                return pyodbc.connect(conn_str, attrs_before={SQL_COPT_SS_ACCESS_TOKEN: _token()})
+            except pyodbc.Error as e:
+                if delay is None or not _transient(e):
+                    raise
+                logging.getLogger(__name__).warning("База тимчасово недоступна, нова спроба за %s с: %s", delay, e)
+                time.sleep(delay)
     finally:
         ops_log.add_timing("db_connect", time.monotonic() - t0)  # нове з'єднання (з токеном Entra) — у підсумок запиту
+
+
+# Пул з'єднань з Azure SQL. LIFO — видаємо найсвіжіше з'єднання: за черговістю (FIFO) кожне звертання до бази після
+# тиші брало інше, старше за pool_recycle, з'єднання й відкривало нове (~1 с кожне) — /health витрачав 4–6 с лише на це.
+AZURE_POOL = {"pool_pre_ping": True, "pool_recycle": 1800, "pool_use_lifo": True, "fast_executemany": False}
 
 
 def engine():
@@ -355,8 +380,7 @@ def engine():
                 if os.environ.get("DATABASE_URL"):
                     eng = sa.create_engine(os.environ["DATABASE_URL"], future=True)
                 else:
-                    eng = sa.create_engine("mssql+pyodbc://", creator=_azure_connect, future=True,
-                                           pool_pre_ping=True, pool_recycle=1800, fast_executemany=False)
+                    eng = sa.create_engine("mssql+pyodbc://", creator=_azure_connect, future=True, **AZURE_POOL)
                 _count_query_time(eng)
                 import db_schema  # таблиці, нові колонки й індекси (див. db_schema.py)
                 db_schema.upgrade(eng)

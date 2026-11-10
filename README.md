@@ -559,6 +559,10 @@ PayDesk нічого не надсилається: звірка сама пер
   `CREATE USER [PaymentRequestSystem] FROM EXTERNAL PROVIDER` + ролі db_datareader / db_datawriter / db_ddladmin.
   Сервер — Microsoft Entra-only, тариф бази Basic. Потрібен ODBC Driver 17/18 for SQL Server (є в образі App Service;
   `/health` показує знайдені драйвери).
+- **З'єднання** (`db_sql.AZURE_POOL`, `_azure_connect`): пул видає найсвіжіше з'єднання (LIFO), тож після тиші
+  відкривається одне нове, а не кожне по черзі (≈1 с кожне). Якщо база на мить недоступна (оновлення чи
+  перемикання на боці Azure: 40613, 40197, 40501, обрив зв'язку…), підключення повторюється через 1, 3 і 6 с; інші
+  помилки — одразу.
 - Таблиці, нові колонки й індекси створюються самі (`db_schema.py`): `requests` (уся заявка в JSON `data` +
   похідні колонки для списків і звітів), `request_history` (лише дописується — журнал аудиту), `request_lines`,
   `request_participants`, `request_files`, `request_rev`, `request_seq`, `schema_meta`, `documents`
