@@ -27,7 +27,7 @@ import db_sql
 import sessions_db
 import workflow as wf  # noqa: F401  (для сценарних тестів: m.wf)
 from web import admin_settings, background, context, errors  # noqa: F401  (admin_settings — маршрути в admin_bp)
-from web import request_timing, security_headers
+from web import performance, request_timing, security_headers
 from web.admin_routes import bp as admin_bp
 from web.api_routes import bp as api_bp
 from web.auth import auth
@@ -59,6 +59,7 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 request_timing.init_app(app)  # першим: час запиту включає й перевірки на початку
 csrf = CSRFProtect(app)
 auth.init_app(app)
+performance.init_app(app)  # після auth: статика без сеансу й бази, кеш статики з версією, час компіляції шаблонів
 
 context.init_app(app)
 errors.init_app(app)

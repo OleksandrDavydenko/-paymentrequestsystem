@@ -32,7 +32,7 @@ JOB_NAMES = {"payments_sync": "Звірка з платежами 1С", "payment
              "payments_sync_soon": "Звірка з 1С (після платіжки з обробки)", "handover_reminders": "Нагадування про готівку",
              "approver_reminders": "Нагадування погоджувачам", "pay_orphans": "Заявки, які нікому оплатити",
              "onec_sync": "Довідники з 1С",
-             "maintenance": "Щоденне обслуговування"}
+             "maintenance": "Щоденне обслуговування", "templates_warmup": "Підготовка шаблонів після старту"}
 HOST = socket.gethostname()[:100]
 
 _lock = threading.Lock()
@@ -103,7 +103,8 @@ def summary(result):
     return "ok", "" if result is None else str(result)[:500]
 
 
-TIMING_LABELS = {"db": "база", "db_connect": "нові з'єднання з базою", "pbi": "Power BI"}
+TIMING_LABELS = {"db": "база", "db_connect": "нові з'єднання з базою", "pbi": "Power BI",
+                 "tpl": "компіляція шаблонів"}
 
 
 def add_timing(kind, seconds):

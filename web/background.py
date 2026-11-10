@@ -25,6 +25,8 @@ import sessions_db
 import storage as db
 import workflow as wf
 
+from web import performance
+
 
 REMINDER_INTERVAL = 3600  # перевірка раз на годину
 PAYMENTS_TICK = 60        # раз на хвилину — чи пора звіряти (новий інтервал з налаштувань діє одразу)
@@ -202,13 +204,18 @@ def _start_background():
     with _reminders_lock:
         if not _reminders_started:
             _reminders_started = True
+            # Шаблони — одразу: перша людина після перезапуску не чекатиме кілька секунд на їх компіляцію
+            performance.start_warmup(_app)
             threading.Thread(target=_reminder_loop, name="background-jobs", daemon=True).start()
             threading.Thread(target=_payments_loop, name="payments-sync", daemon=True).start()
             mailer.start_worker()  # листи, що лишилися в черзі після перезапуску
 
 
 def _sync_shared_state():
-    """Налаштування й довідники, змінені іншими процесами сайту, — перечитати (один маленький запит)."""
+    """Налаштування й довідники, змінені іншими процесами сайту, — перечитати (один маленький запит). Для статичних
+    файлів, маніфесту й favicon — ні: їх браузер просить по кілька на кожній сторінці (performance.py)."""
+    if performance.is_light():
+        return
     try:
         docstore.sync()
     except Exception:
