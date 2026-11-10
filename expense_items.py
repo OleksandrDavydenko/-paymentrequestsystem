@@ -355,25 +355,39 @@ def get_departments():
 _dept_index = {}
 
 
-def departments_for(code):
-    """Відділи статей витрат, що відповідають відділу довідника (код): за DepartmentGUID рядків статей,
-    а для рядків без GUID — за однаковою назвою. Для правила «статті свого відділу»."""
+def _dept_indexes():
+    """Відділи статей ↔ відділи довідника: за DepartmentGUID рядків статей, а для рядків без GUID — за однаковою
+    назвою. -> ({код відділу: {відділи статей}}, {код статті: {коди відділів}}); перебудовується, лише коли змінився
+    довідник статей чи відділів."""
     import departments
-    if not code:
-        return []
     items, dmap = get_items(), departments.get_map()
     key = (id(items), tuple(sorted(dmap.items())))
-    if _dept_index.get("key") != key:  # довідник статей чи відділів змінився — перебудувати покажчик
+    if _dept_index.get("key") != key:
         by_name = {(n or "").strip().lower(): c for c, n in dmap.items()}
-        index = {}
+        by_dept, by_item = {}, {}
         for i in items:
             guids = i.get("dept_guids") or {}
             for dep in i["departments"]:
                 c = departments.code_by_guid(guids[dep]) if guids.get(dep) else by_name.get(dep.strip().lower())
                 if c:
-                    index.setdefault(c, set()).add(dep)
-        _dept_index.update(key=key, index=index)
-    return sorted(_dept_index["index"].get(code, ()), key=str.lower)
+                    by_dept.setdefault(c, set()).add(dep)
+                    by_item.setdefault(i["code"], set()).add(c)
+        _dept_index.update(key=key, by_dept=by_dept, by_item=by_item)
+    return _dept_index["by_dept"], _dept_index["by_item"]
+
+
+def departments_for(code):
+    """Відділи статей витрат, що відповідають відділу довідника (код). Для правила «статті свого відділу»."""
+    if not code:
+        return []
+    return sorted(_dept_indexes()[0].get(code, ()), key=str.lower)
+
+
+def department_codes(item_code):
+    """Коди відділів довідника, яким належить стаття (стаття з розподілом — непряма); пряма чи невідома — []."""
+    if not item_code:
+        return []
+    return sorted(_dept_indexes()[1].get(item_code, ()))
 
 
 def status():

@@ -789,14 +789,33 @@ def _ok_on(ok, kind, value, day):
     return (until is None or day is None or day <= until), until
 
 
-def not_connected_reason(doc, ok):
-    """Платіж відділу, який ще не працює через PayDesk, — заявка не потрібна. Відділ — з документа 1С (рядки
-    розшифровки); якщо там кілька відділів, заявка не потрібна, лише коли жоден із них ще не підключено."""
+def doc_departments(doc):
+    """Відділи платежу для звірки -> (коди відділів довідника, стаття, з якої їх узято, або None).
+
+    Відділ — з документа 1С (рядки розшифровки). У документі його немає — для непрямих статей (з відділами в
+    довіднику статей 1С; 1С тоді відділу в документі не вимагає) беремо відділи статей, якщо всі статті платежу
+    непрямі. Пряма стаття без відділу в документі — відділ невідомий ([])."""
     codes = []
     for guid in doc.get("departments") or []:
         code = departments.code_by_guid(guid)
         if code and code not in codes:
             codes.append(code)
+    if codes or doc.get("departments"):
+        return codes, None
+    items = doc.get("items") or []
+    by_item = {code: expense_items.department_codes(code) for code in items}
+    if not items or not all(by_item.values()):
+        return [], None
+    for code in items:
+        codes += [c for c in by_item[code] if c not in codes]
+    return codes, ", ".join(items)
+
+
+def not_connected_reason(doc, ok):
+    """Платіж відділу, який ще не працює через PayDesk, — заявка не потрібна. Відділ — з документа 1С (рядки
+    розшифровки), а коли там порожньо — з непрямої статті (doc_departments); якщо відділів кілька, заявка не
+    потрібна, лише коли жоден із них ще не підключено."""
+    codes, from_item = doc_departments(doc)
     if not codes:
         return None
     day, since = doc.get("date"), ok.get("dept_since") or {}
@@ -811,6 +830,8 @@ def not_connected_reason(doc, ok):
     name = departments.get_name(codes[0]) or codes[0]
     start = since.get(codes[0])
     detail = f"заявки обов'язкові з {start:%d.%m.%Y}" if start else "дату підключення ще не задано"
+    if from_item:
+        detail += f" · відділ зі статті {from_item} (у документі відділу немає)"
     app = app_settings.app_name()
     return _why(f"Відділ ще не працює через {app}", name, f"відділ «{name}» ще не працює через {app} ({detail})",
                 detail=detail)
@@ -894,7 +915,11 @@ def report(d_from, d_to):
             out["linked"].append({**d, "links": links[d["guid"]]})
         else:
             reason = allowed_reason(d, ok, item_deps)
-            out["allowed" if reason else "unlinked"].append({**d, "allowed": reason})
+            row = {**d, "allowed": reason}
+            if not reason:  # для показу: відділ з документа, зі статті чи невідомий
+                codes, from_item = doc_departments(d)
+                row["dept"] = {"names": [departments.get_name(c) for c in codes], "from_item": from_item}
+            out["allowed" if reason else "unlinked"].append(row)
     # заявки до рядків — одним запитом
     found = db.ids_by_numbers({n for d in out["issues"] for n in d["ref_numbers"]})
     ids = set(found.values()) | {rid for d in out["linked"] for rid in d["links"]} | {i for d in out["issues"] for i in d["linked_ids"]}

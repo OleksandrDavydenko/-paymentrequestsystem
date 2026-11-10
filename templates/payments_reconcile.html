@@ -124,7 +124,8 @@
 
         {% else %}
         <td data-label="Стаття · операція">{% for code in d['items'] %}<div>{{ code }} <span class="muted">{{ expense_title(code) or '' }}</span></div>{% endfor %}
-          {% if d.operation %}<div class="muted">{{ d.operation }}</div>{% endif %}{% if not d['items'] and not d.operation %}<span class="muted">—</span>{% endif %}</td>
+          {% if d.operation %}<div class="muted">{{ d.operation }}</div>{% endif %}{% if not d['items'] and not d.operation %}<span class="muted">—</span>{% endif %}
+          {% if d.dept %}<div class="muted rc-dept">{% if d.dept.names %}{{ 'відділ статті' if d.dept.from_item else 'відділ' }}: {{ d.dept.names | join(', ') }}{% else %}відділ не вказано{% endif %}</div>{% endif %}</td>
         {% endif %}
 
         {% if tab in ('unlinked', 'issues') and (can_link or can_allow) %}
@@ -150,7 +151,7 @@
               {% endfor %}
               <label class="rc-allow-until muted">діє до <input type="date" name="until" aria-label="Виняток діє до дати">
                 <span>— порожньо: завжди</span></label>
-              {% if d.departments %}<a class="rc-allow-dept" href="{{ url_for('admin.admin_departments', view='reconcile') }}">Відділ
+              {% if d.dept and d.dept.names %}<a class="rc-allow-dept" href="{{ url_for('admin.admin_departments', view='reconcile') }}">Відділ
                 ще не працює через {{ app_name }}? — дата підключення в «Відділи»</a>{% endif %}
             </form>
           </details>

@@ -23,10 +23,11 @@ page = lambda url: c.get(url).get_data(as_text=True)
 
 payments.sync()
 # Платежі без заявки: відділ «Логістика» в документі (DEP-LOG — GUID демо-відділу), вид оплати «КАСА-ТЕСТ»
-def pay(n, day, dep=None, ptype="PT-TEST", deps2=None):
+def pay(n, day, dep=None, ptype="PT-TEST", deps2=None, item=None):
     rows = [{"PaymentGUID": f"R{n:031d}", "LineNo": 1, "DocumentKind": "Cash", "DocumentNumber": f"RL-{n}", "PaymentDate": day,
              "PaymentTypeGUID": ptype, "CounterpartyGUID": None, "Amount": 100 + n, "Currency": "UAH", "Purpose": "без заявки",
-             "IsPosted": True, "IsDeleted": False, "OperationKind": "Видача", "DepartmentGUID": dep, "RowVersion": 1}]
+             "IsPosted": True, "IsDeleted": False, "OperationKind": "Видача", "DepartmentGUID": dep, "RowVersion": 1,
+             "ExpenseItemCode": item}]
     if deps2:
         rows.append({**rows[0], "LineNo": 2, "DepartmentGUID": deps2})
     payments.store().replace_docs([payments.parse(r) for r in rows])
@@ -65,6 +66,35 @@ dept_settings.set_many({"LOG": {"requests_since": "2026-12-01"}, "IT": {"request
 where, _ = report()
 check("two departments in the document: one already works through PayDesk -> unlinked",
       where.get("RL-1") == "allowed" and where.get("RL-2") == "unlinked")
+
+# ---------- у документі відділу немає: для непрямої статті — відділи статті (довідник статей 1С)
+pay(5, "2026-10-20", item="05.003", ptype="PT-ITEM")             # непряма: «Логістика»
+pay(6, "2026-10-20", item="09.001", ptype="PT-ITEM")             # пряма: без відділів
+pay(7, "2026-10-20", item="05.004", ptype="PT-ITEM")             # непряма: «Логістика», «Продажі»
+pay(8, "2026-10-20", dep="DEP-IT", item="05.003", ptype="PT-ITEM")  # відділ у документі є
+payments.store().replace_docs([payments.parse(r) for r in (     # дві статті: непряма й пряма
+    {"PaymentGUID": f"R{9:031d}", "LineNo": n, "DocumentKind": "Cash", "DocumentNumber": "RL-9", "PaymentDate": "2026-10-20",
+     "PaymentTypeGUID": "PT-ITEM", "Amount": 50, "Currency": "UAH", "Purpose": "без заявки", "IsPosted": True,
+     "IsDeleted": False, "OperationKind": "Накладні витрати", "RowVersion": 1, "ExpenseItemCode": item}
+    for n, item in ((1, "05.003"), (2, "09.001")))])
+where, why = report()
+check("no department in the document, indirect item: the item's department decides, the reason says so",
+      where.get("RL-5") == "allowed" and why["RL-5"]["name"] == "Логістика"
+      and "відділ зі статті 05.003" in why["RL-5"]["detail"] and "заявки обов'язкові з 01.12.2026" in why["RL-5"]["detail"])
+check("no department in the document, direct item: reconciled as usual", where.get("RL-6") == "unlinked")
+check("indirect item of two departments, neither connected yet: allowed", where.get("RL-7") == "allowed")
+check("the document's department wins over the item's", where.get("RL-8") == "unlinked")
+check("a direct item among the lines: department unknown -> reconciled as usual", where.get("RL-9") == "unlinked")
+dept_settings.set_many({"SAL": {"requests_since": "2026-10-01"}}, "t")
+where, _ = report()
+check("one of the item's departments already works through PayDesk -> unlinked", where.get("RL-7") == "unlinked")
+dept_settings.set_many({"LOG": {"requests_since": "2026-10-15"}}, "t")
+check("item's department connected before the payment -> unlinked", report()[0].get("RL-5") == "unlinked")
+login("adm@ftpua.com")
+html = page("/payments/reconcile?from=2026-09-01&to=2026-11-30&pt=PT-ITEM")
+check("«Без заявки» shows the department and where it came from",
+      "відділ статті: Логістика, Відділ продажу" in html and "відділ не вказано" in html and "відділ: ІТ" in html)
+dept_settings.set_many({"LOG": {"requests_since": "2026-12-01"}}, "t")
 app_settings.set("payments_dept_default", "connected", "t")
 where, _ = report()
 check("connected by default, but the department starts later: still allowed", where.get("RL-1") == "allowed")
