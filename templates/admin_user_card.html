@@ -237,26 +237,40 @@
       </select>
     </div>
     {% endfor %}
-    {% if budget_on() %}
-    <div class="uc-budget-access" id="uc-budget-access">
-      <div class="budget-section-title">Бюджет: які відділи</div>
-      <p class="uc-explain">Чий бюджет людина бачить на вкладці «Бюджет», якщо вкладку їй відкрито (рядок «Бюджет» вище).
-        Фіндиректор і адміністратор бачать бюджет усіх відділів завжди.</p>
-      <input type="hidden" name="budget_access_sent" value="1">
-      {% for code, label in BUDGET_ACCESS_MODES.items() %}
-      <label class="budget-option"><input type="radio" name="budget_access_mode" value="{{ code }}" {{ 'checked' if budget_access.mode == code }}>
-        <span><strong>{{ label }}</strong>{% if code == 'role' %} <span class="muted">— відділи, які людина очолює (пункт 3):
-          {% for d in departments_list if d.code in head_deps %}{{ d.name }}{{ ', ' if not loop.last }}{% else %}зараз жодного{% endfor %}</span>{% elif code == 'list' %}
-          <span class="muted">— до відділів, які людина очолює, додаються вибрані</span>{% endif %}</span></label>
-      {% endfor %}
-      <div class="budget-dep-list uc-budget-deps">
-        {% for d in departments_list %}
-        <label class="budget-dep"><input type="checkbox" name="budget_access_deps" value="{{ d.code }}" {{ 'checked' if d.code in budget_access.departments }}> <span>{{ d.name }}</span></label>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
   </section>
+
+  {% if budget_on() %}
+  <section class="card uc-section" id="uc-budget-view">
+    <div class="uc-title"><span class="uc-num">7</span><h2>Бюджет</h2>
+      {% if bview.denied %}<span class="badge red">вкладку заборонено</span>
+      {% elif bview.sees %}<span class="badge green">бачить вкладку «Бюджет»</span>
+      {% else %}<span class="badge grey">не бачить вкладку «Бюджет»</span>{% endif %}</div>
+    <p class="uc-explain">Вкладка «Бюджет» — план і факт бюджету відділів з 1С. Керівник відділу бачить бюджет відділів,
+      які очолює (пункт 3), сам. Тут можна додати інші відділи на перегляд: достатньо позначити їх — вкладка з'явиться
+      і в людини, яка жодного відділу не очолює.</p>
+    {% if bview.all_by_role %}
+    <div class="callout blue">Фіндиректор і адміністратор бачать бюджет усіх відділів — додавати нічого не треба.</div>
+    {% endif %}
+    <div class="uc-budget-own"><strong>Свої відділи (як керівник):</strong>
+      {% for d in departments_list if d.code in bview.own %}{{ d.name }}{{ ', ' if not loop.last }}{% else %}<span class="muted">жодного — людина не очолює відділів</span>{% endfor %}</div>
+    <input type="hidden" name="budget_access_sent" value="1">
+    <div class="budget-section-title">Додатково показувати бюджет відділів</div>
+    <label class="budget-option"><input type="checkbox" name="budget_access_all" value="1" id="uc-budget-all" {{ 'checked' if budget_access.mode == 'all' }}>
+      <span><strong>Усі відділи</strong> <span class="muted">— разом із витратами без відділу («Інше / не розподілено»)</span></span></label>
+    <div class="budget-dep-list uc-budget-deps">
+      {% set known_deps = departments_list | map(attribute='code') | list %}
+      {% for code in budget_access.departments if code not in known_deps %}
+      <label class="budget-dep missing"><input type="checkbox" name="budget_access_deps" value="{{ code }}" checked> <span>{{ code }}</span> <span class="muted">немає в довіднику</span></label>
+      {% endfor %}
+      {% for d in departments_list %}
+      <label class="budget-dep"><input type="checkbox" name="budget_access_deps" value="{{ d.code }}" {{ 'checked' if d.code in budget_access.departments }}> <span>{{ d.name }}</span>{% if d.code in bview.own %} <span class="muted">очолює — бачить і так</span>{% endif %}</label>
+      {% endfor %}
+    </div>
+    <label class="budget-option uc-budget-deny"><input type="checkbox" name="section_budget" value="0" {{ 'checked' if bview.denied }}>
+      <span><strong>Не показувати вкладку «Бюджет» цій людині</strong> <span class="muted">— навіть якщо вона керівник відділу,
+        фіндиректор чи їй додано відділи</span></span></label>
+  </section>
+  {% endif %}
 
   <section class="card uc-section" id="uc-telegram">
     <div class="uc-title"><span class="uc-num">✈</span><h2>Telegram</h2></div>

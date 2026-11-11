@@ -176,6 +176,10 @@ def _migrate_legacy_departments():
               + ", ".join(departments.get_name(v) for v in mapping.values()), "success")
 
 
+# Розділи, які мають у картці користувача власний пункт (а не рядок у «Доступ до розділів»)
+CARD_OWN_BLOCK = frozenset({"budget"})
+
+
 def _login_roles(person):
     """Ролі, які людина матиме на вході (web/auth.requires): збережені + адміністратор з ADMIN_EMAILS + керівник
     відділу / перегляд заявок відділу з оргструктури — для типового доступу до розділів у картці."""
@@ -489,14 +493,16 @@ def admin_user_card(user_id, *, context):
         # «Доступ до розділів»: типово — за ролями, які людина матиме на вході (sections.py), і винятки
         section_rows=[{"code": c, "label": s.label, "hint": s.hint, "override": overrides.get(c),
                        "by_role": sections.by_role(c, _login_roles(person))} for c, s in sections.SECTIONS.items()
-                      if sections.is_on(c)],
+                      if sections.is_on(c) and c not in CARD_OWN_BLOCK],
         onec_types=[t["name"] for t in payment_types.types_for_user(onec["user"]["guid"])] if onec["user"] else [],
         onec_employee=employees.by_email(person["email"]) if person["email"] else None,
         request_deps=org_structure.request_departments_of(user_id),
         is_accountant=bool(set(person["roles"]) & wf.ACCOUNTANT_ROLES),
         ACC_MODES=user_roles.ACC_MODES,
         no_approver=user_roles.accountants_without_approver(),
-        budget_access=budget_access.get(user_id), BUDGET_ACCESS_MODES=budget_access.MODES,
+        # пункт «Бюджет»: що людина бачить зараз (свої відділи, додані, заборона) і що їй додано
+        budget_access=budget_access.get(user_id),
+        bview=budget_access.summary(user_id, _login_roles(person), overrides.get("budget")),
     )
 
 
@@ -543,11 +549,12 @@ def _save_user_card(person):
         if new_ov != old_ov:
             user_roles.set_section_overrides(uid, new_ov, who)
             changes.append("доступ до розділів — " + (sections.describe(new_ov) or "усе за роллю"))
-    if "budget_access_sent" in f:  # «Бюджет: які відділи»
+    if "budget_access_sent" in f:  # пункт «Бюджет»: усі відділи / додані відділи / нічого (лише свої як керівник)
         known_deps = {d["code"] for d in departments.get_departments()} | set(budget_access.get(uid)["departments"])
-        if budget_access.save(uid, email, f.get("budget_access_mode"),
-                              [d for d in f.getlist("budget_access_deps") if d in known_deps], who):
-            changes.append("бюджет — " + (budget_access.describe(uid) or "відділи, які людина очолює"))
+        extra = [d for d in f.getlist("budget_access_deps") if d in known_deps]
+        mode = "all" if f.get("budget_access_all") == "1" else ("list" if extra else "role")
+        if budget_access.save(uid, email, mode, extra, who):
+            changes.append("бюджет — " + (budget_access.describe(uid) or "лише відділи, які людина очолює"))
 
     # Бухгалтер: погоджує і оплачує / лише оплачує (поле є, лише коли в картці вибрано роль бухгалтера)
     mode = f.get("acc_mode")
@@ -617,7 +624,8 @@ def _save_user_card(person):
 
     if changes:
         flash(f"{name}: " + "; ".join(changes) + ".", "success")
-        if current and not wanted and not sections.effective(wanted, user_roles.section_overrides(uid)):
+        if (current and not wanted and not sections.effective(wanted, user_roles.section_overrides(uid))
+                and not budget_access.opens_tab(uid)):
             flash(f"{name} більше не має жодної ролі — доступу до системи немає.", "success")
     else:
         flash("Змін немає", "success")

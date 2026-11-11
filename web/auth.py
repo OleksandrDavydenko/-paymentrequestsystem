@@ -15,6 +15,7 @@ from dotenv import load_dotenv
 from flask import abort, g, redirect, render_template, request, session, url_for
 
 import app_settings
+import budget_access
 import dept_settings
 import google_login
 import notifications
@@ -118,7 +119,12 @@ def requires(*needed):
             # Бухгалтер «Лише оплачує» (картка користувача): бухгалтерськими ролями — лише оплата
             pay_only = roles & wf.ACCOUNTANT_ROLES if user_roles.acc_mode(uid) == "pay" else ()
             # Розділи-звіти: за роллю, з винятками з картки користувача (sections.py)
-            visible = sections.effective(roles, user_roles.section_overrides(uid))
+            overrides = user_roles.section_overrides(uid)
+            visible = sections.effective(roles, overrides)
+            # «Бюджет» — ще й тим, кому в картці додано відділи на перегляд (budget_access): окремо дозволяти не треба
+            if ("budget" not in visible and overrides.get("budget") is not False and sections.is_on("budget")
+                    and budget_access.opens_tab(uid)):
+                visible = visible | {"budget"}
             # «До оплати» й «Оплачені» — лише свої види оплати з 1С (режим «За роллю і видом оплати», pay_access.py)
             g.roles = wf.RoleSet(roles, heads, views, pay_only, visible, pay_access.pay_types_for(roles, email))
             if (not g.roles and not visible) or (needed and not g.roles & set(needed)):

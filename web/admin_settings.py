@@ -153,6 +153,7 @@ def _context(tab):
                    budget_over_mode=app_settings.get("budget_over_mode"), BUDGET_OVER_MODES=budget.OVER_MODES,
                    budget_group_departments=app_settings.get("budget_group_departments") or [],
                    BUDGET_GROUP_DEPARTMENTS=schema.SETTINGS["budget_group_departments"].choices(),
+                   budget_viewers=_budget_viewers() if on else [],
                    budget_state=budget.status() if on else None, budget_table=budget._table.table,
                    budget_details_table=budget.details_table())
     elif tab == "request":
@@ -256,6 +257,25 @@ def _context(tab):
         ctx.update(log=settings_log.query(300, key), log_key=key,
                    log_keys=[(s.key, s.label) for s in schema.exportable()])
     return ctx
+
+
+def _budget_viewers():
+    """Хто бачить вкладку «Бюджет» і чий бюджет (budget_access.overview) — з назвами відділів, для розділу «Бюджет».
+    Люди — усі з ролями в системі й керівники та заступники відділів (навіть без ролей)."""
+    import budget_access
+    people = {u["id"]: u for u in user_roles.all_users()}
+    for d in departments.get_departments():
+        staff = org_structure.staff(d["code"])
+        for p in [staff["head"], *staff["viewers"]]:
+            if p and p.get("id") and p["id"] not in people:
+                people[p["id"]] = {"id": p["id"], "email": p.get("email") or "", "name": p.get("name") or p.get("email") or p["id"],
+                                   "roles": set(), "sections": {}}
+    rows = budget_access.overview(people.values(), ADMIN_EMAILS)
+    for r in rows:
+        r["own_names"] = [departments.get_name(c) for c in r["own"]]
+        r["extra_names"] = [departments.get_name(c) for c in r["extra"]]
+        r["role_names"] = [wf.ROLES[x] for x in ("admin", "cfo") if x in r["roles"]]
+    return rows
 
 
 def _page_context(tab):

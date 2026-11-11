@@ -1651,7 +1651,13 @@ button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
 .budget-hint.is-over .budget-hint-title { color: var(--bad-ink); }
 .budget-hint-over { color: var(--bad-ink); font-weight: 600; }
 .budget-hint-amount { color: var(--muted); }
-/* Картка користувача → «Бюджет: які відділи»: список відділів — лише для «Вибрані відділи» */
-.uc-budget-access { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 4px; }
-.uc-budget-access .uc-budget-deps { margin: 6px 0 0 26px; max-height: 240px; overflow: auto; }
-.uc-budget-access:not(:has(input[name=budget_access_mode][value=list]:checked)) .uc-budget-deps { display: none; }
+/* Картка користувача → пункт «Бюджет»: свої відділи, додані на перегляд, заборона вкладки */
+.uc-title .badge { margin-left: 10px; }
+.uc-budget-own { margin: 4px 0 10px; }
+#uc-budget-view .uc-budget-deps { margin: 4px 0 10px 26px; max-height: 260px; overflow: auto; }
+#uc-budget-view:has(#uc-budget-all:checked) .uc-budget-deps { opacity: .45; pointer-events: none; }  /* «Усі відділи» — список не потрібен */
+#uc-budget-view .uc-budget-deny { border-top: 1px solid var(--line); margin-top: 6px; padding-top: 10px; }
+/* Налаштування → Бюджет → «Хто бачить бюджет» */
+.budget-viewers { width: 100%; margin: 4px 0 6px; }
+.budget-viewers td, .budget-viewers th { padding: 6px 10px; vertical-align: top; }
+.budget-viewers .bv-why { color: var(--muted); font-size: 12px; }

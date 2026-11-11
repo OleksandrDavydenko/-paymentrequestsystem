@@ -22,8 +22,38 @@
         {% else %}<span class="badge green">працює</span> рядків: {{ budget_state.count }}{% if budget_state.updated %}, оновлено
           {{ budget_state.updated[:16].replace('T', ' ') }}{% endif %}.{% endif %}
       {% endif %}
-      Хто бачить вкладку «Бюджет» — картка користувача → «Доступ до розділів» (типово керівники відділів, фіндиректор
-      і адміністратор); чий бюджет — там само, «Бюджет: які відділи».</p>
+      </p>
+
+    <div class="budget-section-title">Хто бачить бюджет</div>
+    <p class="muted" style="margin:0 0 6px">Керівник відділу бачить бюджет відділів, які очолює; фіндиректор і адміністратор —
+      усіх. Щоб показати бюджет іншій людині або додати керівнику ще відділи: <a href="{{ url_for('admin.admin_users') }}">Користувачі</a>
+      → картка людини → пункт <strong>«7. Бюджет»</strong> → позначити відділи. Заборонити вкладку — там само.</p>
+    {% if budget_viewers %}
+    <div class="table-wrap">
+    <table class="stack budget-viewers">
+      <thead><tr><th>Людина</th><th>Чий бюджет бачить</th></tr></thead>
+      <tbody>
+        {% for p in budget_viewers %}
+        <tr>
+          <td data-label="Людина"><a href="{{ url_for('admin.admin_user_card', user_id=p.id) }}#uc-budget-view">{{ p.name }}</a>
+            {% if p.email and p.email != p.name %}<div class="bv-why">{{ p.email }}</div>{% endif %}</td>
+          <td data-label="Чий бюджет бачить">
+            {% if p.denied %}<span class="badge red">вкладку заборонено</span>
+            {% elif p.all %}<strong>Усі відділи</strong>
+              <div class="bv-why">{{ p.role_names | join(', ') | lower if p.all_by_role else 'додано в картці' }}</div>
+            {% else %}
+              {% if p.own_names %}{{ p.own_names | join(', ') }} <span class="bv-why">— керівник</span>{% endif %}
+              {% if p.own_names and p.extra_names %}<br>{% endif %}
+              {% if p.extra_names %}{{ p.extra_names | join(', ') }} <span class="bv-why">— додано в картці</span>{% endif %}
+              {% if not p.own_names and not p.extra_names %}<span class="muted">вкладку дозволено, відділів немає</span>{% endif %}
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% else %}<p class="muted">Поки ніхто: у відділів немає керівників у системі й нікому не додано відділи.</p>{% endif %}
 
     <div class="budget-section-title">Групи статей на вкладці «Бюджет»</div>
     <p class="muted" style="margin:0 0 6px">Типово під відділом одразу йдуть статті. Для позначених відділів статті зібрано

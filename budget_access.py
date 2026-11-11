@@ -1,12 +1,13 @@
-"""Які відділи людина бачить на вкладці «Бюджет».
+"""Хто й чий бюджет бачить на вкладці «Бюджет» — картка користувача, пункт «Бюджет».
 
-Саму вкладку відкриває розділ «budget» (sections.py; картка користувача → «Доступ до розділів»): типово — керівникам
-відділів, фіндиректору й адміністратору. Тут — лише чий бюджет показувати:
-  • role — типово: адміністратор і фіндиректор — усі відділи, керівник відділу — відділи, які він очолює
-    (разом із тими, де він заступник, що погоджує, — RoleSet.head_departments);
-  • all  — усі відділи (напр. бухгалтер чи аналітик, якому відкрили вкладку);
+Вкладку (розділ «budget», sections.py) бачать: адміністратор і фіндиректор — усі відділи; керівник відділу — відділи,
+які він очолює (разом із тими, де він заступник, що погоджує, — RoleSet.head_departments); а також кожен, кому в
+картці додано відділи на перегляд, — окремо «дозволяти» вкладку не треба (opens_tab). Заборона вкладки — виняток
+розділу «budget» у user_roles (sections: {"budget": false}).
+Що зберігається тут ({id користувача: {"mode", "departments"}}):
+  • role — нічого не додано: лише свої відділи (запису немає);
+  • all  — усі відділи (напр. аналітик);
   • list — вибрані відділи (до відділів, які людина очолює, додаються).
-Налаштування — у картці користувача («Бюджет: які відділи»), ключ — id користувача (як у user_roles).
 У базі даних (docstore), а без бази — JSON-файл (/home/data на Azure).
 """
 import os
@@ -83,11 +84,57 @@ def departments_for(uid, roles):
     return frozenset(own)
 
 
+def opens_tab(uid):
+    """Чи відкривають налаштування людини вкладку «Бюджет» самі собою: їй додано відділи або «усі відділи»."""
+    cfg = get(uid)
+    return cfg["mode"] == "all" or (cfg["mode"] == "list" and bool(cfg["departments"]))
+
+
+def head_departments(uid):
+    """Відділи, бюджет яких людина бачить як керівник: які очолює і де вона заступник, що погоджує, — так само, як
+    на вході (web/auth.requires → RoleSet.head_departments)."""
+    import dept_settings
+    import org_structure
+    heads = set(org_structure.head_departments(uid))
+    return sorted(heads | {d for d in org_structure.viewer_departments(uid) if dept_settings.deputies_approve(d)})
+
+
+def summary(uid, roles, override=None):
+    """Що людина бачить на вкладці «Бюджет» — для картки користувача й зведення в налаштуваннях.
+    roles — її ролі (з адміністратором за ADMIN_EMAILS), override — виняток розділу «Бюджет» (False — заборонено).
+    {"sees", "denied", "all", "all_by_role", "own": [коди своїх відділів], "extra": [додані коди]}."""
+    cfg = get(uid)
+    own = head_departments(uid)
+    all_by_role = bool(set(roles) & ALL_ROLES)
+    everything = all_by_role or cfg["mode"] == "all"
+    extra = sorted(set(cfg["departments"]) - set(own)) if cfg["mode"] == "list" and not everything else []
+    denied = override is False
+    return {"sees": not denied and (everything or bool(own) or bool(extra) or override is True), "denied": denied,
+            "all": everything, "all_by_role": all_by_role, "own": own, "extra": extra}
+
+
+def overview(people, admin_emails=()):
+    """Хто бачить бюджет (і кому вкладку заборонено, хоча мав би бачити) — для «Налаштування → Бюджет».
+    people — [{"id", "email", "name", "roles", "sections"}]; рядки — ті самі записи + summary(), за іменем."""
+    admins = {e.lower() for e in admin_emails}
+    out = []
+    for p in people:
+        roles = set(p.get("roles") or ())
+        if (p.get("email") or "").lower() in admins:
+            roles.add("admin")
+        s = summary(p["id"], roles, (p.get("sections") or {}).get("budget"))
+        if s["sees"] or (s["denied"] and (s["all"] or s["own"] or s["extra"])):
+            out.append({"id": p["id"], "name": p.get("name") or p.get("email") or p["id"], "email": p.get("email") or "",
+                        "roles": roles, **s})
+    return sorted(out, key=lambda r: r["name"].lower())
+
+
 def describe(uid):
-    """Коротко для журналу картки: «усі відділи», «вибрані: LOG, SAL» або ""."""
+    """Коротко для журналу картки: «усі відділи», «додатково: Логістика, Продажі» або ""."""
+    import departments
     cfg = get(uid)
     if cfg["mode"] == "all":
         return "усі відділи"
     if cfg["mode"] == "list":
-        return "вибрані: " + (", ".join(cfg["departments"]) or "—")
+        return "додатково: " + (", ".join(departments.get_name(d) for d in cfg["departments"]) or "—")
     return ""

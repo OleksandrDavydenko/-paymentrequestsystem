@@ -67,7 +67,7 @@ pv = c.get("/requests/route-preview?" + overspend).json
 check("off: route preview knows nothing about the budget", not any("бюджет" in t.lower() for t in pv["notes"] + pv["todo"]))
 login("adm@ftpua.com")
 html = page("/admin/users/ini@ftpua.com")
-check("off: user card without budget rows", 'name="section_budget"' not in html and "Бюджет: які відділи" not in html
+check("off: user card without the budget section", 'name="section_budget"' not in html and 'id="uc-budget-view"' not in html
       and 'name="section_reconcile"' in html)
 c.post("/admin/users/ini@ftpua.com", data={"roles": ["initiator"], "mode": "none", "sections_sent": "1", "section_reconcile": ""})
 check("off: saving the card keeps the stored budget exception", user_roles.section_overrides("ini@ftpua.com") == {"budget": True})
@@ -101,18 +101,51 @@ check("head: foreign department and its details -> 403", c.get("/budget?dep=LOG"
 r = c.get(f"/budget/details?dep=BA&item=07.001&y={Y}&m={M}")
 check("head: details of own fact", r.status_code == 200 and r.json["error"] is None and abs(r.json["total"] - 400) < 0.01)
 
-# винятки з картки користувача: ініціатору відкрито вкладку й бюджет Логістики
+# картка користувача, пункт «Бюджет»: додали відділ — вкладка з'являється сама (окремо дозволяти не треба)
 login("adm@ftpua.com")
-html = c.post("/admin/users/ini@ftpua.com", data={"roles": ["initiator"], "mode": "none", "sections_sent": "1",
-                                                   "section_budget": "1", "budget_access_sent": "1",
-                                                   "budget_access_mode": "list", "budget_access_deps": ["LOG"]},
-              follow_redirects=True).get_data(as_text=True)
-check("card: budget access saved + journal", budget_access.get("ini@ftpua.com") == {"mode": "list", "departments": ["LOG"]}
-      and "бюджет — вибрані: LOG" in html)
+html = page("/admin/users/ini@ftpua.com")
+check("card: own «Бюджет» section, no row in section access", 'id="uc-budget-view"' in html and "не бачить вкладку" in html
+      and '<select name="section_budget"' not in html and 'name="section_reconcile"' in html)
+card_ini = lambda **kw: c.post("/admin/users/ini@ftpua.com", data={"roles": ["initiator"], "mode": "none", "sections_sent": "1",
+                                                                  "budget_access_sent": "1", **kw},
+                               follow_redirects=True).get_data(as_text=True)
+html = card_ini(budget_access_deps=["LOG"])
+check("card: added department saved + journal with names", budget_access.get("ini@ftpua.com") == {"mode": "list", "departments": ["LOG"]}
+      and "бюджет — додатково: Логістика" in html and user_roles.section_overrides("ini@ftpua.com") == {}
+      and "бачить вкладку «Бюджет»" in html and budget_access.opens_tab("ini@ftpua.com"))
 login("ini@ftpua.com")
 html = page("/budget")
-check("initiator with exception: LOG only", "Бюджет" in nav(html) and "01.001" in html and "07.001" not in html
+check("added department opens the tab: LOG only", "Бюджет" in nav(html) and "01.001" in html and "07.001" not in html
       and c.get("/budget?dep=BA").status_code == 403)
+login("adm@ftpua.com")
+card_ini(budget_access_all="1", budget_access_deps=["LOG"])
+login("ini@ftpua.com")
+html = page("/budget?p=month&v=table&dep=*")
+check("«all departments» in the card: everything incl. «Інше»", budget_access.get("ini@ftpua.com")["mode"] == "all"
+      and "07.001" in html and "01.001" in html and budget.OTHER_NAME in html)
+login("adm@ftpua.com")
+card_ini(budget_access_deps=["LOG"], section_budget="0")
+login("ini@ftpua.com")
+check("denied in the card: no tab although a department is added", "Бюджет" not in nav(page("/requests"))
+      and c.get("/budget").status_code == 403 and user_roles.section_overrides("ini@ftpua.com") == {"budget": False})
+login("adm@ftpua.com")
+html = page("/admin/settings?tab=budget")
+check("settings: who sees the budget", "Хто бачить бюджет" in html and "/admin/users/head@ftpua.com#uc-budget-view" in html
+      and "/admin/users/ini@ftpua.com#uc-budget-view" in html and "вкладку заборонено" in html and "керівник" in html)
+# керівнику відділу заборонили вкладку — і повернули
+c.post("/admin/users/head@ftpua.com", data={"roles": ["initiator"], "mode": "none", "sections_sent": "1",
+                                            "budget_access_sent": "1", "section_budget": "0", "head_deps": ["BA"]})
+login("head@ftpua.com")
+denied = c.get("/budget").status_code
+login("adm@ftpua.com")
+c.post("/admin/users/head@ftpua.com", data={"roles": ["initiator"], "mode": "none", "sections_sent": "1",
+                                            "budget_access_sent": "1", "head_deps": ["BA"]})
+login("head@ftpua.com")
+check("head: tab can be denied and returned", denied == 403 and c.get("/budget").status_code == 200)
+login("adm@ftpua.com")
+card_ini(budget_access_deps=["LOG"])   # далі — знову лише Логістика, без заборони
+login("ini@ftpua.com")
+check("deny removed: LOG again", c.get("/budget").status_code == 200 and c.get("/budget?dep=BA").status_code == 403)
 check("access: all for cfo/admin, own + list for others",
       budget_access.departments_for("cfo@ftpua.com", {"cfo"}) is None
       and budget_access.departments_for("ini@ftpua.com", wf.RoleSet({"initiator"}, head_departments={"SAL"})) == {"LOG", "SAL"})
@@ -244,8 +277,7 @@ c.post("/admin/settings", data={"tab": "budget", "budget_hint": "1", "budget_ove
 budget.rows = _no_data
 check("switched off, chosen options kept", not budget.enabled() and app_settings.get("budget_hint") is True
       and app_settings.get("budget_over_mode") == "cfo")
-check("off again: stored access kept, tab hidden", budget_access.get("ini@ftpua.com")["departments"] == ["LOG"]
-      and user_roles.section_overrides("ini@ftpua.com") == {"budget": True})
+check("off again: stored access kept, tab hidden", budget_access.get("ini@ftpua.com")["departments"] == ["LOG"])
 login("ini@ftpua.com")
 check("off again: tab closed for the user with an exception", c.get("/budget").status_code == 403)
 req5, _ = submit(5000)
