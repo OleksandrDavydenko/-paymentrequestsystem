@@ -21,6 +21,7 @@ from dataclasses import dataclass
 TABS = [
     ("approval", "Погодження"),
     ("request", "Заявка"),
+    ("budget", "Бюджет"),
     ("payment", "Оплата й готівка"),
     ("reconcile", "Звірка з 1С"),
     ("onec_api", "API для 1С"),
@@ -33,7 +34,7 @@ TAB_NAMES = dict(TABS)
 # Вкладки сторінки «Налаштування»: споріднені розділи — на одній вкладці, один під одним. Розділ лишається
 # окремою формою зі своїм кодом (?tab=… відкриває вкладку з ним), тож збереження одного не чіпає сусідній.
 PAGES = [
-    ("process", "Заявка й погодження", ("request", "approval")),
+    ("process", "Заявка й погодження", ("request", "approval", "budget")),
     ("payment", "Оплата й готівка", ("payment",)),
     ("notify", "Сповіщення", ("notify",)),
     ("onec", "Інтеграція з 1С", ("reconcile", "onec_api")),
@@ -268,6 +269,11 @@ def _doc_formats():
     return DOC_FORMATS
 
 
+def _budget_over_modes():
+    import budget
+    return budget.OVER_MODES
+
+
 _LIST = [
     # ---- Погодження
     Setting("approval_mode", "Порядок погодження", "approval", "choice", "sequential", _wf("APPROVAL_MODES")),
@@ -283,6 +289,9 @@ _LIST = [
             fmt=_fmt_codes),
     Setting("no_self_approval", "Автор не може погоджувати свою заявку", "approval", "bool", False,
             marker="no_self_approval_sent"),
+    # ---- Бюджет (budget.py): залишок статті у формі заявки й що робити із заявкою понад залишок
+    Setting("budget_hint", "Показувати залишок бюджету статті в заявці", "budget", "bool", True),
+    Setting("budget_over_mode", "Заявка понад залишок бюджету статті", "budget", "choice", "cfo", _budget_over_modes),
     # ---- Заявка
     # Номер заявки для людей (request_numbers.py): префікс і нулі — лише показ, у базі номер той самий
     Setting("request_prefix", "Префікс номера заявки", "request", "text", ""),

@@ -85,7 +85,13 @@
     catch (e) { /* приватний режим */ }
   }
 
+  // Інші скрипти (залишок бюджету статті) дізнаються про зміну статті з події change прихованого поля
+  function changed(before) {
+    if (hidden.value !== before) hidden.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+
   function select(item, { save = true } = {}) {
+    const before = hidden.value;
     hidden.value = item ? item.code : '';
     input.value = item ? item.name : '';
     input.title = item ? item.name + ' (' + item.code + ')' : '';
@@ -97,6 +103,7 @@
     const hint = document.getElementById('exp-note');  // «оберіть іншу статтю» — уже обрано
     if (item && hint && ITEMS.length) hint.hidden = true;
     closeSuggest();
+    changed(before);
   }
 
   // ---------- підказки під полем ----------
@@ -134,7 +141,7 @@
 
   input.addEventListener('input', () => {
     // Користувач почав редагувати — попередній вибір знімається, доки не вибере знову
-    if (hidden.value) { hidden.value = ''; chip.hidden = clearBtn.hidden = true; picker.classList.remove('has-value'); }
+    if (hidden.value) { hidden.value = ''; chip.hidden = clearBtn.hidden = true; picker.classList.remove('has-value'); changed('x'); }
     picker.classList.toggle('unmatched', !!input.value.trim());
     active = -1;
     if (input.value.trim()) renderSuggest(); else closeSuggest();

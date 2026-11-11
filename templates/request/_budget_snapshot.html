@@ -1,0 +1,12 @@
+{# Бюджет статті на момент відправки заявки (знімок req.budget_check, budget.check) — для погоджувачів і автора. #}
+{% set snap = req.budget_check %}
+{% if snap and not snap.error and req.status not in ('draft',) %}
+<div class="budget-hint {{ 'is-over' if snap.over else '' }}">
+  <div class="budget-hint-title">Бюджет {{ snap.month_title }} · відділ «{{ snap.dept_name }}»
+    <span class="muted" style="font-weight:400">— на момент відправки{% if snap.at %}, {{ snap.at[8:10] }}.{{ snap.at[5:7] }} {{ snap.at[11:16] }}{% endif %}</span></div>
+  <div class="budget-hint-nums">План {{ snap.plan | bmoney }} · факт 1С {{ snap.fact | bmoney }} · у заявках {{ snap.pending | bmoney }}{% if snap.pending_count %} ({{ snap.pending_count }}){% endif %}</div>
+  <div class="budget-hint-rest"><span>{{ 'Перевитрата' if snap.remaining | float < 0 else 'Залишок' }} <strong>{{ snap.remaining | bmoney }} USD</strong></span>
+    {% if snap.amount_usd %}<span class="budget-hint-amount">заявка ≈ {{ snap.amount_usd | bmoney }} USD</span>{% endif %}</div>
+  {% if snap.over %}<div class="budget-hint-over">⚠ Заявка понад залишок бюджету статті на {{ snap.over_by | bmoney }} USD</div>{% endif %}
+</div>
+{% endif %}

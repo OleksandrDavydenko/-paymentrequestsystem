@@ -1,0 +1,37 @@
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="budget-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="budget">
+  <div class="toolbar"><h2 style="margin:0">Бюджет</h2></div>
+  <p class="muted" style="margin-top:0">План і факт бюджету відділів приходять з 1С через Power BI: таблиці
+    <code>{{ budget_state.table }}</code> (план і факт по місяцях) і <code>{{ budget_details_table }}</code> (розшифровка
+    факту до документів). Запити для датасету — у репозиторії, папка <code>sql/</code>.
+    {% if budget_state.source == 'mock' %}<span class="badge amber">демо-дані</span> Power BI не підключено — бюджет на прикладах.
+    {% elif budget_state.error %}<span class="badge red">помилка</span> {{ budget_state.error }}
+    {% else %}<span class="badge green">працює</span> рядків: {{ budget_state.count }}{% if budget_state.updated %}, оновлено
+      {{ budget_state.updated[:16].replace('T', ' ') }}{% endif %}.{% endif %}
+    Хто бачить вкладку «Бюджет» — картка користувача → «Доступ до розділів» (типово керівники відділів, фіндиректор
+    і адміністратор); чий бюджет — там само, «Бюджет: які відділи».</p>
+
+  <div class="budget-section-title">Залишок у заявці</div>
+  <label class="mode-option">
+    <input type="checkbox" name="budget_hint" value="1" {{ 'checked' if budget_hint }}>
+    <span><strong>Показувати залишок бюджету статті в заявці</strong>
+      <span class="mode-hint">Коли ініціатор вибирає статтю, яка є в бюджеті відділу, під нею видно бюджет місяця оплати:
+        план, факт 1С, суму заявок у дорозі (на погодженні, до оплати й оплачені, яких ще немає у факті 1С) і залишок.
+        Сума заявки переводиться в USD за курсом 1С. Для статті з відділом-власником (Owner) — бюджет власника.</span></span>
+  </label>
+
+  <div class="budget-section-title">Заявка понад залишок бюджету</div>
+  {% for code, label in BUDGET_OVER_MODES.items() %}
+  <label class="mode-option">
+    <input type="radio" name="budget_over_mode" value="{{ code }}" {{ 'checked' if budget_over_mode == code }}>
+    <span><strong>{{ label }}</strong>{% if budget_over_mode == code %}<span class="mode-saved">діє зараз</span>{% endif %}
+      <span class="mode-hint">{% if code == 'warn' %}Ініціатор бачить попередження; маршрут погодження не змінюється.
+        {% elif code == 'cfo' %}Ініціатор бачить попередження, а заявку погоджує фіндиректор — навіть коли за правилами
+        чи в режимі «Лише спостерігає» він її не погоджував би. Причина — в історії заявки.
+        {% else %}Відправити заявку понад залишок не можна: треба зменшити суму, змінити статтю чи місяць оплати
+        або спершу збільшити бюджет у 1С.{% endif %}
+        {% if code != 'warn' %}Якщо Power BI недоступний і бюджет не перевірено, заявка йде як звичайно.{% endif %}</span></span>
+  </label>
+  {% endfor %}
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+</form>

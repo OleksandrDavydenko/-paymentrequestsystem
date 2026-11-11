@@ -9,6 +9,7 @@ from decimal import Decimal, InvalidOperation
 from flask import flash, g, request, url_for
 
 import app_settings
+import budget
 import cfo_rules
 import clock
 import counterparties
@@ -276,12 +277,34 @@ def _route_settings(req):
     }
 
 
+def budget_snapshot(req):
+    """Знімок бюджету статті для заявки (budget.check) — у req["budget_check"]: при відправці й для «Підсумку».
+    Статті немає в бюджеті відділу — знімка немає."""
+    snap = budget.check(req)
+    if snap is None:
+        req.pop("budget_check", None)
+    else:
+        req["budget_check"] = snap
+    return snap
+
+
+def budget_over(req):
+    """Знімок бюджету, якщо заявка понад залишок статті (і бюджет вдалося перевірити), інакше None."""
+    snap = req.get("budget_check")
+    return snap if snap and not snap.get("error") and snap.get("over") else None
+
+
 def _cfo_route(req):
     """Чи погоджує фіндиректор цю заявку: режим з адмінки, для «за правилами» — cfo_rules.decide
-    (тип бухгалтера, поріг у вибраній валюті за курсом 1С, новий контрагент, статті)."""
+    (тип бухгалтера, поріг у вибраній валюті за курсом 1С, новий контрагент, статті). Заявку понад залишок бюджету
+    статті (знімок req["budget_check"], налаштування «Заявка понад залишок бюджету» = cfo) фіндиректор погоджує
+    завжди — навіть у режимі «Лише спостерігає»."""
     dept = req.get("department")
     if dept and dept_settings.get(dept)["cfo"] == "always":
         return {"cfo_step": True, "cfo_note": f"Потрібне погодження фіндиректора: відділ «{departments.get_name(dept)}» — завжди"}
+    over = budget_over(req)
+    if over and app_settings.get("budget_over_mode") == "cfo":
+        return {"cfo_step": True, "cfo_note": "Потрібне погодження фіндиректора: заявка " + budget.over_text(over)}
     mode = app_settings.get("cfo_mode")
     if mode == "observe":
         return {"cfo_step": False, "cfo_note": ""}
@@ -407,6 +430,10 @@ def submit_requirements(req):
         if need:
             errors["documents"] = ("Перед відправкою додайте документ — рахунок, договір чи акт" + tail +
                                    ". Збережіть заявку й прикріпіть файл у блоці «Документи» нижче.")
+    over = budget_over(req)
+    if over and app_settings.get("budget_over_mode") == "block":
+        errors["amount"] = ("Сума заявки " + budget.over_text(over) + ". Зменшіть суму, змініть статтю чи місяць оплати "
+                            "або спершу збільшіть бюджет у 1С.")
     return errors
 
 

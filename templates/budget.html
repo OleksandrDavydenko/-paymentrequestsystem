@@ -1,0 +1,194 @@
+{% extends "base.html" %}
+
+{% block title %}Бюджет{% endblock %}
+{% block main_class %}wide{% endblock %}
+
+{% macro pct(plan, fact) -%}
+{%- if plan > 0 -%}{{ '%.1f' | format(fact / plan * 100) | replace('.', ',') }} %{%- elif fact > 0 -%}без плану{%- else -%}—{%- endif -%}
+{%- endmacro %}
+{% macro bar(plan, fact, level) -%}
+{%- set w = ((fact / plan * 100) if plan > 0 else (100 if fact > 0 else 0)) -%}
+<span class="bg-bar lvl-{{ level }}" aria-hidden="true"><span style="width:{{ [w, 100] | min | round(1) }}%"></span></span>
+{%- endmacro %}
+{% macro amount(v) %}{% if v | round(2) %}{{ bm(v) }}{% else %}<span class="muted">—</span>{% endif %}{% endmacro %}
+
+{% block content %}
+{% set multi = rep and rep.departments | length > 1 %}
+<div class="card budget-page">
+  <div class="toolbar">
+    <h1 style="margin:0">Бюджет</h1>
+    <span class="spacer"></span>
+    <span class="muted bg-source">
+      {% if status.source == 'mock' %}<span class="badge amber">демо-дані</span> Power BI не підключено
+      {% else %}Дані 1С через Power BI{% if status.updated %} · оновлено {{ status.updated[:16].replace('T', ' ') }}{% endif %}{% if status.error %} · <span class="err">помилка оновлення: {{ status.error }}</span>{% endif %}{% endif %}
+      · суми в USD</span>
+  </div>
+
+  {% if not options %}
+  <p class="empty">{% if own_only %}Для ваших відділів бюджету в 1С ще немає (або вам не призначено жодного відділу —
+    зверніться до адміністратора: картка користувача → «Бюджет: які відділи»).{% else %}Бюджету в 1С ще немає.{% endif %}</p>
+  {% else %}
+
+  <div class="bg-controls">
+    <div class="bg-row">
+      <span class="bg-label">Рік</span>
+      <div class="chips">{% for y in years %}<a class="chip {{ 'active' if y == year }}" href="{{ url_with({'y': y, 'm': None, 'q': None}) }}">{{ y }}</a>{% endfor %}</div>
+      {% if options | length > 1 %}
+      <form method="get" class="bg-dep-form">
+        <input type="hidden" name="y" value="{{ year }}"><input type="hidden" name="p" value="{{ kind }}">
+        <input type="hidden" name="m" value="{{ month }}"><input type="hidden" name="q" value="{{ quarter }}">
+        <input type="hidden" name="v" value="{{ view }}">
+        <label class="bg-label" for="bg-dep">Відділ</label>
+        <select name="dep" id="bg-dep" class="{{ 'is-active' if dep != '*' }}">
+          <option value="*" {{ 'selected' if dep == '*' }}>{{ 'Усі відділи' if not own_only else 'Усі мої відділи' }} ({{ options | length }})</option>
+          {% for key, name in options %}<option value="{{ key }}" {{ 'selected' if dep == key }}>{{ name }}</option>{% endfor %}
+        </select>
+        <noscript><button type="submit" class="btn btn-sm">Показати</button></noscript>
+      </form>
+      {% else %}
+      <span class="bg-label">Відділ</span> <strong>{{ options[0][1] }}</strong>
+      {% endif %}
+    </div>
+    <div class="bg-row">
+      <span class="bg-label">Період</span>
+      <div class="chips">{% for code, label in PERIODS.items() %}<a class="chip {{ 'active' if kind == code }}" href="{{ url_with({'p': code}) }}">{{ label }}</a>{% endfor %}</div>
+      {% if kind == 'month' %}
+      <div class="chips bg-months">{% for i in range(1, 13) %}<a class="chip {{ 'active' if month == i }} {{ 'bg-now' if cur_month == i }}" href="{{ url_with({'m': i}) }}" title="{{ MONTHS[i - 1] }}">{{ MONTHS_SHORT[i - 1] }}</a>{% endfor %}</div>
+      {% elif kind == 'quarter' %}
+      <div class="chips">{% for i in range(1, 5) %}<a class="chip {{ 'active' if quarter == i }}" href="{{ url_with({'q': i}) }}">{{ ['I', 'II', 'III', 'IV'][i - 1] }} кв.</a>{% endfor %}</div>
+      {% endif %}
+      <span class="spacer"></span>
+      <div class="chips bg-views" aria-label="Вигляд">{% for code, label in VIEWS.items() %}<a class="chip {{ 'active' if view == code }}" href="{{ url_with({'v': code}) }}">{{ label }}</a>{% endfor %}</div>
+    </div>
+  </div>
+
+  {% set t = rep.total %}
+  <div class="bg-tiles">
+    <div class="bg-tile"><span class="bg-tile-title">План</span><span class="bg-tile-n">{{ bm(t.plan) }}</span><span class="bg-tile-hint">{{ period_label }}</span></div>
+    <div class="bg-tile"><span class="bg-tile-title">Факт</span><span class="bg-tile-n">{{ bm(t.fact) }}</span><span class="bg-tile-hint">розподіл витрат у 1С</span></div>
+    <div class="bg-tile {{ 'bg-tile-bad' if t.plan - t.fact < 0 }}"><span class="bg-tile-title">{{ 'Залишок' if t.plan - t.fact >= 0 else 'Перевитрата' }}</span><span class="bg-tile-n">{{ bm(t.plan - t.fact) }}</span><span class="bg-tile-hint">план − факт</span></div>
+    <div class="bg-tile"><span class="bg-tile-title">Виконання</span><span class="bg-tile-n lvl-text-{{ t.level }}">{{ pct(t.plan, t.fact) }}</span>{{ bar(t.plan, t.fact, t.level) }}</div>
+    <button type="button" class="bg-tile bg-tile-over {{ 'bg-tile-bad' if rep.over }}" id="bg-over-tile" {{ 'disabled' if not rep.over }}
+            title="{{ 'Показати лише статті понад план' if rep.over }}">
+      <span class="bg-tile-title">Понад план</span><span class="bg-tile-n">{{ rep.over }}</span>
+      <span class="bg-tile-hint">{{ 'статей — показати' if rep.over else 'усі статті в межах плану' }}</span></button>
+  </div>
+
+  <div class="bg-tools">
+    <input type="search" id="bg-search" placeholder="Стаття або код…" aria-label="Пошук статті" autocomplete="off">
+    <label class="bg-check"><input type="checkbox" id="bg-over-only"> лише понад план</label>
+    <span class="spacer"></span>
+    <button type="button" class="btn btn-sm" id="bg-collapse">Згорнути групи</button>
+    <button type="button" class="btn btn-sm" id="bg-expand">Розгорнути</button>
+  </div>
+
+  {% if not rep.count %}
+  <p class="empty">За {{ period_label | lower }} у бюджеті немає ні плану, ні факту.</p>
+  {% elif view == 'table' %}
+  <div class="table-wrap">
+  <table class="stack bg-table" id="bg-table">
+    <thead><tr><th>Стаття</th><th class="num">План</th><th class="num">Факт</th><th class="num">Залишок</th><th class="bg-col-pct">Виконання</th></tr></thead>
+    {% for d in rep.departments %}
+    <tbody class="bg-dept-body" data-dept="{{ d.key }}">
+      {% if multi %}
+      <tr class="bg-dept">
+        <td data-label="Відділ"><button type="button" class="bg-toggle" aria-expanded="true">{{ d.name }}</button></td>
+        <td class="num" data-label="План">{{ amount(d.plan) }}</td><td class="num" data-label="Факт">{{ amount(d.fact) }}</td>
+        <td class="num {{ 'bg-neg' if d.plan - d.fact < 0 }}" data-label="Залишок">{{ bm(d.plan - d.fact) }}</td>
+        <td data-label="Виконання"><span class="bg-pct lvl-text-{{ d.level }}">{{ pct(d.plan, d.fact) }}</span>{{ bar(d.plan, d.fact, d.level) }}</td>
+      </tr>
+      {% endif %}
+      {% for gr in d.groups %}
+      <tr class="bg-group" data-group="{{ d.key }}|{{ gr.name }}">
+        <td data-label="Група"><button type="button" class="bg-toggle" aria-expanded="true">{{ gr.name }}</button></td>
+        <td class="num" data-label="План">{{ amount(gr.plan) }}</td><td class="num" data-label="Факт">{{ amount(gr.fact) }}</td>
+        <td class="num {{ 'bg-neg' if gr.plan - gr.fact < 0 }}" data-label="Залишок">{{ bm(gr.plan - gr.fact) }}</td>
+        <td data-label="Виконання"><span class="bg-pct lvl-text-{{ gr.level }}">{{ pct(gr.plan, gr.fact) }}</span>{{ bar(gr.plan, gr.fact, gr.level) }}</td>
+      </tr>
+      {% for it in gr.rows %}
+      <tr class="bg-item lvl-row-{{ it.level }}" data-parent="{{ d.key }}|{{ gr.name }}" data-search="{{ (it.code ~ ' ' ~ it.name) | lower }}"
+          data-over="{{ 1 if it.level == 'over' else 0 }}">
+        <td data-label="Стаття"><span class="bg-item-name">{{ it.name }}</span>{% if it.code %} <span class="bg-code">{{ it.code }}</span>{% endif %}
+          {% if it.owner %}<span class="badge grey" title="Стаття з відділом-власником (Owner): витрати всіх відділів за нею — у бюджеті власника">Owner</span>{% endif %}</td>
+        <td class="num" data-label="План">{{ amount(it.plan) }}</td>
+        <td class="num" data-label="Факт">{% if it.fact | round(2) %}<button type="button" class="bg-fact" data-dep="{{ d.key }}" data-item="{{ it.code }}"
+              data-name="{{ it.name }}{{ ' (' ~ it.code ~ ')' if it.code }}" data-months="{{ months | join(',') }}" title="Розшифровка: документи 1С">{{ bm(it.fact) }}</button>{% else %}<span class="muted">—</span>{% endif %}</td>
+        <td class="num {{ 'bg-neg' if it.plan - it.fact < 0 }}" data-label="Залишок">{{ bm(it.plan - it.fact) }}</td>
+        <td data-label="Виконання"><span class="bg-pct lvl-text-{{ it.level }}">{{ pct(it.plan, it.fact) }}</span>{{ bar(it.plan, it.fact, it.level) }}</td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+    {% endfor %}
+    <tfoot><tr class="bg-total">
+      <td data-label="">Разом{% if multi %} ({{ rep.departments | length }} відділ(и)){% endif %}</td>
+      <td class="num" data-label="План">{{ bm(t.plan) }}</td><td class="num" data-label="Факт">{{ bm(t.fact) }}</td>
+      <td class="num {{ 'bg-neg' if t.plan - t.fact < 0 }}" data-label="Залишок">{{ bm(t.plan - t.fact) }}</td>
+      <td data-label="Виконання"><span class="bg-pct lvl-text-{{ t.level }}">{{ pct(t.plan, t.fact) }}</span>{{ bar(t.plan, t.fact, t.level) }}</td>
+    </tr></tfoot>
+  </table>
+  </div>
+  {% else %}
+  {# По місяцях: у клітинці факт, під ним — план; колір — виконання місяця #}
+  {% macro cell(m, plan, fact, dep=None, it=None) -%}
+  {%- set future = m > cur_month -%}
+  {%- set lv = 'none' if future and not fact else ('over' if (fact > 0 and plan <= 0) or (plan > 0 and fact / plan > 1.0001) else ('warn' if plan > 0 and fact / plan >= 0.9 else ('ok' if fact > 0 else 'none'))) -%}
+  <td class="num bg-mcell lvl-cell-{{ lv }} {{ 'bg-cur' if m == cur_month }} {{ 'bg-future' if future }}" data-label="{{ MONTHS_SHORT[m - 1] }}">
+    {%- if it and fact | round(2) -%}<button type="button" class="bg-fact" data-dep="{{ dep }}" data-item="{{ it.code }}" data-months="{{ m }}"
+      data-name="{{ it.name }}{{ ' (' ~ it.code ~ ')' if it.code }}" title="Розшифровка за {{ MONTHS[m - 1] | lower }}">{{ bm(fact) }}</button>
+    {%- elif fact | round(2) -%}<span class="bg-mfact">{{ bm(fact) }}</span>{%- else -%}<span class="bg-mfact muted">—</span>{%- endif -%}
+    {%- if plan | round(2) %}<span class="bg-mplan">{{ bm(plan) }}</span>{% endif -%}
+  </td>
+  {%- endmacro %}
+  <div class="table-wrap bg-months-wrap">
+  <table class="stack bg-table bg-mtable" id="bg-table">
+    <thead><tr><th class="bg-sticky">Стаття <span class="muted bg-legend">факт / <span class="bg-mplan">план</span></span></th>
+      {% for i in range(1, 13) %}<th class="num {{ 'bg-cur' if i == cur_month }}">{{ MONTHS_SHORT[i - 1] }}</th>{% endfor %}
+      <th class="num">Разом</th></tr></thead>
+    {% for d in rep.departments %}
+    <tbody class="bg-dept-body" data-dept="{{ d.key }}">
+      {% if multi %}
+      <tr class="bg-dept"><td class="bg-sticky" data-label="Відділ"><button type="button" class="bg-toggle" aria-expanded="true">{{ d.name }}</button></td>
+        {% for i in range(1, 13) %}{{ cell(i, d.months[i - 1][0], d.months[i - 1][1]) }}{% endfor %}
+        <td class="num bg-mtotal" data-label="Разом"><span class="bg-mfact">{{ bm(d.months | sum(attribute=1)) }}</span><span class="bg-mplan">{{ bm(d.months | sum(attribute=0)) }}</span></td></tr>
+      {% endif %}
+      {% for gr in d.groups %}
+      <tr class="bg-group" data-group="{{ d.key }}|{{ gr.name }}"><td class="bg-sticky" data-label="Група"><button type="button" class="bg-toggle" aria-expanded="true">{{ gr.name }}</button></td>
+        {% for i in range(1, 13) %}{{ cell(i, gr.months[i - 1][0], gr.months[i - 1][1]) }}{% endfor %}
+        <td class="num bg-mtotal" data-label="Разом"><span class="bg-mfact">{{ bm(gr.months | sum(attribute=1)) }}</span><span class="bg-mplan">{{ bm(gr.months | sum(attribute=0)) }}</span></td></tr>
+      {% for it in gr.rows %}
+      {% set yp, yf = it.months | sum(attribute=0), it.months | sum(attribute=1) %}
+      <tr class="bg-item" data-parent="{{ d.key }}|{{ gr.name }}" data-search="{{ (it.code ~ ' ' ~ it.name) | lower }}"
+          data-over="{{ 1 if (yf > 0 and yp <= 0) or (yp > 0 and yf / yp > 1.0001) else 0 }}">
+        <td class="bg-sticky" data-label="Стаття"><span class="bg-item-name">{{ it.name }}</span>{% if it.code %} <span class="bg-code">{{ it.code }}</span>{% endif %}</td>
+        {% for i in range(1, 13) %}{{ cell(i, it.months[i - 1][0], it.months[i - 1][1], d.key, it) }}{% endfor %}
+        <td class="num bg-mtotal" data-label="Разом"><span class="bg-mfact">{{ bm(yf) }}</span><span class="bg-mplan">{{ bm(yp) }}</span></td>
+      </tr>
+      {% endfor %}
+      {% endfor %}
+    </tbody>
+    {% endfor %}
+    <tfoot><tr class="bg-total"><td class="bg-sticky">Разом</td>
+      {% for i in range(1, 13) %}{{ cell(i, t.months[i - 1][0], t.months[i - 1][1]) }}{% endfor %}
+      <td class="num bg-mtotal"><span class="bg-mfact">{{ bm(t.months | sum(attribute=1)) }}</span><span class="bg-mplan">{{ bm(t.months | sum(attribute=0)) }}</span></td></tr></tfoot>
+  </table>
+  </div>
+  <p class="muted bg-note">Колір клітинки — виконання місяця: зелений — до 90 % плану, жовтий — 90–100 %, червоний — понад
+    план (або факт без плану). Майбутні місяці — лише план.</p>
+  {% endif %}
+  <p class="muted bg-note">Факт — документ «Розподіл накладних витрат» у 1С: витрати за статтею з відділом-власником (Owner)
+    ідуть у бюджет власника, решта — у відділ рядка. Натисніть суму факту, щоб побачити документи.</p>
+  {% endif %}
+</div>
+
+<dialog id="bg-dialog" class="bg-dialog" aria-labelledby="bg-dialog-title">
+  <div class="dlg-head"><span id="bg-dialog-title">Розшифровка</span>
+    <button type="button" class="exp-dialog-close" id="bg-dialog-close" aria-label="Закрити">✕</button></div>
+  <div class="dlg-body">
+    <p class="muted" id="bg-dialog-sub"></p>
+    <div id="bg-dialog-body"><p class="muted">Завантаження…</p></div>
+  </div>
+</dialog>
+<script type="application/json" id="bg-data">{{ {'year': year, 'url': url_for('budget.details'), 'months': MONTHS} | tojson }}</script>
+<script src="{{ url_for('static', filename='budget.js') }}"></script>
+{% endblock %}

@@ -78,6 +78,11 @@ def payment_candidate_ids(paid_since):
     return _store().payment_candidate_ids(paid_since)
 
 
+def budget_rows(expense_code, paid_since):
+    """Заявки зі статтею, що витрачають бюджет (залишок у заявці, budget.py): у роботі й оплачені з paid_since."""
+    return _store().budget_rows(expense_code, paid_since)
+
+
 def invoice_usage(cp_id, numbers, exclude_id=None):
     """У яких заявках у роботі (не відхилених і не скасованих) уже є рахунки цього контрагента: {рахунок: [№ заявок]}."""
     return _store().invoice_usage(cp_id, list(numbers), exclude_id)

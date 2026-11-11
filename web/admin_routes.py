@@ -6,6 +6,7 @@ from decimal import Decimal, InvalidOperation
 from flask import Blueprint, current_app, flash, g, redirect, render_template, request, url_for
 
 import app_settings
+import budget_access
 import cfo_rules
 import clock
 import counterparties
@@ -494,6 +495,7 @@ def admin_user_card(user_id, *, context):
         is_accountant=bool(set(person["roles"]) & wf.ACCOUNTANT_ROLES),
         ACC_MODES=user_roles.ACC_MODES,
         no_approver=user_roles.accountants_without_approver(),
+        budget_access=budget_access.get(user_id), BUDGET_ACCESS_MODES=budget_access.MODES,
     )
 
 
@@ -537,6 +539,11 @@ def _save_user_card(person):
         if new_ov != user_roles.section_overrides(uid):
             user_roles.set_section_overrides(uid, new_ov, who)
             changes.append("доступ до розділів — " + (sections.describe(new_ov) or "усе за роллю"))
+    if "budget_access_sent" in f:  # «Бюджет: які відділи»
+        known_deps = {d["code"] for d in departments.get_departments()} | set(budget_access.get(uid)["departments"])
+        if budget_access.save(uid, email, f.get("budget_access_mode"),
+                              [d for d in f.getlist("budget_access_deps") if d in known_deps], who):
+            changes.append("бюджет — " + (budget_access.describe(uid) or "відділи, які людина очолює"))
 
     # Бухгалтер: погоджує і оплачує / лише оплачує (поле є, лише коли в картці вибрано роль бухгалтера)
     mode = f.get("acc_mode")

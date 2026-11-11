@@ -50,6 +50,10 @@
         Звірка{% if reconcile_count %} <span class="count">{{ reconcile_count }}</span>{% endif %}
       </a>
       {% endif %}
+      {% if 'budget' in nav_sections %}
+      <a href="{{ url_for('budget.index') }}" class="{{ 'active' if request.endpoint == 'budget.index' }}"
+         title="План і факт бюджету відділів з 1С">Бюджет</a>
+      {% endif %}
       {% if 'admin' in roles %}
       <a href="{{ url_for('admin.admin_users') }}" class="{{ 'active' if request.endpoint and request.endpoint.startswith('admin.') }}">Адміністрування</a>
       {% endif %}

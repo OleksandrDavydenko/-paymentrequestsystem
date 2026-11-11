@@ -7,6 +7,8 @@ os.environ.update(UPLOAD_DIR=tmp, ADMIN_EMAILS="adm@ftpua.com")
 import app as m
 import app_settings, dept_settings, mailer, notifications, org_structure, settings_log, user_budget, user_roles
 import storage as db
+import budget
+budget.rows = lambda: []  # без бюджету статей: правило «понад бюджет» тут не перевіряється (budget_test.py)
 
 ok = True
 def check(label, cond):

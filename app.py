@@ -31,6 +31,7 @@ from web import performance, request_timing, security_headers
 from web.admin_routes import bp as admin_bp
 from web.api_routes import bp as api_bp
 from web.auth import auth
+from web.budget_routes import bp as budget_bp
 from web.lists_routes import bp as lists_bp
 from web.onec_api_routes import bp as onec_api_bp
 from web.login_routes import bp as login_bp
@@ -65,7 +66,7 @@ context.init_app(app)
 errors.init_app(app)
 security_headers.init_app(app)
 background.init_app(app)
-for bp in (login_bp, requests_bp, lists_bp, payments_bp, settings_bp, admin_bp, api_bp, onec_api_bp):
+for bp in (login_bp, requests_bp, lists_bp, payments_bp, budget_bp, settings_bp, admin_bp, api_bp, onec_api_bp):
     app.register_blueprint(bp)
 csrf.exempt(api_bp)  # бот не має сеансу входу — API захищене ключем X-Api-Key
 csrf.exempt(onec_api_bp)  # обробка 1С — так само, ключ X-Api-Key («Налаштування → API для 1С»)

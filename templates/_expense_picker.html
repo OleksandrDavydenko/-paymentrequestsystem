@@ -25,6 +25,12 @@
     <ul class="exp-suggest" id="exp-suggest" role="listbox" hidden></ul>
   </div>
   <span class="field-hint exp-note" id="exp-note" hidden></span>
+  {% if budget_hint_on() %}
+  {# Залишок бюджету статті на місяць оплати (static/budget-hint.js, /budget/remaining) #}
+  <div class="budget-hint" id="budget-hint" hidden aria-live="polite"
+       data-url="{{ url_for('budget.remaining') }}" data-department="{{ req.department or '' }}" data-id="{{ req.id or '' }}"></div>
+  <script src="{{ url_for('static', filename='budget-hint.js') }}" defer></script>
+  {% endif %}
   {% else %}
   {% set exp_title = expense_title(req.expense_code) %}
   <div class="exp-readonly {{ 'exp-missing' if req.expense_code and not exp_title }}"
@@ -34,6 +40,7 @@
     <span class="exp-readonly-name">{{ exp_title or 'немає в довіднику' }}</span>
     {% else %}<span class="muted">—</span>{% endif %}
   </div>
+  {% include "request/_budget_snapshot.html" %}
   {% endif %}
   {% if errors.expense_code %}<span class="err">{{ errors.expense_code }}</span>{% endif %}
 </div>

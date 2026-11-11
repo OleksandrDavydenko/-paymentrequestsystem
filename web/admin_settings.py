@@ -146,6 +146,11 @@ def _context(tab):
                    cfo_expense_known={i["code"] for i in items},
                    APPROVAL_MODES=wf.APPROVAL_MODES, HEAD_MODES=wf.HEAD_MODES, CFO_MODES=wf.CFO_MODES,
                    no_self_approval=app_settings.get("no_self_approval"))
+    elif tab == "budget":
+        import budget
+        ctx.update(budget_hint=app_settings.get("budget_hint"), budget_over_mode=app_settings.get("budget_over_mode"),
+                   BUDGET_OVER_MODES=budget.OVER_MODES, budget_state=budget.status(),
+                   budget_details_table=budget.details_table())
     elif tab == "request":
         ctx.update(request_prefix=request_numbers.prefix(), request_digits=request_numbers.digits(),
                    request_prefix_history=[p for p in request_numbers.all_prefixes() if p != request_numbers.prefix()],

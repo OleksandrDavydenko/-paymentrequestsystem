@@ -100,6 +100,11 @@ def inject_roles():
     }
 
 
+def _budget_money(value):
+    import budget  # тут, а не вгорі — шаблонам бюджет потрібен лише в картці заявки й на вкладці «Бюджет»
+    return budget.money(value)
+
+
 def init_app(app):
     """Фільтри, глобальні функції й змінні для всіх шаблонів."""
     for name, fn in (("money", money), ("d", fmt_date), ("dt", fmt_datetime), ("filesize", filesize),
@@ -107,5 +112,8 @@ def init_app(app):
         app.add_template_filter(fn, name)
     for fn in (url_with, visible_history, abs_static):
         app.add_template_global(fn)
+    app.add_template_filter(_budget_money, "bmoney")  # суми бюджету: 1 234,50 / −186,98
+    # Залишок бюджету статті у формі заявки (налаштування «Бюджет»): плашка й скрипт — лише коли ввімкнено
+    app.add_template_global(lambda: bool(app_settings.get("budget_hint")), "budget_hint_on")
     app.context_processor(inject_refs)
     app.context_processor(inject_roles)

@@ -1530,3 +1530,126 @@ html[data-holiday] .req-head::before { top: 0; left: 0; right: 0; height: var(--
 .ht-card em { width: 55%; height: 4px; border-radius: 2px; background: var(--line); }
 .ht-card em.short { width: 35%; }
 .holiday-now { margin: 0 0 10px; padding: 8px 12px; border-radius: 6px; background: var(--surface); font-size: 13px; }
+
+/* ---------- Бюджет (вкладка «Бюджет» і залишок у заявці) ---------- */
+.bg-source { font-size: 13px; }
+.bg-controls { display: grid; gap: 10px; margin: 14px 0; }
+.bg-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; }
+.bg-label { color: var(--muted); font-size: 13px; min-width: 52px; }
+.bg-row .spacer { flex: 1; }
+.bg-dep-form { display: flex; align-items: center; gap: 8px; margin-left: 12px; }
+.bg-dep-form select { min-width: 220px; }
+.bg-months .chip { padding: 4px 9px; }
+.chip.bg-now:not(.active) { border-color: var(--primary-300); font-weight: 600; }
+.bg-tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 14px; }
+.bg-tile { display: grid; gap: 4px; align-content: start; padding: 10px 12px; border: 1px solid var(--line); border-top: 3px solid var(--primary-300);
+  border-radius: 8px; background: var(--card); text-align: left; font: inherit; color: var(--text); }
+.bg-tile-title { font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .02em; }
+.bg-tile-n { font-size: 22px; font-weight: 700; line-height: 1.15; font-variant-numeric: tabular-nums; }
+.bg-tile-hint { font-size: 12px; color: var(--muted); }
+.bg-tile-bad { border-top-color: var(--bad); }
+.bg-tile-bad .bg-tile-n { color: var(--bad-ink); }
+button.bg-tile-over { cursor: pointer; }
+button.bg-tile-over:hover:not(:disabled) { background: var(--hover); }
+button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
+.bg-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-bottom: 10px; }
+.bg-tools input[type=search] { min-width: 240px; }
+.bg-tools .spacer { flex: 1; }
+.bg-check { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.bg-table { width: 100%; font-variant-numeric: tabular-nums; }
+.bg-table td.num, .bg-table th.num { text-align: right; white-space: nowrap; }
+.bg-table .bg-col-pct { width: 200px; }
+.bg-table:not(.bg-mtable) td:last-child { white-space: nowrap; }
+.bg-table tr.bg-dept td { background: var(--primary-100); font-weight: 700; color: var(--primary-ink); border-top: 2px solid var(--primary-200); }
+.bg-table tr.bg-dept .bg-toggle { font-weight: 700; }
+.bg-table tr.bg-group td { background: var(--surface); font-weight: 600; }
+.bg-table tr.bg-item td:first-child { padding-left: 30px; }
+.bg-table tr.bg-dept + tr.bg-group td:first-child, .bg-table tr.bg-group td:first-child { padding-left: 14px; }
+.bg-table tr.bg-item:hover td { background: var(--primary-50); }
+.bg-table tfoot td { font-weight: 700; border-top: 2px solid var(--border); background: var(--surface); }
+.bg-toggle { border: none; background: none; font: inherit; color: inherit; cursor: pointer; padding: 0; text-align: left; }
+.bg-toggle::before { content: "▾"; display: inline-block; width: 16px; color: var(--muted); }
+.bg-toggle[aria-expanded="false"]::before { content: "▸"; }
+.bg-code { display: inline-block; background: var(--primary-100); color: var(--primary-dark); font-size: 11px; font-weight: 700;
+  padding: 0 7px; border-radius: 999px; margin-left: 4px; vertical-align: 1px; }
+.bg-neg { color: var(--bad-ink); font-weight: 600; }
+.bg-pct { display: inline-block; min-width: 64px; font-weight: 600; text-align: right; margin-right: 8px; font-size: 13px; }
+.bg-bar { display: inline-block; vertical-align: middle; width: 100px; height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.bg-tile .bg-bar { width: 100%; margin-top: 4px; }
+.bg-bar > span { display: block; height: 100%; background: var(--ok); border-radius: 4px; }
+.bg-bar.lvl-warn > span { background: var(--warn); }
+.bg-bar.lvl-over > span { background: var(--bad); }
+.lvl-text-ok { color: var(--ok-ink); }
+.lvl-text-warn { color: var(--amber-ink); }
+.lvl-text-over { color: var(--bad-ink); }
+.lvl-text-none { color: var(--muted); }
+.bg-fact { border: none; background: none; font: inherit; color: var(--primary); cursor: pointer; padding: 0;
+  text-decoration: underline dotted; text-underline-offset: 3px; font-variant-numeric: tabular-nums; }
+.bg-fact:hover { text-decoration-style: solid; }
+.bg-note { font-size: 12px; margin: 10px 0 0; }
+/* По місяцях */
+.bg-months-wrap { overflow-x: auto; }
+.bg-mtable { min-width: 1180px; }
+.bg-mtable th, .bg-mtable td { padding: 6px 8px; }
+.bg-mtable .bg-sticky { position: sticky; left: 0; z-index: 1; min-width: 220px; max-width: 280px; background: var(--card); }
+.bg-mtable thead .bg-sticky { background: var(--surface); }
+.bg-mtable tr.bg-dept .bg-sticky { background: var(--primary-100); }
+.bg-mtable tr.bg-group .bg-sticky, .bg-mtable tfoot .bg-sticky { background: var(--surface); }
+.bg-mtable tr.bg-item td.bg-sticky { padding-left: 26px; }
+.bg-mcell, .bg-mtotal { line-height: 1.25; font-size: 13px; }
+.bg-mfact { display: block; font-weight: 600; }
+.bg-mplan { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }
+.bg-legend { font-weight: 400; font-size: 11px; margin-left: 6px; }
+.bg-legend .bg-mplan { display: inline; }
+.bg-mtable th.bg-cur { color: var(--primary); box-shadow: inset 0 -2px 0 var(--primary); }
+.bg-mtable td.bg-cur { box-shadow: inset 1px 0 0 var(--primary-200), inset -1px 0 0 var(--primary-200); }
+.bg-mtable tr.bg-item td.lvl-cell-ok { background: var(--ok-softer); }
+.bg-mtable tr.bg-item td.lvl-cell-warn { background: var(--amber-soft); }
+.bg-mtable tr.bg-item td.lvl-cell-over { background: var(--bad-soft); }
+.bg-mtable tr.bg-item td.lvl-cell-over .bg-mfact, .bg-mtable tr.bg-item td.lvl-cell-over .bg-fact { color: var(--bad-ink); }
+.bg-mtable td.bg-future .bg-mplan { color: var(--text); font-size: 12px; }
+.bg-mtotal { background: var(--surface); }
+/* Розшифровка факту */
+.bg-dialog { width: min(980px, 96vw); }
+.bg-dialog .dlg-head { display: flex; align-items: center; justify-content: space-between; }
+.bg-dialog .dlg-body { max-height: 70vh; }
+.bg-details td { vertical-align: top; font-size: 13px; }
+.bg-details tfoot td { font-weight: 700; background: var(--surface); }
+@media (max-width: 1100px) {
+  .bg-tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+@media (max-width: 760px) {
+  .bg-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .bg-dep-form { margin-left: 0; width: 100%; }
+  .bg-dep-form select { flex: 1; min-width: 0; }
+  .bg-tools input[type=search] { min-width: 0; flex: 1 1 100%; }
+  .bg-table tr.bg-item td:first-child, .bg-table tr.bg-group td:first-child { padding-left: 10px; }
+  .bg-table tr.bg-dept, .bg-table tr.bg-group { background: var(--surface); }
+  .bg-table td .bg-bar { width: 70px; }
+  .bg-mtable { min-width: 0; }
+  .bg-mtable .bg-sticky { position: static; max-width: none; }
+  .bg-mtable td.bg-mcell { display: flex; justify-content: space-between; gap: 8px; }
+  .bg-mtable td.bg-mcell::before { float: none; }
+  .bg-mcell .bg-mfact, .bg-mcell .bg-mplan, .bg-mtotal .bg-mfact, .bg-mtotal .bg-mplan { display: inline; margin-left: 8px; }
+  .bg-table:not(.bg-mtable) td:last-child { white-space: normal; }
+}
+
+/* Залишок бюджету статті у формі й картці заявки */
+.budget-hint { margin-top: 8px; padding: 10px 12px; border: 1px solid var(--primary-200); border-left: 4px solid var(--primary);
+  border-radius: 8px; background: var(--primary-50); font-size: 13px; display: grid; gap: 4px; }
+.budget-hint[hidden] { display: none; }
+.budget-hint-title { font-weight: 600; color: var(--primary-ink); }
+.budget-hint-nums { color: var(--muted); }
+.budget-hint-rest { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.budget-hint-rest strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.budget-hint-rest .bg-bar { width: 140px; }
+.budget-hint.is-low { border-color: var(--warn-line); border-left-color: var(--warn); background: var(--warn-faint); }
+.budget-hint.is-low .budget-hint-title { color: var(--amber-ink); }
+.budget-hint.is-over { border-color: var(--bad-line); border-left-color: var(--bad); background: var(--bad-faint); }
+.budget-hint.is-over .budget-hint-title { color: var(--bad-ink); }
+.budget-hint-over { color: var(--bad-ink); font-weight: 600; }
+.budget-hint-amount { color: var(--muted); }
+/* Картка користувача → «Бюджет: які відділи»: список відділів — лише для «Вибрані відділи» */
+.uc-budget-access { border-top: 1px solid var(--line); margin-top: 8px; padding-top: 4px; }
+.uc-budget-access .uc-budget-deps { margin: 6px 0 0 26px; max-height: 240px; overflow: auto; }
+.uc-budget-access:not(:has(input[name=budget_access_mode][value=list]:checked)) .uc-budget-deps { display: none; }

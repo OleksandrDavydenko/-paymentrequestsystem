@@ -370,6 +370,17 @@ def payment_candidate_ids(paid_since):
                        sa.and_(R.c.status == "paid", R.c.paid_at >= datetime.combine(paid_since, time.min))))
 
 
+def budget_rows(expense_code, paid_since):
+    """Легкі рядки заявок зі статтею, що витрачають бюджет: у роботі (з кешу активних) й оплачені з paid_since (запитом)."""
+    rows = [derive.light(r) for r in _active().values()
+            if r.get("expense_code") == expense_code and r["status"] in derive.ACTIVE_STATUSES]
+    stmt = sa.select(*LIGHT_COLUMNS).where(R.c.expense_code == expense_code, R.c.status == "paid",
+                                           R.c.paid_at >= datetime.combine(paid_since, time.min))
+    with _engine().connect() as c:
+        rows += [_light(r) for r in c.execute(stmt)]
+    return rows
+
+
 def last_accountant_type(email):
     stmt = (sa.select(R.c.accountant_type)
             .where(R.c.author_lc == (email or "").lower(), R.c.accountant_type.in_(sorted(wf.ACCOUNTANT_CHOICES)))

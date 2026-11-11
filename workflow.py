@@ -246,6 +246,7 @@ ACTIONS = {
     "handover": (None, "Готівку передано підряднику", "green", False),
     "handover_undo": (None, "Підтвердження передачі скасовано", "purple", True),
     "cfo_threshold": (None, "Поріг фіндиректора", "grey", False),
+    "budget_over": (None, "Понад бюджет", "red", False),
     "payment_link": (None, "Прив'язано платіж з 1С", "blue", False),
     "onec_order": (None, "Платіжку створено в 1С", "blue", False),
     "onec_order_failed": (None, "1С не створила платіжку", "red", False),
@@ -800,7 +801,7 @@ def at_accountants(req):
 
 INTERVENE_ACTIONS = ["rework", "reject"]
 # Службові записи історії, що йдуть одразу після дії й не змінюють статус (не «остання дія» для сповіщень)
-SYSTEM_NOTES = {"cfo_threshold"}
+SYSTEM_NOTES = {"cfo_threshold", "budget_over"}
 
 
 def last_action(req):

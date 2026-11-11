@@ -8,6 +8,7 @@ from datetime import timedelta
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, send_file, session, url_for
 
 import app_settings
+import budget
 import clock
 import counterparties
 import departments
@@ -30,7 +31,7 @@ import workflow as wf
 
 from web.auth import _home, _load_visible, login_required, requires
 from web.listing import _filtered, _page, _parse_date, _ref_keys
-from web.request_helpers import INLINE_EXT, _parse_amount, add_workdays, contractor_items, derive_kind, invoices_on, kind_question_on, lines_block_on, lines_error, lines_required, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, _try_live_link, parse_request_form
+from web.request_helpers import INLINE_EXT, _parse_amount, add_workdays, contractor_items, derive_kind, invoices_on, kind_question_on, lines_block_on, lines_error, lines_required, doc_limits, submit_requirements, _apply_participants, _apply_payment_account, _can_link_cp, _default_accountant, _link_counterparty, _participants_state, _pay_guard, _route_settings, _store_uploads, budget_over, budget_snapshot, _try_live_link, parse_request_form
 
 
 bp = Blueprint("requests", __name__)
@@ -138,6 +139,7 @@ def route_preview(request_id=None, *, context):
            "lines": [None] * min(int(a.get("lines")) if (a.get("lines") or "").isdigit() else 0, 200)}
     if invoices_on() and not kind_question_on():
         req["payment_kind"] = derive_kind(req["expense_code"], dept)
+    budget_snapshot(req)
     rs = _route_settings(req)
     steps, notes = [], []
     if rs["head_mode"] == "approve":
@@ -244,6 +246,7 @@ def request_card(request_id=None, *, context):
         if use_invoices and "lines" not in errors and (problem := lines_error(req)):
             errors["lines"] = problem
         if not errors and request.form.get("action") == "submit":
+            budget_snapshot(req)  # залишок бюджету статті на момент відправки — для правила й картки заявки
             errors = submit_requirements(req)  # вимоги з налаштувань — лише при відправці; зберегти можна й без них
         if (existing.get("organization_id") and not data["organization_id"] and not errors
                 and app_settings.get("org_field_mode") == "payer"):
@@ -277,7 +280,12 @@ def request_card(request_id=None, *, context):
                 # заявки, створені до появи відділів, або з відділом, якого вже немає в довіднику
                 req["department"] = org_structure.department_of(user["oid"])
             if action == "submit":
-                wf.apply_action(req, "submit", roles, user, **_route_settings(req))
+                rs = _route_settings(req)
+                wf.apply_action(req, "submit", roles, user, **rs)
+                over = budget_over(req)
+                if over and "бюджету" not in rs["cfo_note"]:  # причина ще не в записі «Поріг фіндиректора»
+                    wf.add_history(req, "budget_over", wf.SYSTEM_USER, "", "Заявка " + budget.over_text(over),
+                                   req["status"], req["status"])
             new_id = db.save_request(req)
             number = request_numbers.label(db.get_request(new_id)["number"])
             for email in added_participants:

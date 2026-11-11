@@ -35,6 +35,7 @@ FILE_ENV = {
     "TELEGRAM_LINKED_FILE": "telegram_linked.json", "USER_BUDGET_FILE": "user_budget.json",
     "USER_DIRECTORY_FILE": "user_directory.json", "PAY_ORPHANS_FILE": "pay_orphans.json",
     "USER_PREFS_FILE": "user_prefs.json", "USER_ROLES_FILE": "user_roles.json", "DEPT_SETTINGS_FILE": "dept_settings.json",
+    "BUDGET_ACCESS_FILE": "budget_access.json",
 }
 
 

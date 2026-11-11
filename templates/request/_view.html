@@ -28,6 +28,7 @@
     <div><dt>{{ 'Організація' if req.organization_id else 'Платник' }}</dt><dd>{{ payer_label(req) }}</dd></div>
     {% endif %}
   </dl>
+  {% include "request/_budget_snapshot.html" %}
   {% if req.lines %}
   <div class="rv-label">Рахунки</div>
   <div class="table-wrap">
