@@ -1,6 +1,6 @@
 {# Бюджет статті на момент відправки заявки (знімок req.budget_check, budget.check) — для погоджувачів і автора. #}
 {% set snap = req.budget_check %}
-{% if snap and not snap.error and req.status not in ('draft',) %}
+{% if budget_on() and snap and not snap.error and req.status not in ('draft',) %}
 <div class="budget-hint {{ 'is-over' if snap.over else '' }}">
   <div class="budget-hint-title">Бюджет {{ snap.month_title }} · відділ «{{ snap.dept_name }}»
     <span class="muted" style="font-weight:400">— на момент відправки{% if snap.at %}, {{ snap.at[8:10] }}.{{ snap.at[5:7] }} {{ snap.at[11:16] }}{% endif %}</span></div>

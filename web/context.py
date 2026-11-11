@@ -105,6 +105,11 @@ def _budget_money(value):
     return budget.money(value)
 
 
+def _budget_on():
+    """Чи ввімкнено бюджет в адмінці (budget.enabled) — для шаблонів."""
+    return bool(app_settings.get("budget_enabled"))
+
+
 def init_app(app):
     """Фільтри, глобальні функції й змінні для всіх шаблонів."""
     for name, fn in (("money", money), ("d", fmt_date), ("dt", fmt_datetime), ("filesize", filesize),
@@ -113,7 +118,8 @@ def init_app(app):
     for fn in (url_with, visible_history, abs_static):
         app.add_template_global(fn)
     app.add_template_filter(_budget_money, "bmoney")  # суми бюджету: 1 234,50 / −186,98
-    # Залишок бюджету статті у формі заявки (налаштування «Бюджет»): плашка й скрипт — лише коли ввімкнено
-    app.add_template_global(lambda: bool(app_settings.get("budget_hint")), "budget_hint_on")
+    # Бюджет увімкнено в адмінці; залишок статті у формі заявки (плашка й скрипт) — ще й коли ввімкнено його показ
+    app.add_template_global(_budget_on, "budget_on")
+    app.add_template_global(lambda: _budget_on() and bool(app_settings.get("budget_hint")), "budget_hint_on")
     app.context_processor(inject_refs)
     app.context_processor(inject_roles)

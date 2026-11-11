@@ -237,6 +237,7 @@
       </select>
     </div>
     {% endfor %}
+    {% if budget_on() %}
     <div class="uc-budget-access" id="uc-budget-access">
       <div class="budget-section-title">Бюджет: які відділи</div>
       <p class="uc-explain">Чий бюджет людина бачить на вкладці «Бюджет», якщо вкладку їй відкрито (рядок «Бюджет» вище).
@@ -254,6 +255,7 @@
         {% endfor %}
       </div>
     </div>
+    {% endif %}
   </section>
 
   <section class="card uc-section" id="uc-telegram">

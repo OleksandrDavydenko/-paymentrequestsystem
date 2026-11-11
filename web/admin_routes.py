@@ -488,7 +488,8 @@ def admin_user_card(user_id, *, context):
         onec=onec,
         # «Доступ до розділів»: типово — за ролями, які людина матиме на вході (sections.py), і винятки
         section_rows=[{"code": c, "label": s.label, "hint": s.hint, "override": overrides.get(c),
-                       "by_role": sections.by_role(c, _login_roles(person))} for c, s in sections.SECTIONS.items()],
+                       "by_role": sections.by_role(c, _login_roles(person))} for c, s in sections.SECTIONS.items()
+                      if sections.is_on(c)],
         onec_types=[t["name"] for t in payment_types.types_for_user(onec["user"]["guid"])] if onec["user"] else [],
         onec_employee=employees.by_email(person["email"]) if person["email"] else None,
         request_deps=org_structure.request_departments_of(user_id),
@@ -534,9 +535,12 @@ def _save_user_card(person):
 
     # Доступ до розділів-звітів: зберігаються лише винятки («За роллю» — без запису)
     if "sections_sent" in f and user_roles.get(uid) is not None:
+        old_ov = user_roles.section_overrides(uid)
         new_ov = {code: f.get(f"section_{code}") == "1" for code in sections.SECTIONS
-                  if f.get(f"section_{code}") in ("1", "0")}
-        if new_ov != user_roles.section_overrides(uid):
+                  if sections.is_on(code) and f.get(f"section_{code}") in ("1", "0")}
+        # розділу, вимкненого в налаштуваннях, у формі немає — його виняток лишається як є
+        new_ov.update({code: v for code, v in old_ov.items() if not sections.is_on(code)})
+        if new_ov != old_ov:
             user_roles.set_section_overrides(uid, new_ov, who)
             changes.append("доступ до розділів — " + (sections.describe(new_ov) or "усе за роллю"))
     if "budget_access_sent" in f:  # «Бюджет: які відділи»

@@ -279,8 +279,9 @@ def _route_settings(req):
 
 def budget_snapshot(req):
     """Знімок бюджету статті для заявки (budget.check) — у req["budget_check"]: при відправці й для «Підсумку».
-    Статті немає в бюджеті відділу — знімка немає."""
-    snap = budget.check(req)
+    Статті немає в бюджеті відділу — знімка немає. Бюджет вимкнено в адмінці — нічого не перевіряється (і до даних
+    бюджету не звертаємось), старий знімок прибирається."""
+    snap = budget.check(req) if budget.enabled() else None
     if snap is None:
         req.pop("budget_check", None)
     else:
@@ -290,7 +291,7 @@ def budget_snapshot(req):
 
 def budget_over(req):
     """Знімок бюджету, якщо заявка понад залишок статті (і бюджет вдалося перевірити), інакше None."""
-    snap = req.get("budget_check")
+    snap = req.get("budget_check") if budget.enabled() else None
     return snap if snap and not snap.get("error") and snap.get("over") else None
 
 

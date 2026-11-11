@@ -109,7 +109,7 @@ def details(*, context):
 @requires()
 def remaining(*, context):
     """Залишок бюджету статті для форми заявки (бачать усі, хто створює заявки) і перевищення сумою заявки."""
-    if not app_settings.get("budget_hint"):
+    if not budget.enabled() or not app_settings.get("budget_hint"):
         return jsonify(enabled=False)
     a = request.args
     req = {"department": a.get("department") or None, "expense_code": (a.get("item") or "").strip() or None,

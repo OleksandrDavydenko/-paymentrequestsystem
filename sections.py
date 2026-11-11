@@ -15,7 +15,8 @@
 """
 from collections import namedtuple
 
-Section = namedtuple("Section", "label endpoint default_roles hint")
+# setting — налаштування-вимикач (settings_schema): розділ є лише коли воно ввімкнене; без нього — завжди
+Section = namedtuple("Section", "label endpoint default_roles hint setting", defaults=(None,))
 
 SECTIONS = {
     "all_requests": Section("Усі заявки", "lists.admin_requests", frozenset({"admin", "cfo"}),
@@ -23,10 +24,21 @@ SECTIONS = {
     "reconcile": Section("Звірка", "payments.reconcile", frozenset({"admin", "cfo"}),
                          "платежі з 1С і заявки; прив'язувати — лише кому дозволено в «Звірка з 1С»"),
     "budget": Section("Бюджет", "budget.index", frozenset({"dept_head", "admin", "cfo"}),
-                      "план і факт бюджету відділів з 1С; чий бюджет — «Бюджет: які відділи» нижче"),
+                      "план і факт бюджету відділів з 1С; чий бюджет — «Бюджет: які відділи» нижче",
+                      "budget_enabled"),
 }
 # Розділи, з яких відкриваються картки будь-яких заявок (лише перегляд)
 OPENS_CARDS = frozenset({"all_requests", "reconcile"})
+
+
+def is_on(code):
+    """Чи ввімкнено розділ у налаштуваннях системи. Вимкнений розділ ніхто не бачить (ні в меню, ні в картці
+    користувача), а збережені для нього винятки лишаються й діють знову, щойно розділ увімкнуть."""
+    setting = SECTIONS[code].setting
+    if not setting:
+        return True
+    import app_settings  # тут, а не вгорі: цей модуль імпортують workflow і user_roles
+    return bool(app_settings.get(setting))
 
 
 def by_role(code, roles):
@@ -42,10 +54,10 @@ def clean(overrides):
 def effective(roles, overrides):
     """Розділи, які людина бачить: за роллю, з урахуванням винятків."""
     ov = clean(overrides)
-    return frozenset(code for code in SECTIONS if ov.get(code, by_role(code, roles)))
+    return frozenset(code for code in SECTIONS if is_on(code) and ov.get(code, by_role(code, roles)))
 
 
 def describe(overrides):
     """«+ Звірка, − Усі заявки» — винятки коротко (список користувачів, журнал картки)."""
     ov = clean(overrides)
-    return ", ".join(("+ " if ov[c] else "− ") + SECTIONS[c].label for c in SECTIONS if c in ov)
+    return ", ".join(("+ " if ov[c] else "− ") + SECTIONS[c].label for c in SECTIONS if c in ov and is_on(c))

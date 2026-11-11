@@ -85,9 +85,10 @@
     catch (e) { /* приватний режим */ }
   }
 
-  // Інші скрипти (залишок бюджету статті) дізнаються про зміну статті з події change прихованого поля
+  // Залишок бюджету статті (budget-hint.js) дізнається про зміну статті з події change прихованого поля. Подія не
+  // спливає: скрипти форми, що слухають change на всій формі, її не бачать — для них усе як раніше
   function changed(before) {
-    if (hidden.value !== before) hidden.dispatchEvent(new Event('change', { bubbles: true }));
+    if (hidden.value !== before) hidden.dispatchEvent(new Event('change'));
   }
 
   function select(item, { save = true } = {}) {

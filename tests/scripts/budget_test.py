@@ -1,6 +1,7 @@
-"""Бюджет: вкладка «Бюджет» (хто бачить і чий бюджет, звіт, розшифровка), залишок статті в заявці (план − факт 1С −
-заявки в дорозі; Owner статті; оплачені, які вже у факті, — не вдруге) і заявка понад залишок: лише попередження,
-обов'язково фіндиректор (навіть коли він лише спостерігає) або заборона відправки."""
+"""Бюджет: вимикач в адмінці (вимкнено, типово — бюджету немає ніде й система працює як без нього); вкладка «Бюджет»
+(хто бачить і чий бюджет, звіт, розшифровка), залишок статті в заявці (план − факт 1С − заявки в дорозі; Owner статті;
+оплачені, які вже у факті, — не вдруге) і заявка понад залишок: лише попередження, обов'язково фіндиректор (навіть
+коли він лише спостерігає) або заборона відправки."""
 import os, sys, tempfile
 from decimal import Decimal
 sys.path.insert(0, os.getcwd())
@@ -38,7 +39,9 @@ RAW = [row("DEP-BA", "07.001", 1000, 400), row("DEP-IT", "02.004", 500, 100, own
 other = f"{Y:04d}-{(M % 12) + 1:02d}" if M < 12 else f"{Y:04d}-01"
 RAW.append(row("DEP-BA", "07.001", 1000, 0, month=other))
 FIXED = budget.parse(RAW)
-budget.rows = lambda: FIXED
+def _no_data():
+    raise AssertionError("budget data read while the budget is switched off")
+budget.rows = _no_data  # поки бюджет вимкнено, до його даних ніхто не звертається
 
 # ---------- користувачі
 for uid, roles in (("ini@ftpua.com", ["initiator"]), ("cfo@ftpua.com", ["cfo"]), ("head@ftpua.com", ["initiator"]),
@@ -46,6 +49,39 @@ for uid, roles in (("ini@ftpua.com", ["initiator"]), ("cfo@ftpua.com", ["cfo"]),
     user_roles.set_roles(uid, uid, uid.split("@")[0].title(), roles, "t")
 org_structure.set_department_staff("BA", {"id": "head@ftpua.com", "email": "head@ftpua.com", "name": "Head"}, [], "t")
 org_structure.set_department("author@ftpua.com", "author@ftpua.com", "Author", "BA", "t")
+
+# ---------- вимкнено (типово): бюджету немає ніде, навіть для фіндиректора й адміністратора
+overspend = ("department=BA&expense_code=07.001&amount=99999999&currency=UAH&organization_id=1&counterparty_id=1"
+             f"&payment_form=bank&pay_date={today.isoformat()}")
+check("off by default", app_settings.get("budget_enabled") is False and not budget.enabled())
+user_roles.set_section_overrides("ini@ftpua.com", {"budget": True, "reconcile": True}, "t")  # виняток, збережений раніше
+for who in ("cfo@ftpua.com", "adm@ftpua.com", "head@ftpua.com", "ini@ftpua.com"):
+    login(who)
+    check(f"off, {who}: no menu item, pages closed", "Бюджет" not in nav(page("/requests"))
+          and c.get("/budget").status_code == 403 and c.get(f"/budget/details?dep=BA&item=07.001&y={Y}&m={M}").status_code == 403)
+login("author@ftpua.com")
+html = page("/requests/new")
+check("off: request form without the budget hint", 'id="budget-hint"' not in html and "budget-hint.js" not in html
+      and c.get("/budget/remaining?department=BA&item=07.001").json == {"enabled": False})
+pv = c.get("/requests/route-preview?" + overspend).json
+check("off: route preview knows nothing about the budget", not any("бюджет" in t.lower() for t in pv["notes"] + pv["todo"]))
+login("adm@ftpua.com")
+html = page("/admin/users/ini@ftpua.com")
+check("off: user card without budget rows", 'name="section_budget"' not in html and "Бюджет: які відділи" not in html
+      and 'name="section_reconcile"' in html)
+c.post("/admin/users/ini@ftpua.com", data={"roles": ["initiator"], "mode": "none", "sections_sent": "1", "section_reconcile": ""})
+check("off: saving the card keeps the stored budget exception", user_roles.section_overrides("ini@ftpua.com") == {"budget": True})
+user_roles.set_section_overrides("ini@ftpua.com", {}, "t")
+html = page("/admin/settings?tab=budget")
+check("off: settings show the switch, options hidden", 'name="budget_enabled"' in html and 'id="budget-options" hidden' in html
+      and "Увімкнути бюджет" in html)
+
+# ---------- увімкнути в адмінці
+html = c.post("/admin/settings", data={"tab": "budget", "budget_enabled": "1", "budget_hint": "1", "budget_over_mode": "cfo"},
+              follow_redirects=True).get_data(as_text=True)
+budget.rows = lambda: FIXED
+check("switched on from the settings form", budget.enabled() and app_settings.get("budget_hint") is True
+      and 'id="budget-options" hidden' not in page("/admin/settings?tab=budget"))
 
 # ---------- хто бачить вкладку й чий бюджет
 login("ini@ftpua.com")
@@ -167,13 +203,32 @@ check("paid request: counted until its payment is in the 1C fact", before["pendi
 
 # ---------- налаштування
 login("adm@ftpua.com")
-html = c.post("/admin/settings", data={"tab": "budget", "budget_over_mode": "warn"}, follow_redirects=True).get_data(as_text=True)
-check("settings: saved from the form", app_settings.get("budget_over_mode") == "warn" and app_settings.get("budget_hint") is False)
+html = c.post("/admin/settings", data={"tab": "budget", "budget_enabled": "1", "budget_over_mode": "warn"},
+              follow_redirects=True).get_data(as_text=True)
+check("settings: saved from the form", app_settings.get("budget_over_mode") == "warn" and app_settings.get("budget_hint") is False
+      and budget.enabled())
 login("author@ftpua.com")
 check("hint off -> endpoint disabled", c.get("/budget/remaining?department=BA&item=07.001").json == {"enabled": False})
 html = page("/requests/new")
 check("hint off -> no hint block in the form", 'id="budget-hint"' not in html)
 app_settings.set("budget_hint", True, "t")
 check("hint on -> hint block in the form", 'id="budget-hint"' in page("/requests/new"))
+
+# ---------- вимкнути знову: заявка понад залишок іде як без бюджету, вибрані налаштування й винятки лишаються
+login("adm@ftpua.com")
+c.post("/admin/settings", data={"tab": "budget", "budget_hint": "1", "budget_over_mode": "cfo"})  # галочки «Увімкнути» немає
+budget.rows = _no_data
+check("switched off, chosen options kept", not budget.enabled() and app_settings.get("budget_hint") is True
+      and app_settings.get("budget_over_mode") == "cfo")
+check("off again: stored access kept, tab hidden", budget_access.get("ini@ftpua.com")["departments"] == ["LOG"]
+      and user_roles.section_overrides("ini@ftpua.com") == {"budget": True})
+login("ini@ftpua.com")
+check("off again: tab closed for the user with an exception", c.get("/budget").status_code == 403)
+req5, _ = submit(5000)
+check("off again: over-budget request goes as without the budget", req5 and req5["status"] != "draft"
+      and req5["cfo_step"] is False and "budget_check" not in req5 and note(req5) == "" and note(req5, "budget_over") == "")
+login("cfo@ftpua.com")
+html = page(f"/requests/{req2['id']}")
+check("off again: earlier snapshot hidden on the card", "на момент відправки" not in html)
 
 print("ALL OK" if ok else "SOME FAILED")

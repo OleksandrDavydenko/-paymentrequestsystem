@@ -148,8 +148,10 @@ def _context(tab):
                    no_self_approval=app_settings.get("no_self_approval"))
     elif tab == "budget":
         import budget
-        ctx.update(budget_hint=app_settings.get("budget_hint"), budget_over_mode=app_settings.get("budget_over_mode"),
-                   BUDGET_OVER_MODES=budget.OVER_MODES, budget_state=budget.status(),
+        on = budget.enabled()  # стан таблиці (звернення до Power BI) — лише коли бюджет увімкнено
+        ctx.update(budget_enabled=on, budget_hint=app_settings.get("budget_hint"),
+                   budget_over_mode=app_settings.get("budget_over_mode"), BUDGET_OVER_MODES=budget.OVER_MODES,
+                   budget_state=budget.status() if on else None, budget_table=budget._table.table,
                    budget_details_table=budget.details_table())
     elif tab == "request":
         ctx.update(request_prefix=request_numbers.prefix(), request_digits=request_numbers.digits(),
