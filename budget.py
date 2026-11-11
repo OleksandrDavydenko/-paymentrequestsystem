@@ -278,10 +278,11 @@ def _add(node, plan_m, fact_m, months):
     node["fact"] += sum(fact_m[m - 1] for m in months)
 
 
-def report(allowed, dept, year, months, view="table"):
+def report(allowed, dept, year, months, view="table", grouped=()):
     """Дерево відділ → група → стаття з підсумками за період (months) і по місяцях року.
     dept — ключ відділу або "*" (усі доступні). У «Таблиці» — статті з планом чи фактом у періоді,
-    «По місяцях» — з планом чи фактом у році."""
+    «По місяцях» — з планом чи фактом у році. grouped — ключі відділів, які показуємо за групами статей (налаштування
+    budget_group_departments); решта — "flat": статті одним списком (одна група без назви), як у зведеній Excel."""
     items = {}
     for r in rows():
         if int(r["month"][:4]) != year:
@@ -313,9 +314,11 @@ def report(allowed, dept, year, months, view="table"):
         node["level"] = level(node["plan"], node["fact"])
         over += node["level"] == "over"
         d = tree.setdefault(it["dept"], {**_blank(), "key": it["dept"], "groups": {},
+                                         "flat": it["dept"] not in grouped,
                                          "name": OTHER_NAME if it["dept"] == OTHER_KEY else
                                          (departments.get_map().get(it["dept"]) or it["dept_name"] or it["dept"])})
-        g = d["groups"].setdefault(it["group"], {**_blank(), "name": it["group"], "rows": []})
+        group = "" if d["flat"] else it["group"]
+        g = d["groups"].setdefault(group, {**_blank(), "name": group, "rows": []})
         g["rows"].append(node)
         for target in (g, d, total):
             _add(target, it["plan_m"], it["fact_m"], months)
@@ -324,7 +327,7 @@ def report(allowed, dept, year, months, view="table"):
     for d in depts:
         d["groups"] = sorted(d["groups"].values(), key=lambda g: (g["name"] == "(без групи)", g["name"].lower()))
         for g in d["groups"]:
-            g["rows"].sort(key=lambda i: _natural(i["code"]))
+            g["rows"].sort(key=lambda i: (i["name"].lower(), _natural(i["code"])))  # за назвою, як у зведеній Excel
             g["level"] = level(g["plan"], g["fact"])
         d["level"] = level(d["plan"], d["fact"])
     total["level"] = level(total["plan"], total["fact"])

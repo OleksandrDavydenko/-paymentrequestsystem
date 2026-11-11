@@ -14,6 +14,8 @@
 
 {% block content %}
 {% set multi = rep and rep.departments | length > 1 %}
+{# Групи статей — лише у відділів з налаштування «Бюджет за групами статей»; решта (flat) — статті одним списком #}
+{% set has_groups = rep and rep.departments | rejectattr('flat') | list | length > 0 %}
 <div class="card budget-page">
   <div class="toolbar">
     <h1 style="margin:0">Бюджет</h1>
@@ -78,8 +80,10 @@
     <input type="search" id="bg-search" placeholder="Стаття або код…" aria-label="Пошук статті" autocomplete="off">
     <label class="bg-check"><input type="checkbox" id="bg-over-only"> лише понад план</label>
     <span class="spacer"></span>
-    <button type="button" class="btn btn-sm" id="bg-collapse">Згорнути групи</button>
-    <button type="button" class="btn btn-sm" id="bg-expand">Розгорнути</button>
+    {% if multi or has_groups %}
+    <button type="button" class="btn btn-sm" id="bg-collapse">Згорнути все</button>
+    <button type="button" class="btn btn-sm" id="bg-expand">Розгорнути все</button>
+    {% endif %}
   </div>
 
   {% if not rep.count %}
@@ -99,14 +103,16 @@
       </tr>
       {% endif %}
       {% for gr in d.groups %}
+      {% if not d.flat %}
       <tr class="bg-group" data-group="{{ d.key }}|{{ gr.name }}">
         <td data-label="Група"><button type="button" class="bg-toggle" aria-expanded="true">{{ gr.name }}</button></td>
         <td class="num" data-label="План">{{ amount(gr.plan) }}</td><td class="num" data-label="Факт">{{ amount(gr.fact) }}</td>
         <td class="num {{ 'bg-neg' if gr.plan - gr.fact < 0 }}" data-label="Залишок">{{ bm(gr.plan - gr.fact) }}</td>
         <td data-label="Виконання"><span class="bg-pct lvl-text-{{ gr.level }}">{{ pct(gr.plan, gr.fact) }}</span>{{ bar(gr.plan, gr.fact, gr.level) }}</td>
       </tr>
+      {% endif %}
       {% for it in gr.rows %}
-      <tr class="bg-item lvl-row-{{ it.level }}" data-parent="{{ d.key }}|{{ gr.name }}" data-search="{{ (it.code ~ ' ' ~ it.name) | lower }}"
+      <tr class="bg-item {{ 'bg-item-top' if d.flat and not multi }} lvl-row-{{ it.level }}" data-parent="{{ d.key }}|{{ gr.name }}" data-search="{{ (it.code ~ ' ' ~ it.name) | lower }}"
           data-over="{{ 1 if it.level == 'over' else 0 }}">
         <td data-label="Стаття"><span class="bg-item-name">{{ it.name }}</span>{% if it.code %} <span class="bg-code">{{ it.code }}</span>{% endif %}
           {% if it.owner %}<span class="badge grey" title="Стаття з відділом-власником (Owner): витрати всіх відділів за нею — у бюджеті власника">Owner</span>{% endif %}</td>
@@ -153,12 +159,14 @@
         <td class="num bg-mtotal" data-label="Разом"><span class="bg-mfact">{{ bm(d.months | sum(attribute=1)) }}</span><span class="bg-mplan">{{ bm(d.months | sum(attribute=0)) }}</span></td></tr>
       {% endif %}
       {% for gr in d.groups %}
+      {% if not d.flat %}
       <tr class="bg-group" data-group="{{ d.key }}|{{ gr.name }}"><td class="bg-sticky" data-label="Група"><button type="button" class="bg-toggle" aria-expanded="true">{{ gr.name }}</button></td>
         {% for i in range(1, 13) %}{{ cell(i, gr.months[i - 1][0], gr.months[i - 1][1]) }}{% endfor %}
         <td class="num bg-mtotal" data-label="Разом"><span class="bg-mfact">{{ bm(gr.months | sum(attribute=1)) }}</span><span class="bg-mplan">{{ bm(gr.months | sum(attribute=0)) }}</span></td></tr>
+      {% endif %}
       {% for it in gr.rows %}
       {% set yp, yf = it.months | sum(attribute=0), it.months | sum(attribute=1) %}
-      <tr class="bg-item" data-parent="{{ d.key }}|{{ gr.name }}" data-search="{{ (it.code ~ ' ' ~ it.name) | lower }}"
+      <tr class="bg-item {{ 'bg-item-top' if d.flat and not multi }}" data-parent="{{ d.key }}|{{ gr.name }}" data-search="{{ (it.code ~ ' ' ~ it.name) | lower }}"
           data-over="{{ 1 if (yf > 0 and yp <= 0) or (yp > 0 and yf / yp > 1.0001) else 0 }}">
         <td class="bg-sticky" data-label="Стаття"><span class="bg-item-name">{{ it.name }}</span>{% if it.code %} <span class="bg-code">{{ it.code }}</span>{% endif %}</td>
         {% for i in range(1, 13) %}{{ cell(i, it.months[i - 1][0], it.months[i - 1][1], d.key, it) }}{% endfor %}

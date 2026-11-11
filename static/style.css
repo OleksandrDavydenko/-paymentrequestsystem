@@ -1564,6 +1564,7 @@ button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
 .bg-table tr.bg-dept .bg-toggle { font-weight: 700; }
 .bg-table tr.bg-group td { background: var(--surface); font-weight: 600; }
 .bg-table tr.bg-item td:first-child { padding-left: 30px; }
+.bg-table tr.bg-item.bg-item-top td:first-child { padding-left: 10px; }  /* один відділ без груп — статті без відступу */
 .bg-table tr.bg-dept + tr.bg-group td:first-child, .bg-table tr.bg-group td:first-child { padding-left: 14px; }
 .bg-table tr.bg-item:hover td { background: var(--primary-50); }
 .bg-table tfoot td { font-weight: 700; border-top: 2px solid var(--border); background: var(--surface); }
@@ -1596,6 +1597,7 @@ button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
 .bg-mtable tr.bg-dept .bg-sticky { background: var(--primary-100); }
 .bg-mtable tr.bg-group .bg-sticky, .bg-mtable tfoot .bg-sticky { background: var(--surface); }
 .bg-mtable tr.bg-item td.bg-sticky { padding-left: 26px; }
+.bg-mtable tr.bg-item.bg-item-top td.bg-sticky { padding-left: 8px; }
 .bg-mcell, .bg-mtotal { line-height: 1.25; font-size: 13px; }
 .bg-mfact { display: block; font-weight: 600; }
 .bg-mplan { display: block; color: var(--muted); font-size: 11px; font-weight: 400; }

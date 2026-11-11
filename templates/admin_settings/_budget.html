@@ -25,6 +25,16 @@
       Хто бачить вкладку «Бюджет» — картка користувача → «Доступ до розділів» (типово керівники відділів, фіндиректор
       і адміністратор); чий бюджет — там само, «Бюджет: які відділи».</p>
 
+    <div class="budget-section-title">Групи статей на вкладці «Бюджет»</div>
+    <p class="muted" style="margin:0 0 6px">Типово під відділом одразу йдуть статті. Для позначених відділів статті зібрано
+      за групами з підсумками — так, як цей відділ формує бюджет (наприклад, відділ маркетингу).</p>
+    <div class="budget-dep-list budget-group-deps">
+      {% for code, name in BUDGET_GROUP_DEPARTMENTS.items() %}
+      <label class="budget-dep"><input type="checkbox" name="budget_group_departments" value="{{ code }}" {{ 'checked' if code in budget_group_departments }}> <span>{{ name }}</span></label>
+      {% else %}<span class="muted">У довіднику немає відділів</span>
+      {% endfor %}
+    </div>
+
     <div class="budget-section-title">Залишок у заявці</div>
     <label class="mode-option">
       <input type="checkbox" name="budget_hint" value="1" {{ 'checked' if budget_hint }}>

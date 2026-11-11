@@ -125,6 +125,30 @@ rep = budget.report(frozenset({"BA"}), "*", Y, budget.period_months("year", Y, M
 check("report: months view of one department", rep["count"] == 1
       and abs(rep["departments"][0]["groups"][0]["rows"][0]["plan"] - 2000) < 0.01)
 
+# ---------- групи статей: типово під відділом одразу статті, за групами — лише відділи з налаштування
+rep = budget.report(None, "*", Y, [M])
+check("flat by default: one unnamed list per department",
+      all(d["flat"] and [g["name"] for g in d["groups"]] == [""] for d in rep["departments"]))
+rep = budget.report(None, "*", Y, [M], "table", {"LOG"})
+by = {d["key"]: d for d in rep["departments"]}
+check("grouped only for the chosen department", not by["LOG"]["flat"] and by["BA"]["flat"]
+      and [g["name"] for g in by["LOG"]["groups"]] == ["Логістика"] and abs(by["LOG"]["groups"][0]["plan"] - 2000) < 0.01)
+login("cfo@ftpua.com")
+check("page: no group rows by default", all('class="bg-group"' not in page(f"/budget?p=month&v={v}&dep=*")
+                                           for v in ("table", "months")))
+login("adm@ftpua.com")
+html = c.post("/admin/settings", data={"tab": "budget", "budget_enabled": "1", "budget_hint": "1", "budget_over_mode": "cfo",
+                                       "budget_group_departments": ["LOG"]}, follow_redirects=True).get_data(as_text=True)
+check("group departments saved from the form, named in the journal", app_settings.get("budget_group_departments") == ["LOG"]
+      and "Логістика" in html and 'name="budget_group_departments" value="LOG" checked' in page("/admin/settings?tab=budget"))
+login("cfo@ftpua.com")
+for v in ("table", "months"):
+    html = page(f"/budget?p=month&v={v}&dep=*")
+    check(f"page ({v}): group rows only for the chosen department", html.count('class="bg-group"') == 1
+          and 'data-group="LOG|Логістика"' in html and 'data-parent="BA|"' in html and "07.001" in html)
+app_settings.set("budget_group_departments", [], "t")
+check("page: flat again after clearing the setting", 'class="bg-group"' not in page("/budget?p=month&v=table&dep=*"))
+
 # ---------- залишок статті
 info = budget.remaining("BA", "07.001", today)
 check("remaining: plan - fact, nothing in progress", info and info["plan"] == Decimal("1000.00")

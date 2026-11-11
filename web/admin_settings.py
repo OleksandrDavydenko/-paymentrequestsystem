@@ -151,6 +151,8 @@ def _context(tab):
         on = budget.enabled()  # стан таблиці (звернення до Power BI) — лише коли бюджет увімкнено
         ctx.update(budget_enabled=on, budget_hint=app_settings.get("budget_hint"),
                    budget_over_mode=app_settings.get("budget_over_mode"), BUDGET_OVER_MODES=budget.OVER_MODES,
+                   budget_group_departments=app_settings.get("budget_group_departments") or [],
+                   BUDGET_GROUP_DEPARTMENTS=schema.SETTINGS["budget_group_departments"].choices(),
                    budget_state=budget.status() if on else None, budget_table=budget._table.table,
                    budget_details_table=budget.details_table())
     elif tab == "request":

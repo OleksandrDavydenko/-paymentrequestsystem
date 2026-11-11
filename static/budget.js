@@ -1,4 +1,4 @@
-/* Вкладка «Бюджет»: вибір відділу, згортання груп, пошук статті, «лише понад план» і розшифровка факту. */
+/* Вкладка «Бюджет»: вибір відділу, згортання відділів і груп статей, пошук статті, «лише понад план» і розшифровка факту. */
 (function () {
   'use strict';
   const data = JSON.parse((document.getElementById('bg-data') || {}).textContent || '{}');
@@ -17,26 +17,28 @@
     const deptBodies = table.querySelectorAll('tbody.bg-dept-body');
     if (deptBodies.length > 1) deptBodies.forEach(tb => closedDepts.add(tb.dataset.dept));
 
-    // Видимість: група згорнута — її статей не видно; пошук і «понад план» ховають статті й порожні групи
+    // Видимість: згорнутий відділ чи група — їхніх статей не видно; пошук і «понад план» показують лише статті, що
+    // підходять, разом з їхньою групою та відділом. Відділ може бути й без груп (статті одним списком) — тому
+    // «чи є що показати у відділі» рахуємо за статтями, а не за рядками груп
     function apply() {
       const q = (search.value || '').trim().toLowerCase();
       const onlyOver = overOnly.checked;
       const filtering = !!q || onlyOver;
-      const shown = {};
+      const shown = {}, deptShown = {};
       const deptOf = key => key.slice(0, key.indexOf('|'));
       table.querySelectorAll('tr.bg-item').forEach(tr => {
+        const parent = tr.dataset.parent, dept = deptOf(parent);
         const match = (!q || tr.dataset.search.includes(q)) && (!onlyOver || tr.dataset.over === '1');
-        if (match) shown[tr.dataset.parent] = (shown[tr.dataset.parent] || 0) + 1;
-        tr.hidden = !match || (!filtering && (collapsed.has(tr.dataset.parent) || closedDepts.has(deptOf(tr.dataset.parent))));
+        if (match) { shown[parent] = true; deptShown[dept] = true; }
+        tr.hidden = !match || (!filtering && (collapsed.has(parent) || closedDepts.has(dept)));
       });
       table.querySelectorAll('tr.bg-group').forEach(tr => {
         tr.hidden = filtering ? !shown[tr.dataset.group] : closedDepts.has(deptOf(tr.dataset.group));
         const btn = tr.querySelector('.bg-toggle');
         btn.setAttribute('aria-expanded', String(filtering || !collapsed.has(tr.dataset.group)));
       });
-      table.querySelectorAll('tbody.bg-dept-body').forEach(tb => {
-        const any = [...tb.querySelectorAll('tr.bg-group')].some(tr => !tr.hidden);
-        tb.hidden = filtering && !any;
+      deptBodies.forEach(tb => {
+        tb.hidden = filtering && !deptShown[tb.dataset.dept];
         const btn = tb.querySelector('tr.bg-dept .bg-toggle');
         if (btn) btn.setAttribute('aria-expanded', String(filtering || !closedDepts.has(tb.dataset.dept)));
       });
@@ -49,16 +51,21 @@
       if (row.classList.contains('bg-group')) {
         const key = row.dataset.group;
         collapsed.has(key) ? collapsed.delete(key) : collapsed.add(key);
-      } else {  // відділ — показати / сховати його групи
+      } else {  // відділ — показати / сховати його групи й статті
         const key = row.closest('tbody').dataset.dept;
         closedDepts.has(key) ? closedDepts.delete(key) : closedDepts.add(key);
       }
       apply();
     });
-    document.getElementById('bg-collapse').addEventListener('click', () => {
-      table.querySelectorAll('tr.bg-group').forEach(tr => collapsed.add(tr.dataset.group)); apply();
+    // «Згорнути все»: кілька відділів — до рядків відділів, один відділ — до рядків груп. Кнопок немає, коли
+    // згортати нічого (один відділ без груп)
+    const collapseBtn = document.getElementById('bg-collapse'), expandBtn = document.getElementById('bg-expand');
+    if (collapseBtn) collapseBtn.addEventListener('click', () => {
+      table.querySelectorAll('tr.bg-group').forEach(tr => collapsed.add(tr.dataset.group));
+      if (deptBodies.length > 1) deptBodies.forEach(tb => closedDepts.add(tb.dataset.dept));
+      apply();
     });
-    document.getElementById('bg-expand').addEventListener('click', () => { collapsed.clear(); closedDepts.clear(); apply(); });
+    if (expandBtn) expandBtn.addEventListener('click', () => { collapsed.clear(); closedDepts.clear(); apply(); });
     search.addEventListener('input', apply);
     overOnly.addEventListener('change', apply);
     if (overTile) overTile.addEventListener('click', () => { overOnly.checked = !overOnly.checked; apply(); });

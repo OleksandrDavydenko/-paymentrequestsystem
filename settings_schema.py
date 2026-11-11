@@ -274,6 +274,21 @@ def _budget_over_modes():
     return budget.OVER_MODES
 
 
+def _budget_group_departments():
+    """Відділи довідника (і вже вибрані, яких у ньому більше немає): {код: назва} за назвою — для «бюджет за групами»."""
+    import app_settings
+    import departments
+    names = dict(departments.get_map())
+    for code in app_settings.get("budget_group_departments") or []:
+        names.setdefault(code, f"{code} (немає в довіднику)")
+    return dict(sorted(names.items(), key=lambda kv: kv[1].lower()))
+
+
+def _fmt_budget_group_departments(value):
+    names = _budget_group_departments()
+    return ", ".join(names.get(code, code) for code in value) if value else "жодного (усі — списком статей)"
+
+
 _LIST = [
     # ---- Погодження
     Setting("approval_mode", "Порядок погодження", "approval", "choice", "sequential", _wf("APPROVAL_MODES")),
@@ -295,6 +310,9 @@ _LIST = [
     # залишок статті у формі заявки й що робити із заявкою понад залишок
     Setting("budget_hint", "Показувати залишок бюджету статті в заявці", "budget", "bool", True),
     Setting("budget_over_mode", "Заявка понад залишок бюджету статті", "budget", "choice", "cfo", _budget_over_modes),
+    # Вкладка «Бюджет»: типово під відділом — одразу статті; для цих відділів — за групами статей з підсумками
+    Setting("budget_group_departments", "Бюджет за групами статей: відділи", "budget", "multi", [],
+            _budget_group_departments, fmt=_fmt_budget_group_departments),
     # ---- Заявка
     # Номер заявки для людей (request_numbers.py): префікс і нулі — лише показ, у базі номер той самий
     Setting("request_prefix", "Префікс номера заявки", "request", "text", ""),
@@ -414,6 +432,8 @@ def value_label(key, value):
     if s.kind == "bool":
         return "так" if value else "ні"
     if s.kind == "multi":
+        if s.fmt:  # коди, які людині нічого не кажуть (відділи), — назвами
+            return s.fmt(value)
         return ", ".join(value) if value else "—"
     if s.kind == "choice" and s.choices:
         text = s.choices().get(value, value)
