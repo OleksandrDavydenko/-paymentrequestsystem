@@ -115,6 +115,25 @@
         });
       }, {passive: true});
     })();
+    // Висота шапки й закріплених вкладок адмінки — для їх top і переходів до розділів (#…), щоб ті не ховалися під ними
+    (function () {
+      const root = document.documentElement, header = document.querySelector('header'),
+            nav = document.querySelector('.admin-nav');
+      if (!header) return;
+      const measure = () => {
+        root.style.setProperty('--header-h', header.offsetHeight + 'px');
+        if (nav) root.style.setProperty('--admin-nav-h', nav.offsetHeight + 'px');
+      };
+      if (nav) root.classList.add('has-admin-nav');
+      measure();
+      if (window.ResizeObserver) {
+        const ro = new ResizeObserver(measure);
+        ro.observe(header);
+        if (nav) ro.observe(nav);
+      } else {
+        addEventListener('resize', measure);
+      }
+    })();
     // Закрити меню користувача кліком поза ним
     document.addEventListener('click', e => {
       document.querySelectorAll('details.user-menu[open]').forEach(d => { if (!d.contains(e.target)) d.open = false; });

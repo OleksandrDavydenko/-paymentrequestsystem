@@ -424,6 +424,20 @@ table.sortable tr.selected td:first-child { background: var(--primary-100); }
   white-space: nowrap; line-height: 18px; display: inline-block; }
 @media (max-width: 760px) { .tab { padding: 8px 12px; } }
 .tab .muted-count { background: var(--line); color: var(--muted); }
+/* Вкладки адмінки (розділи й «Налаштування») — закріплені під шапкою; висоту шапки й вкладок міряє base.html
+   (--header-h, --admin-nav-h). На телефоні шапка ховається при гортанні вниз — тоді вкладки піднімаються на її місце. */
+.admin-nav { position: sticky; top: var(--header-h, 52px); z-index: 20; background: var(--bg); margin: 0 0 12px;
+  padding: 14px 0 8px; transition: top .2s ease, box-shadow .2s; }
+main > .admin-nav:first-child { margin-top: -24px; }  /* без повідомлень вгорі — впритул до шапки */
+.admin-nav .tabs { margin-bottom: 6px; }
+.admin-nav .tabs:last-child { margin-bottom: 0; }
+html.is-scrolled .admin-nav { box-shadow: 0 8px 10px -10px rgba(0, 0, 0, .25); }
+html.has-admin-nav { scroll-padding-top: calc(var(--header-h, 52px) + var(--admin-nav-h, 100px) + 12px); }
+@media (max-width: 760px) {
+  .admin-nav { padding-top: 10px; }
+  main > .admin-nav:first-child { margin-top: -16px; }
+  html.header-hidden .admin-nav { top: 0; }
+}
 
 /* ---------- Зміна статусу адміністратором ---------- */
 .badge.purple { background: var(--violet-soft); color: var(--violet-ink); }

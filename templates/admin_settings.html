@@ -3,8 +3,8 @@
 {% block title %}Налаштування — {{ page_title }}{% endblock %}
 
 {% block content %}
+{% set settings_nav = true %}
 {% include "_admin_tabs.html" %}
-{% include "_settings_tabs.html" %}
 
 {% if tab == 'log' %}
 <div class="card">

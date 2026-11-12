@@ -3,8 +3,8 @@
 {% block title %}Налаштування — Відділи{% endblock %}
 
 {% block content %}
+{% set settings_nav = true %}
 {% include "_admin_tabs.html" %}
-{% include "_settings_tabs.html" %}
 <form method="post" class="card" id="departments"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <div class="toolbar">
     <h1 style="margin:0">Відділи</h1>
