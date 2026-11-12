@@ -176,7 +176,7 @@ def _migrate_legacy_departments():
               + ", ".join(departments.get_name(v) for v in mapping.values()), "success")
 
 
-# Розділи, які мають у картці користувача власний пункт (а не рядок у «Доступ до розділів»)
+# Розділи, які мають у «Доступ до розділів» картки користувача власний блок (а не рядок «дозволити / заборонити»)
 CARD_OWN_BLOCK = frozenset({"budget"})
 
 
@@ -500,7 +500,7 @@ def admin_user_card(user_id, *, context):
         is_accountant=bool(set(person["roles"]) & wf.ACCOUNTANT_ROLES),
         ACC_MODES=user_roles.ACC_MODES,
         no_approver=user_roles.accountants_without_approver(),
-        # пункт «Бюджет»: що людина бачить зараз (свої відділи, додані, заборона) і що їй додано
+        # блок «Бюджет»: що людина бачить зараз (свої відділи, додані, заборона) і що їй додано
         budget_access=budget_access.get(user_id),
         bview=budget_access.summary(user_id, _login_roles(person), overrides.get("budget")),
     )
@@ -549,7 +549,7 @@ def _save_user_card(person):
         if new_ov != old_ov:
             user_roles.set_section_overrides(uid, new_ov, who)
             changes.append("доступ до розділів — " + (sections.describe(new_ov) or "усе за роллю"))
-    if "budget_access_sent" in f:  # пункт «Бюджет»: усі відділи / додані відділи / нічого (лише свої як керівник)
+    if "budget_access_sent" in f:  # блок «Бюджет»: усі відділи / додані відділи / нічого (лише свої як керівник)
         known_deps = {d["code"] for d in departments.get_departments()} | set(budget_access.get(uid)["departments"])
         extra = [d for d in f.getlist("budget_access_deps") if d in known_deps]
         mode = "all" if f.get("budget_access_all") == "1" else ("list" if extra else "role")

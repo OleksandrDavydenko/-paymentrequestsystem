@@ -237,17 +237,16 @@
       </select>
     </div>
     {% endfor %}
-  </section>
-
-  {% if budget_on() %}
-  <section class="card uc-section" id="uc-budget-view">
-    <div class="uc-title"><span class="uc-num">7</span><h2>Бюджет</h2>
+    {% if budget_on() %}
+    {# Бюджет — теж розділ, але не «дозволити / заборонити»: чий бюджет людина бачить. Додані відділи самі відкривають вкладку #}
+    <div class="uc-budget-view" id="uc-budget-view">
+    <div class="uc-budget-head"><strong>Бюджет</strong>
       {% if bview.denied %}<span class="badge red">вкладку заборонено</span>
       {% elif bview.sees %}<span class="badge green">бачить вкладку «Бюджет»</span>
       {% else %}<span class="badge grey">не бачить вкладку «Бюджет»</span>{% endif %}</div>
-    <p class="uc-explain">Вкладка «Бюджет» — план і факт бюджету відділів з 1С. Керівник відділу бачить бюджет відділів,
-      які очолює (пункт 3), сам. Тут можна додати інші відділи на перегляд: достатньо позначити їх — вкладка з'явиться
-      і в людини, яка жодного відділу не очолює.</p>
+    <p class="uc-explain">План і факт бюджету відділів з 1С. Керівник відділу бачить бюджет відділів, які очолює
+      (пункт 3), сам. Тут можна додати інші відділи на перегляд: достатньо позначити їх — вкладка з'явиться і в людини,
+      яка жодного відділу не очолює.</p>
     {% if bview.all_by_role %}
     <div class="callout blue">Фіндиректор і адміністратор бачать бюджет усіх відділів — додавати нічого не треба.</div>
     {% endif %}
@@ -269,8 +268,9 @@
     <label class="budget-option uc-budget-deny"><input type="checkbox" name="section_budget" value="0" {{ 'checked' if bview.denied }}>
       <span><strong>Не показувати вкладку «Бюджет» цій людині</strong> <span class="muted">— навіть якщо вона керівник відділу,
         фіндиректор чи їй додано відділи</span></span></label>
+    </div>
+    {% endif %}
   </section>
-  {% endif %}
 
   <section class="card uc-section" id="uc-telegram">
     <div class="uc-title"><span class="uc-num">✈</span><h2>Telegram</h2></div>
