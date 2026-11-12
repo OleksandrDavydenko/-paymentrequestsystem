@@ -9,6 +9,15 @@
   const MAX_LIST = 500;
   const KIND = { direct: 'Пряма', allocated: 'З розподілом' };
   const kindBadge = i => `<span class="exp-kind exp-kind-${i.kind}">${KIND[i.kind] || ''}</span>`;
+  // Відділи статті з розподілом — для довідки під назвою (перші MAX_DEPS, решта — «+N», повний список — у підказці)
+  const MAX_DEPS = 4;
+  const deptLine = i => {
+    const deps = i.kind === 'allocated' ? (i.departments || []) : [];
+    if (!deps.length) return '';
+    const shown = deps.slice(0, MAX_DEPS).map(d => `<span class="exp-dep">${escapeHtml(d)}</span>`).join('');
+    const more = deps.length > MAX_DEPS ? `<span class="exp-dep exp-dep-more">+${deps.length - MAX_DEPS}</span>` : '';
+    return `<span class="exp-deps" title="${escapeHtml('Відділи: ' + deps.join(', '))}">${shown}${more}</span>`;
+  };
   let kindFilter = '';
 
   const picker = document.getElementById('exp-picker');
@@ -204,7 +213,8 @@
       row.role = 'option';
       row.className = 'exp-row' + (item.code === hidden.value ? ' selected' : '') + (idx === dActive ? ' active' : '');
       row.dataset.idx = idx;
-      row.innerHTML = `<span class="exp-code">${highlight(item.code, q)}</span><span class="exp-name">${highlight(item.name, q)}</span>${kindBadge(item)}`;
+      row.innerHTML = `<span class="exp-code">${highlight(item.code, q)}</span>`
+        + `<span class="exp-name-cell"><span class="exp-name">${highlight(item.name, q)}</span>${deptLine(item)}</span>${kindBadge(item)}`;
       row.addEventListener('click', () => choose(item));
       dList.appendChild(row);
     });

@@ -495,6 +495,15 @@ details.admin-status form > .btn { align-self: flex-start; }
 .exp-row .exp-code { font-size: 13px; color: var(--text); font-weight: 600; }
 .exp-row:hover, .exp-row.active { background: var(--primary-50); }
 .exp-row.selected { background: var(--primary-100); box-shadow: inset 3px 0 0 var(--primary); }
+/* Відділи статті з розподілом — дрібні мітки під назвою (лише для довідки) */
+.exp-name-cell { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+.exp-deps { display: flex; flex-wrap: wrap; gap: 4px; }
+.exp-dep { font-size: 11px; line-height: 18px; padding: 0 8px; border-radius: 999px; white-space: nowrap; color: var(--muted);
+  background: var(--surface); border: 1px solid var(--line); }
+.exp-dep::before { content: ""; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--primary);
+  opacity: .55; margin-right: 5px; vertical-align: middle; position: relative; top: -1px; }
+.exp-dep-more { color: var(--primary-dark); background: var(--primary-50); border-color: var(--primary-100); }
+.exp-dep-more::before { display: none; }
 .exp-dialog-foot { justify-content: space-between; align-items: center; }
 @media (max-width: 760px) {
   .exp-dialog { width: 100vw; height: 100dvh; max-height: 100dvh; margin: 0; border-radius: 0; display: none; flex-direction: column; }
