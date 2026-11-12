@@ -31,6 +31,7 @@ import payment_types
 import rates
 import request_numbers
 import settings_log
+import user_changes
 import settings_schema as schema
 import storage as db
 import telegram_notify
@@ -209,6 +210,11 @@ def _context(tab):
         ctx.update(api_enabled=bool(app_settings.get("onec_api_enabled")), api_ips=app_settings.get("onec_api_ips") or "",
                    api_key_info=app_settings.get("onec_api_key_info") if app_settings.get("onec_api_key_hash") else None,
                    api_last=onec_api.last_access(), api_base=request.host_url.rstrip("/"))
+    elif tab == "budget_sync":
+        import budget
+        on = budget.enabled()  # вимкнено — блоку немає й до Power BI не звертаємося
+        ctx.update(budget_enabled=on, budget_state=budget.status() if on else None,
+                   budget_sync_minutes=str(budget.sync_minutes()), BUDGET_SYNC_MINUTES=schema.BUDGET_SYNC_MINUTES)
     elif tab == "reconcile":
         import payments
         ctx.update(payments_since=app_settings.get("payments_since"), PAY_MODES=schema.SETTINGS["pay_mode_acc_cash"].choices(),
@@ -255,6 +261,10 @@ def _context(tab):
     elif tab == "log":
         key = request.args.get("key") or None
         ctx.update(log=settings_log.query(300, key), log_key=key,
+                   log_groups=[("user:", "Користувачі: ролі, доступ до розділів, бюджет"), ("dept:", "Відділи")],
+                   # журнал однієї людини (посилання з картки): user:<id>:
+                   log_person=user_changes.person_label(key[5:-1]) if key and key.startswith("user:")
+                   and key.endswith(":") and len(key) > 6 else None,
                    log_keys=[(s.key, s.label) for s in schema.exportable()])
     return ctx
 
@@ -459,6 +469,25 @@ def onec_api_key(*, context):
     import onec_api
     key = onec_api.new_key(g.user)
     return render_template("admin_settings.html", user_name=g.user["name"], **_page_context("onec_api"), new_api_key=key)
+
+
+@bp.route("/admin/budget/refresh", methods=["POST"])
+@login_required
+@requires("admin")
+def admin_budget_refresh(*, context):
+    """«Бюджет з 1С → Оновити зараз»: перечитати план і факт з Power BI (лише коли бюджет увімкнено)."""
+    import budget
+    import ops_log
+    if not budget.enabled():
+        flash("Бюджет вимкнено — оновлювати нічого («Заявка й погодження → Бюджет»)", "error")
+        return redirect(settings_url("budget"))
+    with ops_log.timed("budget_sync_now") as info:
+        res = info["result"] = budget.refresh_now()
+    if res["ok"]:
+        flash(f"Бюджет оновлено з Power BI: рядків плану й факту {res['count']}", "success")
+    else:
+        flash("Не вдалося оновити бюджет з Power BI: " + res["error"], "error")
+    return redirect(settings_url("budget_sync"))
 
 
 @bp.route("/admin/payments/sync", methods=["POST"])

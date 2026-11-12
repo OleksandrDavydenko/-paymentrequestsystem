@@ -25,6 +25,7 @@ TABS = [
     ("payment", "Оплата й готівка"),
     ("reconcile", "Звірка з 1С"),
     ("onec_api", "API для 1С"),
+    ("budget_sync", "Бюджет з 1С"),
     ("notify", "Сповіщення"),
     ("design", "Дизайн"),
     ("data", "Дані й система"),
@@ -37,7 +38,7 @@ PAGES = [
     ("process", "Заявка й погодження", ("request", "approval", "budget")),
     ("payment", "Оплата й готівка", ("payment",)),
     ("notify", "Сповіщення", ("notify",)),
-    ("onec", "Інтеграція з 1С", ("reconcile", "onec_api")),
+    ("onec", "Інтеграція з 1С", ("reconcile", "onec_api", "budget_sync")),
     ("system", "Система й дизайн", ("data", "design")),
     ("log", "Журнал змін", ("log",)),
 ]
@@ -274,6 +275,14 @@ def _budget_over_modes():
     return budget.OVER_MODES
 
 
+BUDGET_SYNC_MINUTES = {"15": "15 хвилин", "30": "30 хвилин", "60": "1 година", "120": "2 години", "240": "4 години",
+                       "480": "8 годин"}
+
+
+def _budget_sync_minutes():
+    return BUDGET_SYNC_MINUTES
+
+
 def _budget_group_departments():
     """Відділи довідника (і вже вибрані, яких у ньому більше немає): {код: назва} за назвою — для «бюджет за групами»."""
     import app_settings
@@ -313,6 +322,8 @@ _LIST = [
     # Вкладка «Бюджет»: типово під відділом — одразу статті; для цих відділів — за групами статей з підсумками
     Setting("budget_group_departments", "Бюджет за групами статей: відділи", "budget", "multi", [],
             _budget_group_departments, fmt=_fmt_budget_group_departments),
+    # «Інтеграція з 1С → Бюджет з 1С»: як часто PayDesk перечитує план і факт з Power BI (видно, коли бюджет увімкнено)
+    Setting("budget_sync_minutes", "Бюджет з 1С: оновлювати кожні", "budget_sync", "choice", "30", _budget_sync_minutes),
     # ---- Заявка
     # Номер заявки для людей (request_numbers.py): префікс і нулі — лише показ, у базі номер той самий
     Setting("request_prefix", "Префікс номера заявки", "request", "text", ""),

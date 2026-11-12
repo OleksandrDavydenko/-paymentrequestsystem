@@ -68,7 +68,11 @@ def save(uid, email, mode, departments, updated_by):
             data[uid] = {"email": email, "mode": mode, "departments": departments,
                          "updated_at": clock.now().isoformat(timespec="seconds"), "updated_by": updated_by}
         docstore.write("budget_access", _path(), data)
-        return True
+    import user_changes  # журнал змін — поза блокуванням (запис у базу)
+    user_changes.record(uid, "budget_access",
+                        {"mode": old.get("mode") or "role", "departments": sorted(old.get("departments") or [])},
+                        {"mode": mode, "departments": departments}, updated_by)
+    return True
 
 
 def departments_for(uid, roles):

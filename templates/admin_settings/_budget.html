@@ -22,6 +22,8 @@
         {% else %}<span class="badge green">працює</span> рядків: {{ budget_state.count }}{% if budget_state.updated %}, оновлено
           {{ budget_state.updated[:16].replace('T', ' ') }}{% endif %}.{% endif %}
       {% endif %}
+      Як часто оновлювати й «Оновити зараз» — <a href="{{ url_for('admin.admin_settings', tab='budget_sync') }}#s-budget_sync">Інтеграція
+      з 1С → Бюджет з 1С</a>.
       </p>
 
     <div class="budget-section-title">Хто бачить бюджет</div>

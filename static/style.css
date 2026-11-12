@@ -711,6 +711,7 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--p
 .uc-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
 .uc-avatar { width: 46px; height: 46px; font-size: 16px; background: var(--primary-100); }
 .uc-who h1 { margin: 0; font-size: 22px; }
+.uc-log-link { font-size: 13px; }
 .uc-current { margin-left: auto; display: flex; flex-wrap: wrap; gap: 4px; }
 .uc-new { background: var(--ok-softer); border-left: 4px solid var(--ok); padding: 10px 14px; border-radius: 0; margin-bottom: 16px; }
 .uc-title { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }

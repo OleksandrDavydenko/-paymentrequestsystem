@@ -657,7 +657,9 @@ def settings_log_add(row):
 
 def settings_log_query(limit, key=None):
     stmt = sa.select(settings_log_t).order_by(settings_log_t.c.id.desc()).limit(limit)
-    if key:
+    if key and key.endswith(":"):  # префікс: усі люди, одна людина, усі відділи (settings_log.matches)
+        stmt = stmt.where(settings_log_t.c.key.startswith(key, autoescape=True))
+    elif key:
         stmt = stmt.where(settings_log_t.c.key == key)
     with engine().connect() as c:
         return [dict(r) for r in c.execute(stmt).mappings().all()]

@@ -3,7 +3,8 @@
 Таблиці датасету PayDesk (SQL — sql/BudgetPlanFact.sql і sql/BudgetFactDetails.sql, логіка — як у кубі FTP_Budgeting):
   • BudgetPlanFact (PBI_BUDGET_TABLE) — рядок = місяць × відділ × стаття: Month, DepartmentGUID, DepartmentName,
     ExpenseItemGUID, ExpenseItemCode, ExpenseItemName, ExpenseGroup, OwnerDepartmentGUID, PlanUSD, FactUSD.
-    Кешується (pbi_cache) з 1 січня минулого року; оновлення — раз на PBI_BUDGET_MINUTES (30 хв).
+    Кешується (pbi_cache) з 1 січня минулого року; оновлення — «Інтеграція з 1С → Бюджет з 1С» (budget_sync_minutes,
+    типово 30 хв): фонова задача budget_sync, кнопка «Оновити зараз», а при відкритті застарілої копії — у фоні.
   • BudgetFactDetails (PBI_BUDGET_DETAILS_TABLE) — рядки розподілу накладних з документом-джерелом: розшифровка
     факту (живий запит по кліку) і SourceDocumentGUID — які платежі вже потрапили у факт місяця.
 Суми — у USD. GUID — 32 hex без 0x (як Departments[DepartmentGUID]); нулі — «Інше / не розподілено».
@@ -23,7 +24,7 @@ import os
 import threading
 import time
 import zlib
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
 import app_settings
@@ -177,8 +178,25 @@ def _mock():
     return parse(rows)
 
 
-_table = pbi_cache.CachedTable("budget", "PBI_BUDGET_TABLE", "BudgetPlanFact", parse, _mock,
-                               ttl_env="PBI_BUDGET_MINUTES", ttl_default_minutes=30, fetch=_fetch)
+def sync_minutes():
+    """Як часто перечитувати бюджет з Power BI, хвилин («Інтеграція з 1С → Бюджет з 1С»)."""
+    try:
+        return max(5, int(app_settings.get("budget_sync_minutes") or 30))
+    except (TypeError, ValueError):
+        return 30
+
+
+def sync_every():
+    return timedelta(minutes=sync_minutes())
+
+
+def sync_due():
+    """Чи пора фоновій задачі перечитати бюджет: бюджет увімкнено, а копія старша за інтервал (без хвилини запасу)."""
+    return enabled() and time.time() - _table._state["loaded_at"] >= sync_minutes() * 60 - 60
+
+
+_table = pbi_cache.CachedTable("budget", "PBI_BUDGET_TABLE", "BudgetPlanFact", parse, _mock, fetch=_fetch,
+                               ttl_minutes=sync_minutes)
 
 
 def rows():
@@ -187,6 +205,17 @@ def rows():
 
 def refresh():
     return _table.refresh()
+
+
+def refresh_now():
+    """Перечитати бюджет з Power BI зараз (фонова задача й кнопка «Оновити зараз»): план і факт, а також скинути
+    кеш документів факту, щоб «у дорозі» перерахувалося одразу. -> {"ok", "count", "error"}."""
+    ok = _table.refresh()
+    with _fact_docs_lock:
+        _fact_docs.clear()
+    st = _table._state
+    return {"ok": ok, "count": len(st.get("items") or []),
+            "error": None if ok else (st.get("error") or "невідома помилка")}
 
 
 def status():

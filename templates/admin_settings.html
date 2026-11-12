@@ -15,12 +15,17 @@
       <input type="hidden" name="tab" value="log">
       <select name="key" onchange="this.form.submit()" aria-label="Налаштування" class="{{ 'is-active' if log_key }}">
         <option value="">Усі налаштування</option>
+        {% if log_person %}<option value="{{ log_key }}" selected>{{ log_person }}</option>{% endif %}
+        {% for k, label in log_groups %}<option value="{{ k }}" {{ 'selected' if log_key == k }}>{{ label }}</option>{% endfor %}
         {% for k, label in log_keys %}<option value="{{ k }}" {{ 'selected' if log_key == k }}>{{ label }}</option>{% endfor %}
       </select>
     </form>
   </div>
-  <p class="muted" style="margin-top:0">Хто, коли й що змінив — у налаштуваннях процесу, пошти, організацій, при імпорті з файлу.
-    Пароль SMTP показується як «••••». Показано останні 300 змін.</p>
+  <p class="muted" style="margin-top:0">Хто, коли й що змінив — у налаштуваннях процесу, пошти, організацій, відділів, при
+    імпорті з файлу, а також у картках користувачів: ролі, режим бухгалтера, доступ до розділів, чий бюджет людина бачить і
+    статті бюджету (зміни з 1С — від «1С (автоматично)»). Пароль SMTP показується як «••••». Показано останні 300 змін.</p>
+  {% if log_person %}<p class="muted">Лише зміни людини <strong>{{ log_person }}</strong> ·
+    <a href="{{ url_for('admin.admin_settings', tab='log') }}">усі зміни</a></p>{% endif %}
   <div class="table-wrap">
   <table class="stack">
     <thead><tr><th>Коли</th><th>Хто</th><th>Розділ</th><th>Налаштування</th><th>Було</th><th>Стало</th></tr></thead>

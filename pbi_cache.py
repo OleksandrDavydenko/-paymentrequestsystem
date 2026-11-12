@@ -26,11 +26,13 @@ def truthy(value):
 
 
 class CachedTable:
-    def __init__(self, key, table_env, default_table, parse, mock, ttl_env=None, ttl_default_minutes=None, fetch=None):
+    def __init__(self, key, table_env, default_table, parse, mock, ttl_env=None, ttl_default_minutes=None, fetch=None,
+                 ttl_minutes=None):
         """key — для файлу копії; parse(rows) -> список записів; mock() -> записи без Power BI.
-        ttl_env — змінна з власним інтервалом оновлення в хвилинах (інакше PBI_CACHE_MINUTES).
+        ttl_env — змінна з власним інтервалом оновлення в хвилинах (інакше PBI_CACHE_MINUTES); ttl_minutes() —
+        інтервал із налаштувань адмінки (має перевагу).
         fetch(table) -> рядки — власний запит замість усієї таблиці (напр. лише за останній місяць)."""
-        self.fetch = fetch
+        self.fetch, self.ttl_minutes = fetch, ttl_minutes
         self.key, self.table_env, self.default_table, self.ttl_env = key, table_env, default_table, ttl_env
         self.ttl_default_minutes = ttl_default_minutes
         self.parse, self.mock = parse, mock
@@ -127,6 +129,8 @@ class CachedTable:
 
     def _ttl(self):
         try:
+            if self.ttl_minutes:
+                return int(self.ttl_minutes()) * 60
             if self.ttl_env and os.environ.get(self.ttl_env):
                 return int(os.environ[self.ttl_env]) * 60
             return self.ttl_default_minutes * 60 if self.ttl_default_minutes else expense_items._ttl()

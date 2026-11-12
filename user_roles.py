@@ -121,6 +121,8 @@ def set_roles(uid, email, name, roles, updated_by):
         if prev.get("sections"):
             data[uid]["sections"] = prev["sections"]
         docstore.write("user_roles", _path(), data)
+    import user_changes  # журнал змін — поза блокуванням (запис у базу)
+    user_changes.record(uid, "roles", sorted(prev.get("roles") or []), roles, updated_by)
     return set(roles)
 
 
@@ -132,9 +134,12 @@ def set_acc_mode(uid, mode, updated_by):
         data = _load()
         if uid not in data:
             return
+        before = data[uid].get("acc_mode") if data[uid].get("acc_mode") in ACC_MODES else "both"
         data[uid] = {**data[uid], "acc_mode": mode, "updated_by": updated_by,
                      "updated_at": clock.now().isoformat(timespec="seconds")}
         docstore.write("user_roles", _path(), data)
+    import user_changes
+    user_changes.record(uid, "acc_mode", before, mode, updated_by)
 
 
 def section_overrides(uid):
@@ -151,11 +156,14 @@ def set_section_overrides(uid, overrides, updated_by):
         data = _load()
         if uid not in data:
             return
+        before = sections.clean(data[uid].get("sections"))
         entry = {k: v for k, v in data[uid].items() if k != "sections"}
         if overrides:
             entry["sections"] = overrides
         data[uid] = {**entry, "updated_by": updated_by, "updated_at": clock.now().isoformat(timespec="seconds")}
         docstore.write("user_roles", _path(), data)
+    import user_changes
+    user_changes.record(uid, "sections", before, overrides, updated_by)
 
 
 def accountants_without_approver():

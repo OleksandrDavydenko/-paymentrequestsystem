@@ -57,8 +57,16 @@ def all_settings():
         return dict(_load())
 
 
+def _norm(settings):
+    """Що саме людина може вибирати — для журналу змін (без службових полів)."""
+    s = settings or {}
+    return {"direct": bool(s.get("direct")), "all_departments": bool(s.get("all_departments")),
+            "departments": [] if s.get("all_departments") else sorted(s.get("departments") or [], key=str.lower)}
+
+
 def save_settings(oid, email, name, direct, all_departments, departments, updated_by):
     with _lock:
+        before = _norm(_load().get(oid))
         _load()[oid] = {
             "email": email,
             "name": name,
@@ -69,7 +77,10 @@ def save_settings(oid, email, name, direct, all_departments, departments, update
             "updated_by": updated_by,
         }
         _save()
-        return _data[oid]
+        saved = _data[oid]
+    import user_changes  # журнал змін — поза блокуванням (запис у базу)
+    user_changes.record(oid, "budget_items", before, _norm(saved), updated_by)
+    return saved
 
 
 def is_configured(settings):

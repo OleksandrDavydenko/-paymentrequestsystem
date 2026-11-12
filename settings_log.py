@@ -38,16 +38,30 @@ def record(key, old, new, by):
         logger.exception("Не вдалося записати зміну налаштування в журнал")
 
 
+def matches(row_key, key):
+    """Фільтр журналу: точний ключ налаштування, а ключ на «:» — префікс (усі люди «user:», одна людина
+    «user:<id>:», усі відділи «dept:»)."""
+    if not key:
+        return True
+    return row_key.startswith(key) if key.endswith(":") else row_key == key
+
+
 def query(limit=300, key=None):
     """Останні зміни (новіші першими) з підписами для сторінки."""
     if db_sql.configured():
         rows = db_sql.settings_log_query(limit, key)
     else:
-        rows = [r for r in list(_memory) if not key or r["key"] == key][:limit]
+        rows = [r for r in list(_memory) if matches(r["key"], key)][:limit]
     out = []
     for r in rows:
         old, new = json.loads(r["old"]) if r["old"] else None, json.loads(r["new"]) if r["new"] else None
         s = settings_schema.SETTINGS.get(r["key"])
+        if r["key"].startswith("user:"):  # ролі, доступ і бюджет людини (картка користувача, автоматично з 1С)
+            import user_changes
+            out.append({**r, "label": user_changes.log_label(r["key"]) or r["key"], "tab": "Користувачі",
+                        "old_label": user_changes.log_value(r["key"], old),
+                        "new_label": user_changes.log_value(r["key"], new)})
+            continue
         if r["key"].startswith("dept:"):  # налаштування відділу («Налаштування → Відділи»)
             import dept_settings
             out.append({**r, "label": dept_settings.log_label(r["key"]) or r["key"], "tab": "Відділи",

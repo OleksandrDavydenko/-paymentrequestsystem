@@ -1,0 +1,34 @@
+{# Бюджет з 1С (Power BI) — лише коли бюджет увімкнено («Заявка й погодження → Бюджет»): вимкнено — оновлювати нічого. #}
+{% if budget_enabled %}
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="budget-sync"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="budget_sync">
+  <div class="toolbar"><h2 style="margin:0">Бюджет з 1С</h2></div>
+  <p class="muted" style="margin-top:0">План і факт бюджету відділів {{ app_name }} перечитує з таблиці Power BI
+    <code>{{ budget_state.table }}</code> у фоні з цим інтервалом; між оновленнями вкладка «Бюджет» і залишок у заявці
+    показують збережену копію. Нові дані з'являються, коли вони вже є в Power BI — як часто оновлюється сама модель,
+    задає її розклад у Power BI.</p>
+  <div class="sync-state">
+    {% if budget_state.source == 'mock' %}<span class="badge amber">демо-дані</span>
+      <span class="muted">Power BI не підключено — бюджет на прикладах.</span>
+    {% elif budget_state.error %}<span class="badge red">помилка</span> <span>{{ budget_state.error }}</span>
+    {% elif budget_state.updated %}<span class="badge green">працює</span>
+    {% else %}<span class="badge grey">ще не оновлено</span>{% endif %}
+    <dl class="sync-facts">
+      <div><dt>Оновлено</dt><dd>{{ budget_state.updated[:16].replace('T', ' ') if budget_state.updated else '—' }}</dd></div>
+      <div><dt>Рядків плану й факту</dt><dd>{{ budget_state.count }}</dd></div>
+    </dl>
+    {# та сама форма (з токеном), але на маршрут оновлення — вкладені форми в HTML не можна #}
+    <button type="submit" formaction="{{ url_for('admin.admin_budget_refresh') }}" class="btn btn-sm">⟳ Оновити зараз</button>
+  </div>
+  <label class="mode-option">
+    <span><strong>Оновлювати кожні
+      <select name="budget_sync_minutes" class="inline-select" aria-label="Як часто оновлювати бюджет">
+        {% for value, label in BUDGET_SYNC_MINUTES.items() %}
+        <option value="{{ value }}" {{ 'selected' if budget_sync_minutes == value }}>{{ label }}</option>
+        {% endfor %}
+      </select></strong>
+      <span class="mode-hint">Типово — 30 хвилин. Будь-коли — «Оновити зараз» вище.</span></span>
+  </label>
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+</form>
+{% endif %}

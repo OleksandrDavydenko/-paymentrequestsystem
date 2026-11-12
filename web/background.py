@@ -1,6 +1,7 @@
 """Фонові задачі: нагадування про передачу готівки, заявки «До оплати», які нікому оплатити (щогодини),
 щоденне обслуговування, синхронізація налаштувань,
-звірка з платежами 1С (як часто — «Налаштування → Звірка з 1С», за замовчуванням кожні 10 хвилин)."""
+звірка з платежами 1С (як часто — «Налаштування → Звірка з 1С», за замовчуванням кожні 10 хвилин),
+бюджет з Power BI (коли бюджет увімкнено; як часто — «Інтеграція з 1С → Бюджет з 1С», за замовчуванням 30 хвилин)."""
 import logging
 import os
 import threading
@@ -30,6 +31,7 @@ from web import performance
 
 REMINDER_INTERVAL = 3600  # перевірка раз на годину
 PAYMENTS_TICK = 60        # раз на хвилину — чи пора звіряти (новий інтервал з налаштувань діє одразу)
+BUDGET_TICK = 60          # раз на хвилину — чи пора перечитати бюджет
 _app = None  # додаток (init_app) — листи з фонового потоку будують посилання через його контекст запиту
 _last_base_url = None
 
@@ -151,6 +153,26 @@ def _payments_loop():
         time.sleep(PAYMENTS_TICK)
 
 
+def run_budget_sync():
+    """Бюджет з Power BI: перечитати, якщо бюджет увімкнено й копія старша за інтервал (оновити могли й при
+    відкритті сторінки чи кнопкою). Вимкнено — до Power BI не звертаємося."""
+    import budget
+    if not budget.sync_due():
+        return None
+    return jobs.run("budget_sync", budget.sync_every() - timedelta(minutes=1), budget.refresh_now)
+
+
+def _budget_loop():
+    time.sleep(120)
+    while True:
+        try:
+            run_budget_sync()
+        except Exception as e:
+            logging.getLogger(__name__).exception("Помилка синхронізації бюджету")
+            alerts.report(e, "фонова задача «budget_sync»", base_url=_public_base_url())
+        time.sleep(BUDGET_TICK)
+
+
 _kick_lock = threading.Lock()
 
 
@@ -208,6 +230,7 @@ def _start_background():
             performance.start_warmup(_app)
             threading.Thread(target=_reminder_loop, name="background-jobs", daemon=True).start()
             threading.Thread(target=_payments_loop, name="payments-sync", daemon=True).start()
+            threading.Thread(target=_budget_loop, name="budget-sync", daemon=True).start()
             mailer.start_worker()  # листи, що лишилися в черзі після перезапуску
 
 

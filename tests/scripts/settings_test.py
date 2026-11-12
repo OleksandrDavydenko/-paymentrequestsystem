@@ -31,7 +31,9 @@ for code, title in settings_schema.TABS:
     tabs_nav = body.split('class="tabs settings-tabs"')[1].split("</nav>")[0]
     check(f"section '{title}' opens on tab '{page_title}'", r.status_code == 200
           and f'href="/admin/settings?tab={sections[0]}" class="tab active"' in tabs_nav and tabs_nav.count('class="tab active"') == 1
-          and f'name="tab" value="{code}"' in body and all(f'id="s-{s}"' in body for s in sections if s != "log"))
+          # «Бюджет з 1С» — форма лише з увімкненим бюджетом (тут вимкнено); перевіряє budget_sync_test.py
+          and (f'name="tab" value="{code}"' in body or code == "budget_sync")
+          and all(f'id="s-{s}"' in body for s in sections if s != "log"))
 nav = c.get("/admin/settings").get_data(as_text=True).split('class="tabs settings-tabs"')[1].split("</nav>")[0]
 check("settings: 7 tabs (related sections share a tab), «Відділи» next to «Заявка й погодження»",
       nav.count('class="tab') == 7 and nav.index("Заявка й погодження") < nav.index("Відділи") < nav.index("Оплата й готівка"))

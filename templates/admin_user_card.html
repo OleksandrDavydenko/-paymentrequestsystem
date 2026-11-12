@@ -11,6 +11,8 @@
     <div class="uc-who">
       <h1>{{ person.name }}{% if person.id == me_oid %} <span class="muted">(ви)</span>{% endif %}</h1>
       <div class="muted">{{ person.email }}</div>
+      <a class="uc-log-link" href="{{ url_for('admin.admin_settings', tab='log', key='user:' ~ person.id ~ ':') }}">Журнал змін
+        ролей, доступу й бюджету</a>
     </div>
     <div class="uc-current">
       {% for r in person.roles | sort %}<span class="bchip bchip-dep">{{ ROLE_SHORT[r] }}</span>{% endfor %}
