@@ -20,19 +20,27 @@
   const contractor = () => { const r = document.querySelector('input[name=payment_kind]:checked'); return !!r && r.value === 'contractor'; };
   const deptName = code => { const d = (cfg.departments || []).find(x => x.code === code); return d ? d.name : code; };
 
+  // Пряма стаття — ключ у pairs; значення — варіант з розподілом або null (пари немає: лише профітцентри)
   function state() {
     const code = item();
-    if (contractor() || !pairs[code]) return null;
-    return { direct: code, allocated: pairs[code], required: !pc.has(department()) };
+    if (contractor() || !(code in pairs)) return null;
+    return { direct: code, allocated: pairs[code] || null, required: !pc.has(department()) };
   }
 
   // Статті рядка: пряма — лише для профітцентру; вибрана раніше лишається, якщо дозволена
   function fillItems(tr, st) {
     const sel = tr.querySelector('.split-item'), dep = tr.querySelector('.split-dep').value;
-    const allowed = dep && !pc.has(dep) ? [st.allocated] : [st.direct, st.allocated];
+    const allowed = (dep && !pc.has(dep) ? [st.allocated] : [st.direct, st.allocated]).filter(Boolean);
     const want = sel.value || sel.dataset.selected;
+    if (!allowed.length) {  // непрофітцентр, а варіанта з розподілом немає
+      sel.innerHTML = '<option value="">— лише на профітцентр —</option>';
+      sel.dataset.selected = '';
+      tr.classList.add('split-row-bad');
+      return;
+    }
+    tr.classList.remove('split-row-bad');
     sel.innerHTML = allowed.map(c => `<option value="${c}">${names[c] || c}${c === st.direct ? ' — пряма' : ' — з розподілом'}</option>`).join('');
-    sel.value = allowed.includes(want) ? want : (dep && pc.has(dep) ? st.direct : st.allocated);
+    sel.value = allowed.includes(want) ? want : (dep && pc.has(dep) ? st.direct : (st.allocated || st.direct));
     sel.dataset.selected = sel.value;
   }
 
@@ -85,7 +93,8 @@
     if (!st) return;
     const showBody = st.required || open;
     why.textContent = st.required
-      ? `— обов'язково: «${deptName(department())}» не профітцентр, а пряму статтю можна віднести лише на профітцентр`
+      ? `— обов'язково: «${deptName(department())}» не профітцентр, а пряму статтю можна віднести лише на профітцентр` +
+        (st.allocated ? '' : '. Варіанта з розподілом для цієї статті немає — лише на профітцентри (або виберіть статтю без «(прямий)»)')
       : '';
     offer.hidden = showBody;
     body.hidden = !showBody;

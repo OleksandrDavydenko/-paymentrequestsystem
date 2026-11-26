@@ -156,4 +156,29 @@ check("pair removed: existing split still shown", "Розподіл між ві�
 req, _ = submit("adm.ini@ftpua.com", 1000)
 check("pair removed: direct item from non-profit-center submits as before", req and req["status"] != "draft")
 
+# ---------- пряма стаття без пари («(прямий)» у назві): непрофітцентр — лише на профітцентри
+import expense_items
+TAXI = "06.003"
+real_name, real_items = expense_items.get_name, expense_items.get_items
+expense_items.get_name = lambda code: "Таксі/Розвезення персоналу (прямий)" if code == TAXI else real_name(code)
+expense_items.get_items = lambda: [{**i, "name": "Таксі/Розвезення персоналу (прямий)"} if i["code"] == TAXI else i
+                                   for i in real_items()]
+check("direct by name, no pair", expense_split.is_direct(TAXI) and expense_split.pair_items(TAXI) == [TAXI]
+      and expense_split.required({"expense_code": TAXI, "department": "ADM"})
+      and not expense_split.required({"expense_code": TAXI, "department": "LOG"}))
+req, html = submit("adm.ini@ftpua.com", 800, item=TAXI)
+check("direct without pair, non-profit-center, no split: not submitted", req is None and "лише на профітцентр" in html)
+_, html = submit("adm.ini@ftpua.com", 800, item=TAXI, rows=[("LOG", TAXI, "500"), ("ADM", TAXI, "300")])
+check("direct without pair: own non-profit-center row rejected", "немає варіанта з розподілом" in html)
+req, _ = submit("adm.ini@ftpua.com", 800, item=TAXI, rows=[("LOG", TAXI, "500"), ("SAL", TAXI, "300")])
+check("direct without pair: split onto profit centers only — submitted", req and req["status"] != "draft"
+      and [r["department"] for r in req["split"]] == ["LOG", "SAL"])
+req, _ = submit("log.ini@ftpua.com", 800, item=TAXI)
+check("direct without pair: profit center as before", req and req["status"] != "draft" and "split" not in req)
+login("adm.ini@ftpua.com")
+check("form knows direct items without a pair", f'"{TAXI}": null' in page("/requests/new"))
+req, _ = submit("adm.ini@ftpua.com", 800, item=OTHER)
+check("not direct, no pair: as before", req and req["status"] != "draft" and "split" not in req)
+expense_items.get_name, expense_items.get_items = real_name, real_items
+
 print("ALL OK" if ok else "SOME FAILED")

@@ -1698,6 +1698,8 @@ button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
 .split-table .split-bud { font-size: 12px; white-space: nowrap; }
 .split-table .split-del { width: 28px; text-align: center; }
 .split-rest.is-bad { color: var(--bad-ink); font-weight: 600; }
+.split-row-bad td { background: var(--bad-faint); }
+.split-row-bad .split-item { color: var(--bad-ink); }
 .split-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; }
 .split-foot .spacer { flex: 1; }
 .split-total { font-weight: 600; font-variant-numeric: tabular-nums; }
