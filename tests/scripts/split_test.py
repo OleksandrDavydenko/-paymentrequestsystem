@@ -74,19 +74,26 @@ login("adm.ini@ftpua.com")
 html = page("/requests/new")
 check("form: split block and data for the script", 'id="split-block"' in html and "expense-split.js" in html
       and f'"{DIRECT}": "{ALLOC}"' in html)
-req, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("SAL", ALLOC, "400")])
+req, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("ADM", ALLOC, "400")])
 check("split: submitted with two rows", req and req["status"] != "draft" and len(req["split"]) == 2
       and req["split"][0] == {"department": "LOG", "expense_code": DIRECT, "amount": Decimal("600.00")}
       and req["expense_code"] == DIRECT)
 _, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("FIN", DIRECT, "400")])
 check("direct item on a non-profit-center row rejected", "пряму статтю можна віднести лише на профітцентр" in html)
+# стаття з розподілом — лише на відділ-власник (у мокових статтях власник 05.001 — «Адміністрація», ADM)
+check("owners of the allocated item", expense_split.owners(ALLOC) == ["ADM"])
+_, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("FIN", ALLOC, "400")])
+check("allocated item on a non-owner rejected", "розносить на відділ-власник" in html and "Адміністрац" in html)
+_, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", ALLOC, "600"), ("ADM", ALLOC, "400")])
+check("allocated item on a profit center (not owner) rejected, direct suggested",
+      "розносить на відділ-власник" in html and "пряму статтю" in html)
 _, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("SAL", OTHER, "400")])
 check("item outside the pair rejected", "стаття має бути з пари" in html)
 _, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("LOG", ALLOC, "400")])
 check("same department twice rejected", "указано двічі" in html)
-r_bad, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("SAL", ALLOC, "300")])
+r_bad, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("ADM", ALLOC, "300")])
 check("sum of rows must equal the amount", r_bad is None and "не дорівнює сумі заявки" in html)
-r_draft, _ = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("SAL", ALLOC, "300")], action="save")
+r_draft, _ = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("ADM", ALLOC, "300")], action="save")
 check("incomplete split can be saved as a draft", r_draft and r_draft["status"] == "draft" and len(r_draft["split"]) == 2)
 _, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "abc")])
 check("non-numeric amount rejected", "не число" in html)
@@ -96,8 +103,19 @@ req, _ = submit("log.ini@ftpua.com", 1000)
 check("profit center: direct item without split", req and req["status"] != "draft" and "split" not in req)
 req, _ = submit("log.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "700"), ("ADM", ALLOC, "300")])
 check("profit center: optional split", req and req["status"] != "draft" and len(req["split"]) == 2)
-req, _ = submit("adm.ini@ftpua.com", 1000, item=ALLOC, rows=[("LOG", DIRECT, "1000")])
-check("allocated item: no split at all (rows dropped)", req and req["status"] != "draft" and "split" not in req)
+# стаття з розподілом із пари зверху: розподіл за бажанням (частина — прямою статтею на профітцентр)
+check("allocated item of a pair: applies, not required", expense_split.applies({"expense_code": ALLOC, "department": "ADM"})
+      and not expense_split.required({"expense_code": ALLOC, "department": "ADM"})
+      and expense_split.pair_items(ALLOC) == [DIRECT, ALLOC])
+req, _ = submit("adm.ini@ftpua.com", 1000, item=ALLOC)
+check("allocated item: without split as before", req and req["status"] != "draft" and "split" not in req)
+req, _ = submit("adm.ini@ftpua.com", 1000, item=ALLOC, rows=[("LOG", DIRECT, "700"), ("ADM", ALLOC, "300")])
+check("allocated item: optional split kept", req and req["status"] != "draft" and len(req["split"]) == 2
+      and req["expense_code"] == ALLOC)
+check("allocated item not in a pair: no split", not expense_split.applies({"expense_code": OTHER, "department": "ADM"}))
+login("adm.ini@ftpua.com")
+html = page("/requests/new")
+check("form config: allocated -> directs and owners", f'"{ALLOC}": ["{DIRECT}"]' in html and f'"{ALLOC}": ["ADM"]' in html)
 check("contractor branch: no split", not expense_split.applies({"expense_code": DIRECT, "department": "ADM",
                                                                 "payment_kind": "contractor"}))
 
@@ -106,7 +124,7 @@ split_req = next(r for r in (db.get_request(i) for i in range(1, db.last_id() + 
                  and r["author_email"] == "adm.ini@ftpua.com" and r["status"] != "draft")
 login("cfo@ftpua.com")
 html = page(f"/requests/{split_req['id']}")
-check("card shows the split", "Розподіл між відділами" in html and "Відділ продажу" in html)
+check("card shows the split", "Розподіл між відділами" in html and "Логістика" in html)
 o = onec_api.order(split_req)
 check("1C payload: allocation rows", o["allocation"] and len(o["allocation"]) == 2
       and o["allocation"][1]["expense_item"]["code"] == ALLOC and o["allocation"][1]["amount"] == "400.00"
@@ -130,21 +148,21 @@ def row(dep, code, plan):
     return {"Month": MONTH + "-01", "DepartmentGUID": dep, "DepartmentName": dep, "ExpenseItemGUID": "I-" + code,
             "ExpenseItemCode": code, "ExpenseItemName": code, "ExpenseGroup": "G", "OwnerDepartmentGUID": "0" * 32,
             "PlanUSD": plan, "FactUSD": 0}
-FIXED = budget.parse([row("DEP-LOG", DIRECT, 100000), row("DEP-SAL", ALLOC, 100)])
+FIXED = budget.parse([row("DEP-LOG", DIRECT, 100000), row("DEP-ADM", ALLOC, 100)])
 budget.rows = lambda: FIXED
 app_settings.set("budget_enabled", True, "t")
 USD = rates.latest()["USD"][0]
 uah = lambda usd: (Decimal(usd) * USD).quantize(Decimal("0.01"))
 total = uah(600) + uah(400)
-before_sal = budget.remaining("SAL", ALLOC, today)["pending"]
-req, _ = submit("adm.ini@ftpua.com", total, rows=[("LOG", DIRECT, uah(600)), ("SAL", ALLOC, uah(400))])
+before_adm = budget.remaining("ADM", ALLOC, today)["pending"]
+req, _ = submit("adm.ini@ftpua.com", total, rows=[("LOG", DIRECT, uah(600)), ("ADM", ALLOC, uah(400))])
 snap = req["budget_check"]
-check("budget snapshot per row, over on the SAL row", snap["split"] and len(snap["rows"]) == 2
+check("budget snapshot per row, over on the ADM row", snap["split"] and len(snap["rows"]) == 2
       and snap["over"] and [r["over"] for r in snap["rows"]] == [False, True])
 check("over-budget row -> CFO with the row in the note", req["cfo_step"] is True
       and any("05.001" in h["comment"] and "бюджету" in h["comment"] for h in req["history"] if h["action"] == "cfo_threshold"))
-after_sal = budget.remaining("SAL", ALLOC, today)["pending"]
-check("pending counts the split row's amount, not the whole request", after_sal - before_sal == Decimal("400.00"))
+after_adm = budget.remaining("ADM", ALLOC, today)["pending"]
+check("pending counts the split row's amount, not the whole request", after_adm - before_adm == Decimal("400.00"))
 login("cfo@ftpua.com")
 html = page(f"/requests/{req['id']}")
 check("card: snapshot of each row", html.count("на момент відправки") == 2 and "Рядок понад залишок" in html)

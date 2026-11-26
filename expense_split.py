@@ -12,8 +12,10 @@
 Коли ініціатор непрямої витрати вибирає пряму статтю:
   • відділ заявки — не профітцентр: суму обов'язково розподіляють на рядки «відділ + стаття + сума»;
   • профітцентр: розподіл за бажанням (кнопка «Розділити між відділами»), без нього — витрата на свій відділ.
-У рядку — лише стаття пари: пряма — тільки на профітцентр, з розподілом — на будь-який відділ. Сума рядків = сума
-заявки. Рядки — req["split"]: [{"department", "expense_code", "amount"}]; головна стаття заявки лишається пряма.
+Статтю з розподілом, що стоїть у парі, теж можна розподілити за бажанням (частину — прямою статтею на профітцентри).
+У рядку — лише стаття пари: пряма — тільки на профітцентр, з розподілом — на її відділ-власника (Owner статті в 1С:
+саме на нього 1С розносить таку статтю; власник невідомий — будь-який відділ). Сума рядків = сума заявки.
+Рядки — req["split"]: [{"department", "expense_code", "amount"}]; головна стаття заявки лишається як вибрана.
 
 Статті без пари працюють як і раніше. spend_rows() — на що витрачає заявка (рядки розподілу або сама заявка): за ним
 рахують бюджет, правила фіндиректора й дані для 1С (onec_api: allocation).
@@ -48,12 +50,32 @@ def is_direct(code):
     return code in pairs() or DIRECT_MARK in (expense_items.get_name(code) or "").lower()
 
 
+def partners(code):
+    """Пара, до якої належить стаття (будь-якою стороною): (прямі статті, стаття з розподілом або None).
+    Пряма без пари — ([code], None); стаття не з пари й не пряма — ([], None). До однієї статті з розподілом може
+    вести кілька прямих — тоді в рядку дозволена будь-яка з них."""
+    if not code:
+        return [], None
+    p = pairs()
+    if code in p:
+        return [code], p[code]
+    directs = sorted(d for d, a in p.items() if a == code)
+    if directs:
+        return directs, code
+    if is_direct(code):
+        return [code], None
+    return [], None
+
+
 def pair_items(code):
-    """Статті рядка розподілу для прямої статті: [пряма, з розподілом], без пари — [пряма]; не пряма — []."""
-    if not is_direct(code):
-        return []
-    a = pairs().get(code)
-    return [code, a] if a else [code]
+    """Статті рядка розподілу: прямі пари, потім стаття з розподілом; пряма без пари — [пряма]; не з пари — []."""
+    directs, allocated = partners(code)
+    return directs + ([allocated] if allocated else [])
+
+
+def owners(code):
+    """Відділи-власники статті з розподілом (коди довідника): на них 1С розносить таку статтю; невідомо — []."""
+    return expense_items.department_codes(code) if code else []
 
 
 def profit_centers():
@@ -66,21 +88,24 @@ def is_indirect(req):
 
 
 def applies(req):
-    """Чи можна розподілити заявку: непряма витрата з прямою статтею."""
-    return is_indirect(req) and is_direct(req.get("expense_code"))
+    """Чи можна розподілити заявку: непряма витрата з прямою статтею або зі статтею з розподілом, що стоїть у парі."""
+    return is_indirect(req) and bool(pair_items(req.get("expense_code")))
 
 
 def required(req):
     """Чи обов'язковий розподіл: пряма стаття, а відділ заявки — не профітцентр."""
-    return applies(req) and req.get("department") not in profit_centers()
+    return applies(req) and is_direct(req.get("expense_code")) and req.get("department") not in profit_centers()
 
 
 def default_item(code, department):
-    """Стаття рядка за замовчуванням: профітцентру — пряма, іншому відділу — з розподілом."""
-    items = pair_items(code)
-    if not items:
+    """Стаття рядка за замовчуванням: профітцентру — пряма, власнику (чи будь-кому, якщо власник невідомий) — з
+    розподілом."""
+    directs, allocated = partners(code)
+    if not directs:
         return code
-    return items[0] if department in profit_centers() or len(items) == 1 else items[1]
+    if department in profit_centers() or not allocated:
+        return directs[0] if code not in directs else code
+    return allocated
 
 
 def _amount(raw):
@@ -118,7 +143,9 @@ def check_rows(req):
     rows = req.get("split") or []
     if not rows:
         return None
-    items, pcs, known = pair_items(req.get("expense_code")), profit_centers(), departments.get_map()
+    directs, allocated = partners(req.get("expense_code"))
+    items, pcs, known = directs + ([allocated] if allocated else []), profit_centers(), departments.get_map()
+    own = owners(allocated)
     seen = set()
     for n, r in enumerate(rows, 1):
         dep, item = r.get("department"), r.get("expense_code")
@@ -128,18 +155,31 @@ def check_rows(req):
             return f"Розподіл: відділ «{departments.get_name(dep)}» указано двічі — об'єднайте суми в один рядок"
         seen.add(dep)
         if item not in items:
-            names = " / ".join(f"«{expense_items.get_name(c) or c}»" for c in items)
+            names = " / ".join(f"«{_item_name(c)}»" for c in items)
             return f"Розподіл, рядок {n}: стаття має бути {'з пари ' if len(items) > 1 else ''}{names}"
-        if item == items[0] and dep not in pcs:
-            if len(items) == 1:
+        if item in directs and dep not in pcs:
+            if not allocated:
                 return (f"Розподіл, рядок {n}: пряму статтю можна віднести лише на профітцентр, а «{departments.get_name(dep)}» "
                         "— не профітцентр. Для цієї статті немає варіанта з розподілом: віднесіть суму на профітцентр, "
                         "виберіть статтю без «(прямий)» або попросіть адміністратора додати пару в «Розподіл прямих витрат»")
             return (f"Розподіл, рядок {n}: пряму статтю можна віднести лише на профітцентр — для відділу "
-                    f"«{departments.get_name(dep)}» виберіть «{expense_items.get_name(items[1]) or items[1]}»")
+                    f"«{departments.get_name(dep)}» виберіть «{_item_name(allocated)}»"
+                    + (f" (вона йде на власника: {_dept_names(own)})" if own else ""))
+        if item == allocated and own and dep not in own:
+            return (f"Розподіл, рядок {n}: статтю «{_item_name(allocated)}» 1С розносить на відділ-власник "
+                    f"{_dept_names(own)} — виберіть його"
+                    + (f"; на «{departments.get_name(dep)}» — пряму статтю «{_item_name(directs[0])}»" if dep in pcs else ""))
         if not r.get("amount") or r["amount"] <= 0:
             return f"Розподіл, рядок {n}: вкажіть суму, більшу за 0"
     return None
+
+
+def _item_name(code):
+    return expense_items.get_name(code) or code
+
+
+def _dept_names(codes):
+    return " / ".join(f"«{departments.get_name(c) or c}»" for c in codes)
 
 
 def check_complete(req):
@@ -167,7 +207,8 @@ def spend_rows(req):
 
 
 def form_config(req):
-    """Дані для блоку розподілу у формі: прямі статті (з варіантом з розподілом або null), назви, профітцентри, відділи."""
+    """Дані для блоку розподілу у формі: прямі статті (→ варіант з розподілом або null), статті з розподілом (→ їхні
+    прямі), власники статей з розподілом, назви, профітцентри, відділи."""
     p = dict(pairs())
     for i in expense_items.get_items():  # прямі статті без пари — лише на профітцентри
         if i["code"] not in p and DIRECT_MARK in (i.get("name") or "").lower():
@@ -175,8 +216,13 @@ def form_config(req):
     current = req.get("expense_code")  # стара стаття заявки, якої вже немає в довіднику, — теж
     if current and current not in p and is_direct(current):
         p[current] = None
-    codes = set(p) | {a for a in p.values() if a}
-    return {"pairs": p, "names": {c: expense_items.get_name(c) or c for c in codes},
+    alloc = {}
+    for d, a in sorted(p.items()):
+        if a:
+            alloc.setdefault(a, []).append(d)
+    codes = set(p) | set(alloc)
+    return {"pairs": p, "alloc": alloc, "owners": {a: owners(a) for a in alloc},
+            "names": {c: expense_items.get_name(c) or c for c in codes},
             "pc": sorted(profit_centers()),
             "departments": [{"code": d["code"], "name": d["name"]} for d in departments.get_departments()]}
 

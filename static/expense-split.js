@@ -1,13 +1,14 @@
 /* Розподіл прямої витрати між відділами у формі заявки (expense_split.py, templates/request/_split.html).
-   Блок видно, коли в непрямій витраті вибрано пряму статтю з пари «пряма → з розподілом»:
-   відділ заявки не профітцентр — розподіл обов'язковий; профітцентр — кнопкою «Розділити між відділами».
-   У рядку — лише стаття пари: пряма — тільки для профітцентру; сума рядків має дорівнювати сумі заявки. */
+   Блок видно в непрямій витраті з прямою статтею або зі статтею з розподілом, що стоїть у парі «пряма → з розподілом»:
+   пряма стаття, відділ заявки не профітцентр — розподіл обов'язковий; інакше — кнопкою «Розділити між відділами».
+   У рядку — лише стаття пари: пряма — тільки на профітцентр, з розподілом — на її відділ-власника (так її розносить
+   1С). Сума рядків має дорівнювати сумі заявки. */
 (function () {
   'use strict';
   const box = document.getElementById('split-block');
   if (!box) return;
   const cfg = JSON.parse((document.getElementById('split-data') || {}).textContent || '{}');
-  const pairs = cfg.pairs || {}, names = cfg.names || {}, pc = new Set(cfg.pc || []);
+  const pairs = cfg.pairs || {}, alloc = cfg.alloc || {}, ownersOf = cfg.owners || {}, names = cfg.names || {}, pc = new Set(cfg.pc || []);
   const $ = id => document.getElementById(id);
   const why = $('split-why'), offer = $('split-offer'), body = $('split-body'), rowsEl = $('split-rows');
   const sent = $('split-sent'), totalEl = $('split-total'), tpl = $('split-row-tpl');
@@ -20,50 +21,77 @@
   const contractor = () => { const r = document.querySelector('input[name=payment_kind]:checked'); return !!r && r.value === 'contractor'; };
   const deptName = code => { const d = (cfg.departments || []).find(x => x.code === code); return d ? d.name : code; };
 
-  // Пряма стаття — ключ у pairs; значення — варіант з розподілом або null (пари немає: лише профітцентри)
+  // Стаття заявки → пара: прямі статті, стаття з розподілом (або null — лише профітцентри), її власники.
+  // Обов'язково — лише для прямої статті у відділі, що не є профітцентром
   function state() {
     const code = item();
-    if (contractor() || !(code in pairs)) return null;
-    return { direct: code, allocated: pairs[code] || null, required: !pc.has(department()) };
+    if (contractor()) return null;
+    let directs, allocated;
+    if (code in pairs) { directs = [code]; allocated = pairs[code] || null; }
+    else if (code in alloc) { directs = alloc[code]; allocated = code; }
+    else return null;
+    return { directs, allocated, owners: allocated ? (ownersOf[allocated] || []) : [],
+             required: code in pairs && !pc.has(department()) };
+  }
+  // Відділи, на які можна віднести статтю з розподілом: її власники, а якщо власник невідомий — будь-який
+  const allocDeps = st => !st.allocated ? [] : (st.owners.length ? st.owners : (cfg.departments || []).map(d => d.code));
+  // Статті, дозволені для відділу рядка (порожній відділ — усі статті пари)
+  function allowedItems(st, dep) {
+    if (!dep) return [...st.directs, st.allocated].filter(Boolean);
+    return [...(pc.has(dep) ? st.directs : []), ...(allocDeps(st).includes(dep) ? [st.allocated] : [])];
   }
 
-  // Відділи рядка: пряма без пари — лише профітцентри; з парою — «Профітцентри» і «Інші відділи — стаття з розподілом».
-  // Вибраний раніше відділ, якого в новому списку немає, скидається
+  // Відділи рядка: «Профітцентри» (пряма стаття) і «Власник статті …» (з розподілом); власник невідомий — «Інші
+  // відділи». Вибраний раніше відділ, якого в новому списку немає, скидається
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   function fillDeps(tr, st) {
     const sel = tr.querySelector('.split-dep');
     const was = sel.value || sel.dataset.selected || '';
     const deps = cfg.departments || [];
     const opt = d => `<option value="${esc(d.code)}">${esc(d.name)}</option>`;
-    const pcs = deps.filter(d => pc.has(d.code)), others = deps.filter(d => !pc.has(d.code));
+    const pcs = deps.filter(d => pc.has(d.code));
+    const ad = new Set(allocDeps(st));
+    const rest = deps.filter(d => ad.has(d.code) && (st.owners.length || !pc.has(d.code)));
     let html = '<option value="">— відділ —</option>';
+    html += `<optgroup label="${st.allocated ? 'Профітцентри — пряма стаття' : 'Профітцентри (пряму статтю — лише на них)'}">${pcs.map(opt).join('')}</optgroup>`;
     if (st.allocated) {
-      html += `<optgroup label="Профітцентри">${pcs.map(opt).join('')}</optgroup>` +
-              `<optgroup label="Інші відділи — стаття з розподілом">${others.map(opt).join('')}</optgroup>`;
-    } else {
-      html += `<optgroup label="Профітцентри (пряму статтю — лише на них)">${pcs.map(opt).join('')}</optgroup>`;
+      const label = st.owners.length ? `Власник статті «${names[st.allocated] || st.allocated}»` : 'Інші відділи — стаття з розподілом';
+      html += `<optgroup label="${esc(label)}">${rest.map(opt).join('')}</optgroup>`;
     }
     sel.innerHTML = html;
-    const allowed = st.allocated ? deps : pcs;
-    sel.value = allowed.some(d => d.code === was) ? was : '';
+    const ok = pcs.some(d => d.code === was) || ad.has(was);
+    sel.value = ok ? was : '';
     sel.dataset.selected = sel.value;
   }
 
-  // Статті рядка: пряма — лише для профітцентру; вибрана раніше лишається, якщо дозволена
+  // Статті рядка за відділом; вибрана раніше лишається, якщо дозволена
   function fillItems(tr, st) {
     const sel = tr.querySelector('.split-item'), dep = tr.querySelector('.split-dep').value;
-    const allowed = (dep && !pc.has(dep) ? [st.allocated] : [st.direct, st.allocated]).filter(Boolean);
+    const allowed = allowedItems(st, dep);
     const want = sel.value || sel.dataset.selected;
-    if (!allowed.length) {  // непрофітцентр, а варіанта з розподілом немає
+    if (!allowed.length) {  // відділ не підходить жодній статті пари
       sel.innerHTML = '<option value="">— лише на профітцентр —</option>';
       sel.dataset.selected = '';
       tr.classList.add('split-row-bad');
       return;
     }
     tr.classList.remove('split-row-bad');
-    sel.innerHTML = allowed.map(c => `<option value="${c}">${names[c] || c}${c === st.direct ? ' — пряма' : ' — з розподілом'}</option>`).join('');
-    sel.value = allowed.includes(want) ? want : (dep && pc.has(dep) ? st.direct : (st.allocated || st.direct));
+    sel.innerHTML = allowed.map(c => `<option value="${esc(c)}">${esc(names[c] || c)}${c === st.allocated ? ' — з розподілом' : ' — пряма'}</option>`).join('');
+    sel.value = allowed.includes(want) ? want : (dep && pc.has(dep) ? allowed[0] : allowed[allowed.length - 1]);
     sel.dataset.selected = sel.value;
+  }
+
+  // Вибрали статтю в рядку: з розподілом — відділ = власник (якщо він один), пряма — відділ лише профітцентр
+  function itemChanged(tr, st) {
+    const dep = tr.querySelector('.split-dep'), it = tr.querySelector('.split-item').value;
+    tr.querySelector('.split-item').dataset.selected = it;
+    if (it && it === st.allocated && !allocDeps(st).includes(dep.value)) {
+      dep.value = st.owners.length === 1 ? st.owners[0] : '';
+    } else if (it && st.directs.includes(it) && dep.value && !pc.has(dep.value)) {
+      dep.value = '';
+    }
+    dep.dataset.selected = dep.value;
+    fillItems(tr, st);
   }
 
   function addRow(dep, amount) {
@@ -116,14 +144,16 @@
     const showBody = st.required || open;
     why.textContent = st.required
       ? `— обов'язково: «${deptName(department())}» не профітцентр, а пряму статтю можна віднести лише на профітцентр` +
-        (st.allocated ? '' : '. Варіанта з розподілом для цієї статті немає — лише на профітцентри (або виберіть статтю без «(прямий)»)')
+        (st.allocated ? (st.owners.length ? `; статтю з розподілом — на її власника` : '') : '. Варіанта з розподілом для цієї статті немає — лише на профітцентри (або виберіть статтю без «(прямий)»)')
       : '';
     offer.hidden = showBody;
     body.hidden = !showBody;
     body.querySelectorAll('input, select').forEach(el => { el.disabled = !showBody; });
     if (showBody && !rowsEl.querySelector('.split-row')) {
       // Перший рядок — уся сума: профітцентр — на свій відділ, інакше — порожній відділ
-      addRow(pc.has(department()) || st.allocated ? department() : '', ($('amount') || {}).value || '');
+      const own = department(), ad = allocDeps(st);
+      const first = pc.has(own) || ad.includes(own) ? own : (st.owners.length === 1 ? st.owners[0] : '');
+      addRow(first, ($('amount') || {}).value || '');
       if (!st.required) addRow('', '');
     }
     rowsEl.querySelectorAll('.split-row').forEach(tr => { fillDeps(tr, st); fillItems(tr, st); });
@@ -139,6 +169,8 @@
       const sel = tr.querySelector('.split-item');
       sel.dataset.selected = ''; sel.selectedIndex = -1;
       const st = state(); if (st) fillItems(tr, st);
+    } else if (e.target.classList.contains('split-item')) {
+      const st = state(); if (st) itemChanged(tr, st);
     }
     rest(tr); total();
   });
