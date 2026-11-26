@@ -1688,7 +1688,9 @@ button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
 .budget-viewers .bv-why { color: var(--muted); font-size: 12px; }
 
 /* Розподіл прямої витрати між відділами (форма заявки, картка) */
-.split-block { margin: 4px 0 14px; padding: 12px 14px; border: 1px solid var(--primary-200); border-radius: 8px; background: var(--primary-50); }
+.req-fields > .split-slot { grid-column: 1 / -1; }
+.split-slot:empty { display: none; }
+.split-block { margin: 0; padding: 12px 14px; border: 1px solid var(--primary-200); border-radius: 8px; background: var(--primary-50); }
 .split-block.invalid { border-color: var(--bad-line); background: var(--bad-faint); }
 .split-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-bottom: 6px; }
 .split-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }

@@ -29,6 +29,8 @@
         {% if earliest_pay and earliest_pay > today %}<span class="field-hint">Не раніше {{ earliest_pay | d }} — стільки потрібно на погодження й оплату</span>{% endif %}
         {% endif %}
       </div>
+      {# Розподіл між відділами — під сумою й валютою (ділимо вже відому суму), на всю ширину #}
+      <div class="split-slot">{% include "request/_split.html" %}</div>
       <div class="field">
         <label>Форма оплати</label>
         <div class="segmented" role="radiogroup" aria-label="Форма оплати">

@@ -317,8 +317,9 @@ def request_card(request_id=None, *, context):
 
 
 # Кроки нових дизайнів картки й поля кожного: помилка сервера відкриває крок із першою помилкою
-STEP_FIELDS = {"start": ("department", "payment_kind"), "who": ("counterparty_id", "expense_code", "split"), "lines": ("lines",),
-               "amount": ("amount", "currency", "pay_date", "payment_form", "organization_id", "payer", "accountant_type"),
+STEP_FIELDS = {"start": ("department", "payment_kind"), "who": ("counterparty_id", "expense_code"), "lines": ("lines",),
+               "amount": ("amount", "currency", "split", "pay_date", "payment_form", "organization_id", "payer",
+                          "accountant_type"),
                "note": ("note",), "review": ("documents",)}
 
 

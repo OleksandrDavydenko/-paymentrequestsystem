@@ -5,7 +5,7 @@
 <tr class="split-row">
   <td data-label="Відділ"><select name="split_department" class="split-dep" aria-label="Відділ">
     <option value="">— відділ —</option>
-    {% for d in split_cfg.departments %}<option value="{{ d.code }}" {{ 'selected' if r and r.department == d.code }}>{{ d.name }}{{ ' · профітцентр' if d.code in split_cfg.pc }}</option>{% endfor %}
+    {% for d in split_cfg.departments %}<option value="{{ d.code }}" {{ 'selected' if r and r.department == d.code }}>{{ d.name }}</option>{% endfor %}
     {% if r and r.department and r.department not in split_cfg.departments | map(attribute='code') | list %}<option value="{{ r.department }}" selected>{{ dept_name(r.department) }}</option>{% endif %}
   </select></td>
   <td data-label="Стаття"><select name="split_item" class="split-item" aria-label="Стаття" data-selected="{{ r.expense_code if r else '' }}">

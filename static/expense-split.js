@@ -27,6 +27,28 @@
     return { direct: code, allocated: pairs[code] || null, required: !pc.has(department()) };
   }
 
+  // Відділи рядка: пряма без пари — лише профітцентри; з парою — «Профітцентри» і «Інші відділи — стаття з розподілом».
+  // Вибраний раніше відділ, якого в новому списку немає, скидається
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  function fillDeps(tr, st) {
+    const sel = tr.querySelector('.split-dep');
+    const was = sel.value || sel.dataset.selected || '';
+    const deps = cfg.departments || [];
+    const opt = d => `<option value="${esc(d.code)}">${esc(d.name)}</option>`;
+    const pcs = deps.filter(d => pc.has(d.code)), others = deps.filter(d => !pc.has(d.code));
+    let html = '<option value="">— відділ —</option>';
+    if (st.allocated) {
+      html += `<optgroup label="Профітцентри">${pcs.map(opt).join('')}</optgroup>` +
+              `<optgroup label="Інші відділи — стаття з розподілом">${others.map(opt).join('')}</optgroup>`;
+    } else {
+      html += `<optgroup label="Профітцентри (пряму статтю — лише на них)">${pcs.map(opt).join('')}</optgroup>`;
+    }
+    sel.innerHTML = html;
+    const allowed = st.allocated ? deps : pcs;
+    sel.value = allowed.some(d => d.code === was) ? was : '';
+    sel.dataset.selected = sel.value;
+  }
+
   // Статті рядка: пряма — лише для профітцентру; вибрана раніше лишається, якщо дозволена
   function fillItems(tr, st) {
     const sel = tr.querySelector('.split-item'), dep = tr.querySelector('.split-dep').value;
@@ -50,7 +72,7 @@
     if (dep) tr.querySelector('.split-dep').value = dep;
     if (amount) tr.querySelector('.split-amount').value = amount;
     const st = state();
-    if (st) fillItems(tr, st);
+    if (st) { fillDeps(tr, st); if (dep) { tr.querySelector('.split-dep').value = dep; } fillItems(tr, st); }
     return tr;
   }
 
@@ -101,10 +123,10 @@
     body.querySelectorAll('input, select').forEach(el => { el.disabled = !showBody; });
     if (showBody && !rowsEl.querySelector('.split-row')) {
       // Перший рядок — уся сума: профітцентр — на свій відділ, інакше — порожній відділ
-      addRow(pc.has(department()) ? department() : '', ($('amount') || {}).value || '');
+      addRow(pc.has(department()) || st.allocated ? department() : '', ($('amount') || {}).value || '');
       if (!st.required) addRow('', '');
     }
-    rowsEl.querySelectorAll('.split-row').forEach(tr => fillItems(tr, st));
+    rowsEl.querySelectorAll('.split-row').forEach(tr => { fillDeps(tr, st); fillItems(tr, st); });
     total();
     rowsEl.querySelectorAll('.split-row').forEach(rest);
   }

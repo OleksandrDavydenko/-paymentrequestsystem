@@ -148,7 +148,7 @@ def check_complete(req):
     if required(req) and not rows:
         name = departments.get_name(req.get("department")) or "відділ заявки"
         return (f"Пряму статтю можна віднести лише на профітцентр, а «{name}» — не профітцентр. Розподіліть суму "
-                "між відділами: блок «Розподілити між відділами» під статтею витрат")
+                "між відділами: блок «Розподілити між відділами» під сумою заявки")
     if rows and req.get("amount") is not None:
         total = sum((r.get("amount") or Decimal(0) for r in rows), Decimal(0))
         if total != Decimal(str(req["amount"])).quantize(Decimal("0.01")):
