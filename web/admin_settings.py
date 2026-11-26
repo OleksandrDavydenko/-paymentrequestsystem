@@ -157,6 +157,13 @@ def _context(tab):
                    budget_viewers=_budget_viewers() if on else [],
                    budget_state=budget.status() if on else None, budget_table=budget._table.table,
                    budget_details_table=budget.details_table())
+    elif tab == "split":
+        items = sorted(expense_items.get_items(), key=lambda i: i["code"])
+        names = {i["code"]: i["name"] for i in items}
+        ctx.update(split_pairs=[{"direct": p.get("direct"), "allocated": p.get("allocated"),
+                                 "direct_name": names.get(p.get("direct")), "allocated_name": names.get(p.get("allocated"))}
+                                for p in app_settings.get("split_pairs") or []],
+                   split_items=items)
     elif tab == "request":
         ctx.update(request_prefix=request_numbers.prefix(), request_digits=request_numbers.digits(),
                    request_prefix_history=[p for p in request_numbers.all_prefixes() if p != request_numbers.prefix()],
@@ -322,6 +329,44 @@ def _parse_ok_until(form, changes, errors):
         changes["payments_ok_until"] = until
 
 
+def _parse_split_pairs(form, changes, errors):
+    """Пари «пряма стаття → стаття з розподілом» з форми розділу «Розподіл прямих витрат». У полі — «код — назва»
+    з підказок або просто код; порожні рядки пропускаються."""
+    items = {i["code"]: i["name"] for i in expense_items.get_items()}
+    by_name = {n.strip().lower(): c for c, n in items.items()}
+
+    def code_of(raw):
+        raw = (raw or "").strip()
+        if not raw:
+            return ""
+        code = raw.split(" — ")[0].strip()
+        return code if code in items else by_name.get(raw.lower(), code)
+
+    pairs, seen = [], set()
+    for n, (d_raw, a_raw) in enumerate(zip(form.getlist("split_direct"), form.getlist("split_allocated")), 1):
+        d, a = code_of(d_raw), code_of(a_raw)
+        if not d and not a:
+            continue
+        if not d or not a:
+            errors["split_pairs"] = f"Розподіл прямих витрат, рядок {n}: вкажіть обидві статті"
+            continue
+        if d not in items or a not in items:
+            errors["split_pairs"] = f"Розподіл прямих витрат, рядок {n}: статті «{d if d not in items else a}» немає в довіднику"
+            continue
+        if d == a:
+            errors["split_pairs"] = f"Розподіл прямих витрат, рядок {n}: пряма стаття й стаття з розподілом мають різнитися"
+            continue
+        if d in seen:
+            errors["split_pairs"] = f"Розподіл прямих витрат: пряма стаття {d} указана двічі"
+            continue
+        seen.add(d)
+        pairs.append({"direct": d, "allocated": a})
+    if not any(p["direct"] == q["allocated"] for p in pairs for q in pairs) and pairs != (app_settings.get("split_pairs") or []):
+        changes["split_pairs"] = pairs
+    elif any(p["direct"] == q["allocated"] for p in pairs for q in pairs):
+        errors["split_pairs"] = "Розподіл прямих витрат: стаття не може бути водночас прямою в одній парі й з розподілом в іншій"
+
+
 def _parse_cfo_rules(form, changes, errors):
     """Таблиця правил фіндиректора й список статей із форми вкладки «Погодження»."""
     table = {}
@@ -432,6 +477,8 @@ def admin_settings(*, context):
         errors["cfo_threshold_usd"] = "Вкажіть поріг фіндиректора — суму в USD, більшу за 0"
     if tab == "approval" and "cfo_rules_sent" in request.form:
         _parse_cfo_rules(request.form, changes, errors)
+    if tab == "split" and "split_pairs_sent" in request.form:
+        _parse_split_pairs(request.form, changes, errors)
     if tab == "reconcile" and "ok_until_sent" in request.form:
         _parse_ok_until(request.form, changes, errors)
     if "payments_since" in changes:

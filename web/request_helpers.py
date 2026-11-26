@@ -11,6 +11,7 @@ from flask import flash, g, request, url_for
 import app_settings
 import budget
 import cfo_rules
+import expense_split
 import clock
 import counterparties
 import currencies
@@ -431,6 +432,8 @@ def submit_requirements(req):
         if need:
             errors["documents"] = ("Перед відправкою додайте документ — рахунок, договір чи акт" + tail +
                                    ". Збережіть заявку й прикріпіть файл у блоці «Документи» нижче.")
+    if problem := expense_split.check_complete(req):
+        errors["split"] = problem
     over = budget_over(req)
     if over and app_settings.get("budget_over_mode") == "block":
         errors["amount"] = ("Сума заявки " + budget.over_text(over) + ". Зменшіть суму, змініть статтю чи місяць оплати "

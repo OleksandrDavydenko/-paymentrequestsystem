@@ -9,6 +9,7 @@ from flask import Blueprint, abort, flash, g, redirect, render_template, request
 
 import app_settings
 import budget
+import expense_split
 import clock
 import counterparties
 import departments
@@ -245,6 +246,18 @@ def request_card(request_id=None, *, context):
             req["lines"] = existing.get("lines") or []  # блоку рахунків немає — збережене лишається як є
         if use_invoices and "lines" not in errors and (problem := lines_error(req)):
             errors["lines"] = problem
+        # Розподіл прямої витрати між відділами (expense_split): лише непряма витрата з прямою статтею з пари
+        if expense_split.FORM_SENT in request.form:
+            req["split"], split_error = expense_split.parse(request.form)
+        else:  # форма без блоку розподілу (API, старі сторінки) — збережене лишається
+            req["split"], split_error = list(existing.get("split") or []), None
+        if not expense_split.applies(req):
+            req["split"], split_error = [], None
+        split_error = split_error or expense_split.check_rows(req)
+        if split_error:
+            errors["split"] = split_error
+        if not req["split"]:
+            req.pop("split", None)
         if not errors and request.form.get("action") == "submit":
             budget_snapshot(req)  # залишок бюджету статті на момент відправки — для правила й картки заявки
             errors = submit_requirements(req)  # вимоги з налаштувань — лише при відправці; зберегти можна й без них
@@ -304,7 +317,7 @@ def request_card(request_id=None, *, context):
 
 
 # Кроки нових дизайнів картки й поля кожного: помилка сервера відкриває крок із першою помилкою
-STEP_FIELDS = {"start": ("department", "payment_kind"), "who": ("counterparty_id", "expense_code"), "lines": ("lines",),
+STEP_FIELDS = {"start": ("department", "payment_kind"), "who": ("counterparty_id", "expense_code", "split"), "lines": ("lines",),
                "amount": ("amount", "currency", "pay_date", "payment_form", "organization_id", "payer", "accountant_type"),
                "note": ("note",), "review": ("documents",)}
 
@@ -378,6 +391,8 @@ def _render_card(req, existing, errors, user, roles, budget_items, contractor_li
         parallel=req.get("route_mode") == "parallel",
         head_names=", ".join(h["name"] or h["email"] for h in dept_settings.approvers(req.get("department"))),
         dept_options=org_structure.request_departments_of(user["oid"]),
+        # Розподіл прямої витрати між відділами (expense_split): пари статей, профітцентри, відділи — для блоку у формі
+        split_cfg=expense_split.form_config(req),
         head_approves=dept_settings.head_approves(req.get("department")),
         lines_required=lines_required(req),
         invoices_on=use_invoices,

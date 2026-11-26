@@ -1,0 +1,55 @@
+{# Розподіл прямої витрати між відділами (expense_split.py, static/expense-split.js). Блок з'являється, коли в непрямій
+   витраті вибрано пряму статтю з пари «пряма → з розподілом» (Налаштування → Заявка й погодження → Розподіл прямих
+   витрат): для непрофітцентру — обов'язково, для профітцентру — кнопкою «Розділити між відділами». #}
+{% macro split_row(r) -%}
+<tr class="split-row">
+  <td data-label="Відділ"><select name="split_department" class="split-dep" aria-label="Відділ">
+    <option value="">— відділ —</option>
+    {% for d in split_cfg.departments %}<option value="{{ d.code }}" {{ 'selected' if r and r.department == d.code }}>{{ d.name }}{{ ' · профітцентр' if d.code in split_cfg.pc }}</option>{% endfor %}
+    {% if r and r.department and r.department not in split_cfg.departments | map(attribute='code') | list %}<option value="{{ r.department }}" selected>{{ dept_name(r.department) }}</option>{% endif %}
+  </select></td>
+  <td data-label="Стаття"><select name="split_item" class="split-item" aria-label="Стаття" data-selected="{{ r.expense_code if r else '' }}">
+    {% if r and r.expense_code %}<option value="{{ r.expense_code }}" selected>{{ split_cfg.names.get(r.expense_code, r.expense_code) }}</option>{% endif %}
+  </select></td>
+  <td data-label="Сума" class="num"><input type="text" inputmode="decimal" name="split_amount" class="split-amount" autocomplete="off"
+         placeholder="0,00" value="{{ r.amount if r and r.amount is not none else '' }}" aria-label="Сума"></td>
+  <td class="split-bud" data-label="Бюджет"><span class="split-rest muted"></span></td>
+  <td class="split-del"><button type="button" class="btn-link split-remove" title="Прибрати рядок" aria-label="Прибрати рядок">✕</button></td>
+</tr>
+{%- endmacro %}
+{% if editable %}
+<div class="split-block {{ 'invalid' if errors.split }}" id="split-block" hidden
+     data-department="{{ req.department or '' }}" data-open="{{ '1' if req.split else '' }}"
+     data-budget-url="{{ url_for('budget.remaining') if budget_hint_on() else '' }}" data-id="{{ req.id or '' }}">
+  <input type="hidden" name="split_sent" value="1" id="split-sent" disabled>
+  <div class="split-head">
+    <strong>Розподілити між відділами</strong>
+    <span class="split-why muted" id="split-why"></span>
+  </div>
+  <div class="split-offer" id="split-offer" hidden>
+    <button type="button" class="btn btn-sm" id="split-open">Розділити між відділами</button>
+    <span class="muted">— якщо купуєте й для інших відділів; інакше вся сума — на ваш відділ</span>
+  </div>
+  <div class="split-body" id="split-body" hidden>
+    <div class="table-wrap">
+    <table class="lines stack split-table">
+      <thead><tr><th>Відділ</th><th>Стаття</th><th class="num">Сума</th><th>Бюджет</th><th></th></tr></thead>
+      <tbody id="split-rows">{% for r in req.split or [] %}{{ split_row(r) }}{% endfor %}</tbody>
+    </table>
+    </div>
+    <template id="split-row-tpl">{{ split_row(none) }}</template>
+    <div class="split-foot">
+      <button type="button" class="btn btn-sm" id="split-add">+ Додати відділ</button>
+      <span class="split-total" id="split-total"></span>
+      <span class="spacer"></span>
+      <button type="button" class="btn-link" id="split-cancel">Не розподіляти</button>
+    </div>
+    <p class="field-hint split-rule">Пряму статтю можна віднести лише на профітцентр; для інших відділів — її варіант з розподілом.</p>
+  </div>
+  {{ err('split') }}
+</div>
+<script type="application/json" id="split-data">{{ split_cfg | tojson }}</script>
+<script src="{{ url_for('static', filename='expense-split.js') }}" defer></script>
+{% else %}
+{% include "request/_split_view.html" %}
+{% endif %}

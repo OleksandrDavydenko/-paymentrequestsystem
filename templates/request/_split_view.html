@@ -1,0 +1,20 @@
+{# Розподіл заявки між відділами — перегляд (картка, «До оплати»). Поки обробка 1С не розкладає рядки в платіжку сама,
+   бухгалтер вносить їх у розшифровку вручну. #}
+{% if req.split %}
+<div class="split-view">
+  <div class="rv-label">Розподіл між відділами</div>
+  <div class="table-wrap">
+  <table class="lines stack split-table">
+    <thead><tr><th>Відділ</th><th>Стаття</th><th class="num">Сума</th></tr></thead>
+    <tbody>
+      {% for r in req.split %}
+      <tr><td data-label="Відділ">{{ dept_name(r.department) }}</td>
+        <td data-label="Стаття"><strong>{{ r.expense_code }}</strong> {{ expense_title(r.expense_code) or '' }}</td>
+        <td class="num" data-label="Сума">{{ r.amount | money }} {{ req.currency }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% if req.status in ('to_pay', 'paid') %}<p class="field-hint">У платіжці 1С внесіть ці рядки в розшифровку: відділ, стаття й сума кожного рядка.</p>{% endif %}
+</div>
+{% endif %}

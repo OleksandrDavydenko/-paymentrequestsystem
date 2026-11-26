@@ -72,8 +72,11 @@ def decide(req, cfg=None):
     cfg = cfg or get()
     if cfg["new_counterparty"] and counterparties.is_pending(req.get("counterparty_id")):
         return True, "Потрібне погодження фіндиректора: контрагента ще немає в 1С (правило «новий контрагент»)"
-    if req.get("expense_code") and req["expense_code"] in cfg["expense_codes"]:
-        return True, (f"Потрібне погодження фіндиректора: стаття витрат {req['expense_code']} — у списку статей, "
+    import expense_split  # стаття заявки й статті рядків розподілу між відділами
+    codes = list(dict.fromkeys([req.get("expense_code")] + [s["expense_code"] for s in expense_split.spend_rows(req)]))
+    hit = next((c for c in codes if c and c in cfg["expense_codes"]), None)
+    if hit:
+        return True, (f"Потрібне погодження фіндиректора: стаття витрат {hit} — у списку статей, "
                       "які погоджує фіндиректор")
     role = wf.accountant_role(req)
     row = cfg["rows"].get(role) or {"mode": "always", "limit": 0}

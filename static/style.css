@@ -1686,3 +1686,22 @@ button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
 .budget-viewers { width: 100%; margin: 4px 0 6px; }
 .budget-viewers td, .budget-viewers th { padding: 6px 10px; vertical-align: top; }
 .budget-viewers .bv-why { color: var(--muted); font-size: 12px; }
+
+/* Розподіл прямої витрати між відділами (форма заявки, картка) */
+.split-block { margin: 4px 0 14px; padding: 12px 14px; border: 1px solid var(--primary-200); border-radius: 8px; background: var(--primary-50); }
+.split-block.invalid { border-color: var(--bad-line); background: var(--bad-faint); }
+.split-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 10px; margin-bottom: 6px; }
+.split-offer { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.split-table { width: 100%; margin: 4px 0; background: var(--card); }
+.split-table select, .split-table input { width: 100%; box-sizing: border-box; }
+.split-table td.num input { text-align: right; max-width: 140px; }
+.split-table .split-bud { font-size: 12px; white-space: nowrap; }
+.split-table .split-del { width: 28px; text-align: center; }
+.split-rest.is-bad { color: var(--bad-ink); font-weight: 600; }
+.split-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; }
+.split-foot .spacer { flex: 1; }
+.split-total { font-weight: 600; font-variant-numeric: tabular-nums; }
+.split-total.is-ok { color: var(--ok-ink); }
+.split-total.is-bad { color: var(--bad-ink); }
+.split-rule { margin: 6px 0 0; }
+.split-view { margin: 10px 0; }

@@ -22,6 +22,7 @@ TABS = [
     ("approval", "Погодження"),
     ("request", "Заявка"),
     ("budget", "Бюджет"),
+    ("split", "Розподіл прямих витрат"),
     ("payment", "Оплата й готівка"),
     ("reconcile", "Звірка з 1С"),
     ("onec_api", "API для 1С"),
@@ -35,7 +36,7 @@ TAB_NAMES = dict(TABS)
 # Вкладки сторінки «Налаштування»: споріднені розділи — на одній вкладці, один під одним. Розділ лишається
 # окремою формою зі своїм кодом (?tab=… відкриває вкладку з ним), тож збереження одного не чіпає сусідній.
 PAGES = [
-    ("process", "Заявка й погодження", ("request", "approval", "budget")),
+    ("process", "Заявка й погодження", ("request", "approval", "budget", "split")),
     ("payment", "Оплата й готівка", ("payment",)),
     ("notify", "Сповіщення", ("notify",)),
     ("onec", "Інтеграція з 1С", ("reconcile", "onec_api", "budget_sync")),
@@ -283,6 +284,13 @@ def _budget_sync_minutes():
     return BUDGET_SYNC_MINUTES
 
 
+def _fmt_split_pairs(value):
+    """«Меблі (прямий) → Меблі; …» — пари статей розподілу для журналу змін."""
+    import expense_items
+    name = lambda c: expense_items.get_name(c) or c  # noqa: E731
+    return "; ".join(f"{name(p.get('direct'))} → {name(p.get('allocated'))}" for p in value or []) or "жодної пари"
+
+
 def _budget_group_departments():
     """Відділи довідника (і вже вибрані, яких у ньому більше немає): {код: назва} за назвою — для «бюджет за групами»."""
     import app_settings
@@ -324,6 +332,9 @@ _LIST = [
             _budget_group_departments, fmt=_fmt_budget_group_departments),
     # «Інтеграція з 1С → Бюджет з 1С»: як часто PayDesk перечитує план і факт з Power BI (видно, коли бюджет увімкнено)
     Setting("budget_sync_minutes", "Бюджет з 1С: оновлювати кожні", "budget_sync", "choice", "30", _budget_sync_minutes),
+    # ---- Розподіл прямої витрати між відділами (expense_split.py): пари «пряма стаття → стаття з розподілом»
+    Setting("split_pairs", "Розподіл прямих витрат: пари статей", "split", "json", [], managed=True,
+            fmt=_fmt_split_pairs),
     # ---- Заявка
     # Номер заявки для людей (request_numbers.py): префікс і нулі — лише показ, у базі номер той самий
     Setting("request_prefix", "Префікс номера заявки", "request", "text", ""),

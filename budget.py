@@ -469,9 +469,15 @@ def target_month(pay_date=None):
 
 
 def request_month(row):
-    """Місяць, у якому заявка витрачає бюджет: оплачена — місяць оплати, інакше — target_month(дата оплати)."""
-    if row.get("status") == "paid" and row.get("paid_at"):
-        return ym(row["paid_at"])
+    """Місяць, у якому заявка витрачає бюджет: оплачена — місяць оплати, інакше — target_month(дата оплати).
+    row — заявка (дата оплати — з історії) або легкий рядок (paid_at)."""
+    if row.get("status") == "paid":
+        paid_at = row.get("paid_at")
+        if not paid_at:
+            import workflow as wf
+            paid_at = (wf.paid_entry(row) or {}).get("at")
+        if paid_at:
+            return ym(paid_at)
     return target_month(row.get("pay_date"))
 
 
@@ -503,21 +509,25 @@ def in_fact_docs(month):
 
 
 def _pending(guid, item_code, month, exclude_id):
-    """Заявки PayDesk у дорозі: (сума USD, кількість, заявки без курсу)."""
+    """Заявки PayDesk у дорозі: (сума USD, кількість, заявки без курсу). Заявка з розподілом між відділами
+    рахується своїми рядками (expense_split.spend_rows): у бюджет кожного відділу й статті — сума його рядка."""
+    import expense_split
     import payments
     import rates
     import storage as db
     owner = _index()["owners"].get(item_code)
     start = date(int(month[:4]), int(month[5:7]), 1)
     cand = []
-    for r in db.budget_rows(item_code, start):
+    for r in db.budget_requests(start):
         if exclude_id and r["id"] == exclude_id:
             continue
         if request_month(r) != month:
             continue
-        if not owner and (departments.guid_of(r.get("department")) or "").upper() != guid:
+        rows = [s for s in expense_split.spend_rows(r) if s["expense_code"] == item_code
+                and (owner or (departments.guid_of(s["department"]) or "").upper() == guid)]
+        if not rows:
             continue
-        cand.append(r)
+        cand.append({**r, "amount": sum((Decimal(str(s["amount"] or 0)) for s in rows), Decimal("0"))})
     paid = [r["id"] for r in cand if r["status"] == "paid"]
     if paid:
         try:
@@ -569,16 +579,38 @@ def remaining(dept_code, item_code, pay_date=None, exclude_id=None):
 def check(req):
     """Знімок бюджету для заявки (під час відправки й для форми): None — статті немає в бюджеті відділу;
     {"error": …} — бюджет не вдалося перевірити; інакше remaining() + сума заявки в USD і перевищення.
+    Заявка з розподілом між відділами — {"split": True, "rows": [знімок кожного рядка], "over": …}.
     Суми — рядками (знімок зберігається в заявці)."""
+    if req.get("split"):
+        return _check_split(req)
+    return _check_one(req, req.get("department"), req.get("expense_code"), req.get("amount"))
+
+
+def _check_split(req):
+    import expense_split
+    rows = []
+    for s in expense_split.spend_rows(req):
+        snap = _check_one(req, s["department"], s["expense_code"], s["amount"])
+        if snap and snap.get("error"):
+            return snap
+        if snap:
+            rows.append(snap)
+    if not rows:
+        return None
+    return {"split": True, "rows": rows, "over": any(r["over"] for r in rows),
+            "at": clock.now().isoformat(timespec="seconds")}
+
+
+def _check_one(req, department, item, amount):
     import rates
     try:
-        info = remaining(req.get("department"), req.get("expense_code"), req.get("pay_date"), req.get("id"))
+        info = remaining(department, item, req.get("pay_date"), req.get("id"))
     except Exception as e:
         logger.exception("budget: check")
         return {"error": f"{type(e).__name__}: {e}"}
     if info is None:
         return None
-    usd, why = rates.to_usd(req.get("amount"), req.get("currency")) if req.get("amount") not in (None, "") \
+    usd, why = rates.to_usd(amount, req.get("currency")) if amount not in (None, "") \
         else (None, "не вказано суму")
     over = usd is not None and usd > info["remaining"]
     out = {k: (str(v) if isinstance(v, Decimal) else v) for k, v in info.items()}
@@ -590,7 +622,11 @@ def check(req):
 
 
 def over_text(snap):
-    """«понад залишок бюджету статті 04.001 на листопад 2026 на 45,30 USD (план 250,00, факт 120,00, у заявках 80,00)»."""
+    """«понад залишок бюджету статті 04.001 на листопад 2026 на 45,30 USD (план 250,00, факт 120,00, у заявках 80,00)»;
+    для розподілу — по кожному рядку понад залишок."""
+    if snap.get("split"):
+        return "; ".join(over_text(r) for r in snap["rows"] if r.get("over"))
+
     def f(v):
         return money(v)
     return (f"понад залишок бюджету статті {snap['item']} на {MONTHS[int(snap['month'][5:7]) - 1].lower()} "

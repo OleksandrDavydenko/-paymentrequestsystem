@@ -85,17 +85,16 @@ def payment_candidate_ids(paid_since):
     return _ids_where(ok)
 
 
-def budget_rows(expense_code, paid_since):
-    """Легкі рядки заявок зі статтею, що витрачають бюджет: у роботі (погодження, «До оплати») й оплачені з paid_since."""
+def budget_requests(paid_since):
+    """Заявки, що витрачають бюджет (повністю — з рядками розподілу): у роботі (погодження, «До оплати») й оплачені
+    з paid_since."""
     def ok(r):
-        if r.get("expense_code") != expense_code:
-            return False
         if r["status"] in derive.ACTIVE_STATUSES:
             return True
         paid = wf.paid_entry(r) if r["status"] == "paid" else None
         return bool(paid and paid["at"].date() >= paid_since)
     with _lock:
-        return [derive.light(r) for r in _REQUESTS.values() if ok(r)]
+        return [deepcopy(r) for r in _REQUESTS.values() if ok(r)]
 
 
 def last_accountant_type(email):
