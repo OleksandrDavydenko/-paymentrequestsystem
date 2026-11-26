@@ -145,6 +145,12 @@ def order(req, base_url=""):
                              code=(cp or {}).get("code") or None, in_1c=bool(cp) and cp.get("status") == "onec"),
         "expense_item": {"code": req.get("expense_code"), "name": expense_items.get_name(req.get("expense_code"))},
         "department": _ref(departments.guid_of(dep), code=dep, name=departments.get_name(dep) if dep else None),
+        # Розподіл між відділами (expense_split): рядки розшифровки платіжки — відділ, стаття, сума; без розподілу — null
+        "allocation": [{"department": _ref(departments.guid_of(s.get("department")), code=s.get("department"),
+                                           name=departments.get_name(s.get("department")) if s.get("department") else None),
+                        "expense_item": {"code": s.get("expense_code"), "name": expense_items.get_name(s.get("expense_code"))},
+                        "amount": f"{s['amount']:.2f}" if s.get("amount") is not None else None}
+                       for s in req.get("split") or []] or None,
         "invoices": [{"number": ln.get("invoice"), "amount": f"{ln['amount']:.2f}" if ln.get("amount") is not None else None,
                       "currency": ln.get("currency"), "deal": ln.get("deal") or None} for ln in req.get("lines") or []],
         "purpose": purpose(req),

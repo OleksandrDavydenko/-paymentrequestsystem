@@ -66,12 +66,16 @@
     }
   }
 
+  // Суму розподілено між відділами (expense-split.js) — залишок показано в кожному рядку, а не тут
+  const splitOn = () => { const s = $('split-block'), b = $('split-body'); return !!s && s.dataset.active === '1' && !!b && !b.hidden; };
+
   function refresh() {
     const p = params();
-    const key = JSON.stringify(p);
+    const split = splitOn();
+    const key = JSON.stringify(p) + split;
     if (key === lastKey) return;
     lastKey = key;
-    if (!p.item) { hide(); return; }
+    if (!p.item || split) { hide(); return; }
     const my = ++seq;
     fetch(box.dataset.url + '?' + new URLSearchParams(p), { headers: { 'Accept': 'application/json' } })
       .then(r => r.ok ? r.json() : Promise.reject(new Error('HTTP ' + r.status)))

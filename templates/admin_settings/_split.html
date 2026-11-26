@@ -1,0 +1,53 @@
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="split-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="split">
+  <input type="hidden" name="split_pairs_sent" value="1">
+  <div class="toolbar"><h2 style="margin:0">Розподіл прямих витрат між відділами</h2>
+    {% if split_pairs %}<span class="badge green">пар: {{ split_pairs | length }}</span>{% else %}<span class="badge grey">пар немає — розподіл не діє</span>{% endif %}</div>
+  <p class="muted" style="margin-top:0">Пряму статтю можна віднести лише на профітцентр. Коли в непрямій витраті вибирають
+    пряму статтю з пари, заявку можна розподілити між відділами (рядки «відділ + стаття + сума»): для відділу, що не є
+    профітцентром, — обов'язково, профітцентр — за бажанням. У рядку — лише статті пари: пряма — тільки на профітцентр,
+    з розподілом — на будь-який відділ. Позапланові статті (одразу на «Інше») сюди не додавайте — вони без розподілу.
+    Поки обробка 1С не доопрацьована, рядки розподілу бухгалтер вносить у платіжку вручну (видно в картці заявки).</p>
+
+  <div class="table-wrap">
+  <table class="stack split-pairs">
+    <thead><tr><th>Пряма стаття (на відділ рядка)</th><th>Стаття з розподілом</th><th></th></tr></thead>
+    <tbody id="split-pairs-rows">
+      {% for p in split_pairs %}
+      <tr>
+        <td data-label="Пряма стаття"><input type="text" name="split_direct" list="split-items" value="{{ p.direct }}{{ ' — ' ~ p.direct_name if p.direct_name }}" autocomplete="off" placeholder="Код або назва статті"></td>
+        <td data-label="З розподілом"><input type="text" name="split_allocated" list="split-items" value="{{ p.allocated }}{{ ' — ' ~ p.allocated_name if p.allocated_name }}" autocomplete="off" placeholder="Код або назва статті"></td>
+        <td><button type="button" class="btn-link split-pair-remove" title="Прибрати пару" aria-label="Прибрати пару">✕</button></td>
+      </tr>
+      {% endfor %}
+      {% for _ in range(1 if split_pairs else 3) %}
+      <tr>
+        <td data-label="Пряма стаття"><input type="text" name="split_direct" list="split-items" autocomplete="off" placeholder="Код або назва статті"></td>
+        <td data-label="З розподілом"><input type="text" name="split_allocated" list="split-items" autocomplete="off" placeholder="Код або назва статті"></td>
+        <td><button type="button" class="btn-link split-pair-remove" title="Прибрати пару" aria-label="Прибрати пару">✕</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <datalist id="split-items">{% for i in split_items %}<option value="{{ i.code }} — {{ i.name }}"></option>{% endfor %}</datalist>
+  <p><button type="button" class="btn btn-sm" id="split-pair-add">+ Додати пару</button></p>
+  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+</form>
+<script>
+(function () {  // додати / прибрати рядок пари
+  const rows = document.getElementById('split-pairs-rows');
+  document.getElementById('split-pair-add').addEventListener('click', () => {
+    const tr = rows.lastElementChild.cloneNode(true);
+    tr.querySelectorAll('input').forEach(i => { i.value = ''; });
+    rows.appendChild(tr);
+    tr.querySelector('input').focus();
+  });
+  rows.addEventListener('click', e => {
+    const b = e.target.closest('.split-pair-remove');
+    if (!b) return;
+    const tr = b.closest('tr');
+    if (rows.children.length > 1) tr.remove(); else tr.querySelectorAll('input').forEach(i => { i.value = ''; });
+  });
+})();
+</script>

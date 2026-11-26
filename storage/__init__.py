@@ -78,9 +78,9 @@ def payment_candidate_ids(paid_since):
     return _store().payment_candidate_ids(paid_since)
 
 
-def budget_rows(expense_code, paid_since):
-    """Заявки зі статтею, що витрачають бюджет (залишок у заявці, budget.py): у роботі й оплачені з paid_since."""
-    return _store().budget_rows(expense_code, paid_since)
+def budget_requests(paid_since):
+    """Заявки, що витрачають бюджет (залишок у заявці, budget.py): у роботі й оплачені з paid_since — повністю."""
+    return _store().budget_requests(paid_since)
 
 
 def invoice_usage(cp_id, numbers, exclude_id=None):

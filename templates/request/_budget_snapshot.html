@@ -1,12 +1,17 @@
-{# Бюджет статті на момент відправки заявки (знімок req.budget_check, budget.check) — для погоджувачів і автора. #}
+{# Бюджет статті на момент відправки заявки (знімок req.budget_check, budget.check) — для погоджувачів і автора.
+   Заявка з розподілом між відділами — знімок кожного рядка (snap.split, snap.rows). #}
 {% set snap = req.budget_check %}
-{% if budget_on() and snap and not snap.error and req.status not in ('draft',) %}
-<div class="budget-hint {{ 'is-over' if snap.over else '' }}">
-  <div class="budget-hint-title">Бюджет {{ snap.month_title }} · відділ «{{ snap.dept_name }}»
+{% macro one(s, label) -%}
+<div class="budget-hint {{ 'is-over' if s.over else '' }}">
+  <div class="budget-hint-title">Бюджет {{ s.month_title }} · відділ «{{ s.dept_name }}»{% if label %} · {{ label }}{% endif %}
     <span class="muted" style="font-weight:400">— на момент відправки{% if snap.at %}, {{ snap.at[8:10] }}.{{ snap.at[5:7] }} {{ snap.at[11:16] }}{% endif %}</span></div>
-  <div class="budget-hint-nums">План {{ snap.plan | bmoney }} · факт 1С {{ snap.fact | bmoney }} · у заявках {{ snap.pending | bmoney }}{% if snap.pending_count %} ({{ snap.pending_count }}){% endif %}</div>
-  <div class="budget-hint-rest"><span>{{ 'Перевитрата' if snap.remaining | float < 0 else 'Залишок' }} <strong>{{ snap.remaining | bmoney }} USD</strong></span>
-    {% if snap.amount_usd %}<span class="budget-hint-amount">заявка ≈ {{ snap.amount_usd | bmoney }} USD</span>{% endif %}</div>
-  {% if snap.over %}<div class="budget-hint-over">⚠ Заявка понад залишок бюджету статті на {{ snap.over_by | bmoney }} USD</div>{% endif %}
+  <div class="budget-hint-nums">План {{ s.plan | bmoney }} · факт 1С {{ s.fact | bmoney }} · у заявках {{ s.pending | bmoney }}{% if s.pending_count %} ({{ s.pending_count }}){% endif %}</div>
+  <div class="budget-hint-rest"><span>{{ 'Перевитрата' if s.remaining | float < 0 else 'Залишок' }} <strong>{{ s.remaining | bmoney }} USD</strong></span>
+    {% if s.amount_usd %}<span class="budget-hint-amount">{{ 'рядок' if label else 'заявка' }} ≈ {{ s.amount_usd | bmoney }} USD</span>{% endif %}</div>
+  {% if s.over %}<div class="budget-hint-over">⚠ {{ 'Рядок' if label else 'Заявка' }} понад залишок бюджету статті на {{ s.over_by | bmoney }} USD</div>{% endif %}
 </div>
+{%- endmacro %}
+{% if budget_on() and snap and not snap.error and req.status not in ('draft',) %}
+{% if snap.split %}{% for s in snap.rows %}{{ one(s, s.item ~ ' ' ~ (s.item_name or '')) }}{% endfor %}
+{% else %}{{ one(snap, '') }}{% endif %}
 {% endif %}
