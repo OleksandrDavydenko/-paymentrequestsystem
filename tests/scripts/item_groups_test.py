@@ -93,14 +93,26 @@ c.post("/admin/settings", data={"tab": "split", "add_group_sent": "1", "add_allo
 check("admin: manual add — 1C unplanned cannot be direct", len(app_settings.get("item_groups")) == 3)
 app_settings.set("item_groups", [], "t")
 html = c.get("/admin/settings?tab=split&find=1", follow_redirects=True).get_data(as_text=True)
-check("admin: ambiguous items get role selects", 'id="ig-ambiguous"' in html and 'name="amb_role"' in html)
-html = c.post("/admin/settings", data={"tab": "split", "amb_sent": "1", "amb_base": "таксі", "amb_code": ["B1", "B2", "B3"],
-                                       "amb_role": ["allocated", "allocated", "skip"]}, follow_redirects=True).get_data(as_text=True)
-check("admin: ambiguous — repeated role rejected", app_settings.get("item_groups") == [] and "залиште одну" in html)
-c.post("/admin/settings", data={"tab": "split", "amb_sent": "1", "amb_base": "таксі", "amb_code": ["B1", "B2", "B3"],
-                                "amb_role": ["allocated", "direct", "skip"]})
-check("admin: ambiguous — group assembled, «not included» skipped",
-      app_settings.get("item_groups") == [{"allocated": "B1", "direct": "B2", "unplanned": ""}])
+check("admin: ambiguous list is information only", 'id="ig-ambiguous"' in html and 'name="amb_role"' not in html
+      and "оренда склад" in html)
+check("admin: empty role of a suggestion is an input", 'name="f_direct" list="split-items"' in html)
+# «корпоративи» (K1 + K2 позапланова): дописати пряму вручну — S1 (будь-яка стаття з довідника для перевірки)
+sug = [g["base"] for g in item_groups.suggest()[0]]
+def found_form(direct_for_korp):
+    data = {"tab": "split", "found_sent": "1", "found": "корпоративи", "f_base": [], "f_allocated": [], "f_direct": [],
+            "f_unplanned": []}
+    for g in item_groups.suggest()[0]:
+        data["f_base"].append(g["base"])
+        for r in item_groups.ROLES:
+            data[f"f_{r}"].append(g[r] or (direct_for_korp if g["base"] == "корпоративи" and r == "direct" else ""))
+    return c.post("/admin/settings", data=data, follow_redirects=True).get_data(as_text=True)
+app_settings.set("item_groups", [{"allocated": "R1", "direct": "R2", "unplanned": "R3"}], "t")
+html = found_form("R2")
+check("admin: written-in item already in a group rejected", len(app_settings.get("item_groups")) == 1
+      and "указана двічі" in html)
+found_form("S1 — Оренда Склад (3800)")
+check("admin: suggestion added with the written-in item", app_settings.get("item_groups")[-1]
+      == {"allocated": "K1", "direct": "S1", "unplanned": "K2"})
 c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1"})
 check("admin: removing all rows from the table clears groups", app_settings.get("item_groups") == [])
 c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1", "group_allocated": ["R1", "A1"],

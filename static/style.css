@@ -1719,9 +1719,7 @@ button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
 .ig-add-field { display: flex; flex-direction: column; gap: 4px; }
 .ig-add-field > span { font-weight: 600; }
 .ig-role-hint.is-bad { color: var(--bad-ink); }
-.ig-amb { border-top: 1px solid var(--border, #e3e6ea); padding: 10px 0; display: flex; flex-direction: column; gap: 6px; }
-.ig-amb-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-.ig-amb .btn { align-self: flex-start; }
+.ig-found-add { width: 100%; min-width: 160px; }
 .split-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; }
 .split-foot .spacer { flex: 1; }
 .split-total { font-weight: 600; font-variant-numeric: tabular-nums; }

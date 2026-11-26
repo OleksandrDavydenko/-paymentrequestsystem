@@ -78,16 +78,20 @@
   {% if item_groups_found %}
   <p class="muted" style="margin-top:0">Статті з однаковою назвою (без дужок у кінці), яких ще немає в групах. Роль:
     позапланова — база «Не розподіляти» або «поза план» у назві, пряма — «(прямий)», решта — з розподілом. Позначте
-    ті, що підходять, і додайте; решту можна більше не пропонувати.</p>
+    ті, що підходять, і додайте; решту можна більше не пропонувати. Порожню роль можна дописати вручну — код або назва
+    статті в полі «додати статтю».</p>
   <div class="table-wrap">
   <table class="stack split-pairs">
     <thead><tr><th></th><th>Група</th>{% for r in GROUP_ROLES %}<th>{{ ROLE_LABELS[r] | capitalize }}</th>{% endfor %}<th></th></tr></thead>
     <tbody>
       {% for f in item_groups_found %}
       <tr>
-        <td><input type="checkbox" name="found" value="{{ f.base }}" checked aria-label="Додати групу «{{ f.name }}»"></td>
+        <td><input type="checkbox" name="found" value="{{ f.base }}" checked aria-label="Додати групу «{{ f.name }}»">
+          <input type="hidden" name="f_base" value="{{ f.base }}"></td>
         <td data-label="Група"><strong>{{ f.name }}</strong></td>
-        {% for r in GROUP_ROLES %}<td data-label="{{ ROLE_LABELS[r] | capitalize }}">{% if f[r] %}<span class="bg-code">{{ f[r] }}</span> {{ f.names[r] }}{% else %}<span class="muted">—</span>{% endif %}</td>{% endfor %}
+        {% for r in GROUP_ROLES %}<td data-label="{{ ROLE_LABELS[r] | capitalize }}">{% if f[r] %}<input type="hidden" name="f_{{ r }}" value="{{ f[r] }}"><span class="bg-code">{{ f[r] }}</span> {{ f.names[r] }}
+          {%- else %}<input type="text" name="f_{{ r }}" list="split-items" autocomplete="off" class="ig-found-add"
+                 placeholder="додати статтю" aria-label="{{ ROLE_LABELS[r] | capitalize }} для «{{ f.name }}»">{% endif %}</td>{% endfor %}
         <td><button type="submit" class="btn-link" name="no_suggest" value="{{ f.base }}" formnovalidate>Не пропонувати</button></td>
       </tr>
       {% endfor %}
@@ -103,24 +107,10 @@
 <div class="card process-settings" id="ig-ambiguous">
   <h3 class="ig-sub" style="margin-top:0">Не вдалося розібрати: {{ item_groups_ambiguous | length }}</h3>
   <p class="muted" style="margin-top:0">Однакова назва, але на одну роль припадає кілька статей — найчастіше це різні
-    статті (наприклад, «(3800)» і «(9200)»). Якщо це варіанти однієї статті — виберіть роль кожної (зайвим — «не
-    входить») і натисніть «Додати групу».</p>
-  {% for a in item_groups_ambiguous %}
-  <form method="post" action="{{ url_for('admin.admin_settings') }}" class="ig-amb"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="tab" value="split"><input type="hidden" name="amb_sent" value="1">
-    <input type="hidden" name="amb_base" value="{{ a.base }}">
-    <div class="ig-amb-head"><strong>{{ a.base }}</strong> <span class="muted">({{ a.why }})</span></div>
-    {% for i in a['items'] %}
-    <label class="ig-amb-row"><input type="hidden" name="amb_code" value="{{ i.code }}">
-      <select name="amb_role" aria-label="Роль статті {{ i.code }}">
-        {% for r in GROUP_ROLES %}<option value="{{ r }}" {{ 'selected' if r == i.role }}>{{ ROLE_LABELS[r] }}</option>{% endfor %}
-        <option value="skip">не входить</option>
-      </select>
-      <span class="bg-code">{{ i.code }}</span> {{ i.name }}</label>
-    {% endfor %}
-    <button type="submit" class="btn btn-sm">Додати групу</button>
-  </form>
-  {% endfor %}
+    статті (наприклад, «(3800)» і «(9200)»). Якщо це все ж варіанти однієї статті — додайте групу в картці «Додати
+    групу вручну».</p>
+  <ul>{% for a in item_groups_ambiguous %}<li><strong>{{ a.base }}</strong> <span class="muted">({{ a.why }})</span>:
+    {% for i in a['items'] %}{{ i.code }} {{ i.name }} ({{ ROLE_LABELS[i.role] }}){{ ', ' if not loop.last }}{% endfor %}</li>{% endfor %}</ul>
 </div>
 {% endif %}
 {% endif %}

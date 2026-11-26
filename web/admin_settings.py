@@ -369,26 +369,14 @@ def _items_index():
 
 
 def _parse_add_group(form, changes, errors):
-    """Нова група вручну: картка «Додати групу вручну» (add_allocated / add_direct / add_unplanned) або «Додати групу»
-    в збігу «Не вдалося розібрати» (amb_code + amb_role, роль skip — стаття не входить). Додається до збережених."""
+    """Нова група вручну: картка «Додати групу вручну» (add_allocated / add_direct / add_unplanned). Додається до
+    збережених; при помилці введене лишається в полях (session)."""
     items, by_name = _items_index()
-    if "amb_sent" in form:
-        g, label = {r: "" for r in item_groups.ROLES}, f"Групи статей, «{form.get('amb_base', '')}»"
-        for code, role in zip(form.getlist("amb_code"), form.getlist("amb_role")):
-            if role not in item_groups.ROLES:
-                continue
-            if g[role]:
-                errors["item_groups"] = (f"{label}: дві статті з роллю «{item_groups.ROLE_LABELS[role]}» — залиште одну, "
-                                         "решті виберіть іншу роль або «не входить»")
-                return
-            g[role] = code
-    else:
-        g = {r: _item_code(form.get(f"add_{r}"), items, by_name) for r in item_groups.ROLES}
-        label = "Нова група статей"
-        session["ig_add_draft"] = {r: form.get(f"add_{r}") or "" for r in item_groups.ROLES}
+    g = {r: _item_code(form.get(f"add_{r}"), items, by_name) for r in item_groups.ROLES}
+    session["ig_add_draft"] = {r: form.get(f"add_{r}") or "" for r in item_groups.ROLES}
     current = [{r: x[r] for r in item_groups.ROLES} for x in item_groups.manual()]
     seen = {c for x in current for c in x.values() if c}
-    error = _check_group(g, items, seen, label)
+    error = _check_group(g, items, seen, "Нова група статей")
     if error:
         errors["item_groups"] = error
         return
@@ -444,15 +432,22 @@ def _parse_found(form, changes, errors):
         if base not in skip:
             changes["item_groups_skip"] = skip + [base]
         return
-    items = {i["code"]: i for i in expense_items.get_items()}
+    items, by_name = _items_index()
+    # Рядки пропозицій із форми: знайдені статті (приховані) й дописані вручну в порожню роль
+    rows = {}
+    bases = form.getlist("f_base")
+    cols = {r: form.getlist(f"f_{r}") for r in item_groups.ROLES}
+    for n, base in enumerate(bases):
+        rows[base] = {r: _item_code(cols[r][n] if n < len(cols[r]) else "", items, by_name) for r in item_groups.ROLES}
     current = [{r: g[r] for r in item_groups.ROLES} for g in item_groups.manual()]
     seen = {c for g in current for c in g.values() if c}
     added = []
     for base in form.getlist("found"):
-        g = by_base.get(base)
-        if not g:
+        if base not in by_base:
             continue
-        g = {r: g[r] for r in item_groups.ROLES}
+        found = by_base[base]
+        g = rows.get(base) or {r: found[r] for r in item_groups.ROLES}
+        g = {r: found[r] or g[r] for r in item_groups.ROLES}  # знайдене за назвою не підміняється
         error = _check_group(g, items, seen, f"Групи статей, «{base}»")
         if error:
             errors["item_groups"] = error
@@ -581,7 +576,7 @@ def admin_settings(*, context):
         _parse_item_groups(request.form, changes, errors)
     if tab == "split" and "found_sent" in request.form:
         _parse_found(request.form, changes, errors)
-    if tab == "split" and ("add_group_sent" in request.form or "amb_sent" in request.form):
+    if tab == "split" and "add_group_sent" in request.form:
         _parse_add_group(request.form, changes, errors)
     if tab == "reconcile" and "ok_until_sent" in request.form:
         _parse_ok_until(request.form, changes, errors)
@@ -599,7 +594,7 @@ def admin_settings(*, context):
     if changes.get("doc_extensions") == []:
         errors["doc_extensions"] = "Залиште дозволеним хоча б один формат документів"
     back = settings_url("approval" if legacy else tab)
-    if tab == "split" and ("found_sent" in request.form or "amb_sent" in request.form):  # лишитися в результатах пошуку
+    if tab == "split" and "found_sent" in request.form:  # лишитися в результатах пошуку
         back = url_for("admin.admin_settings", tab="split", find=1) + "#ig-found"
     elif tab == "split" and "add_group_sent" in request.form:
         back = url_for("admin.admin_settings", tab="split") + "#ig-add"
