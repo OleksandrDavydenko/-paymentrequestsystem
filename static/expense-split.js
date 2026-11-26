@@ -1,14 +1,16 @@
-/* Розподіл прямої витрати між відділами у формі заявки (expense_split.py, templates/request/_split.html).
-   Блок видно в непрямій витраті з прямою статтею або зі статтею з розподілом, що стоїть у парі «пряма → з розподілом»:
-   пряма стаття, відділ заявки не профітцентр — розподіл обов'язковий; інакше — кнопкою «Розділити між відділами».
-   У рядку — лише стаття пари: пряма — тільки на профітцентр, з розподілом — на її відділ-власника (так її розносить
-   1С). Сума рядків має дорівнювати сумі заявки. */
+/* Розподіл заявки між відділами у формі (expense_split.py, item_groups.py, templates/request/_split.html).
+   Блок видно в непрямій витраті зі статтею з групи кількох варіантів (з розподілом / пряма / позапланова) або з
+   прямою статтею без групи: пряма стаття, відділ заявки не профітцентр — розподіл обов'язковий; інакше — кнопкою
+   «Розділити між відділами». У рядку — варіант групи: пряма — тільки на профітцентр, з розподілом — на її
+   відділ-власника (так її розносить 1С), позапланова — на «Інше». Сума рядків має дорівнювати сумі заявки.
+   Під статтею — «Інші варіанти» групи: клік підставляє варіант (expensePicker.pick). */
 (function () {
   'use strict';
   const box = document.getElementById('split-block');
   if (!box) return;
   const cfg = JSON.parse((document.getElementById('split-data') || {}).textContent || '{}');
-  const pairs = cfg.pairs || {}, alloc = cfg.alloc || {}, ownersOf = cfg.owners || {}, names = cfg.names || {}, pc = new Set(cfg.pc || []);
+  const groups = cfg.groups || {}, ownersOf = cfg.owners || {}, names = cfg.names || {}, pc = new Set(cfg.pc || []);
+  const OTHER = cfg.other || '-', OTHER_NAME = cfg.other_name || 'Інше';
   const $ = id => document.getElementById(id);
   const why = $('split-why'), offer = $('split-offer'), body = $('split-body'), rowsEl = $('split-rows');
   const sent = $('split-sent'), totalEl = $('split-total'), tpl = $('split-row-tpl');
@@ -20,46 +22,48 @@
   const department = () => { const s = $('department'); return (s && s.value) || box.dataset.department || ''; };
   const contractor = () => { const r = document.querySelector('input[name=payment_kind]:checked'); return !!r && r.value === 'contractor'; };
   const deptName = code => { const d = (cfg.departments || []).find(x => x.code === code); return d ? d.name : code; };
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 
-  // Стаття заявки → пара: прямі статті, стаття з розподілом (або null — лише профітцентри), її власники.
-  // Обов'язково — лише для прямої статті у відділі, що не є профітцентром
+  // Стаття заявки → варіанти групи (direct / allocated / unplanned), власники статті з розподілом.
+  // Розподіл можливий для прямої статті або групи з кількох варіантів; обов'язковий — для прямої у непрофітцентрі
   function state() {
-    const code = item();
-    if (contractor()) return null;
-    let directs, allocated;
-    if (code in pairs) { directs = [code]; allocated = pairs[code] || null; }
-    else if (code in alloc) { directs = alloc[code]; allocated = code; }
-    else return null;
-    return { directs, allocated, owners: allocated ? (ownersOf[allocated] || []) : [],
-             required: code in pairs && !pc.has(department()) };
+    const code = item(), g = groups[code];
+    if (contractor() || !g) return null;
+    const list = [g.direct, g.allocated, g.unplanned].filter(Boolean);
+    if (!g.direct && list.length < 2) return null;
+    return { direct: g.direct || null, allocated: g.allocated || null, unplanned: g.unplanned || null, list,
+             owners: g.allocated ? (ownersOf[g.allocated] || []) : [],
+             required: code === g.direct && !pc.has(department()) };
   }
   // Відділи, на які можна віднести статтю з розподілом: її власники, а якщо власник невідомий — будь-який
   const allocDeps = st => !st.allocated ? [] : (st.owners.length ? st.owners : (cfg.departments || []).map(d => d.code));
-  // Статті, дозволені для відділу рядка (порожній відділ — усі статті пари)
+  // Статті, дозволені для відділу рядка (порожній відділ — усі варіанти групи)
   function allowedItems(st, dep) {
-    if (!dep) return [...st.directs, st.allocated].filter(Boolean);
-    return [...(pc.has(dep) ? st.directs : []), ...(allocDeps(st).includes(dep) ? [st.allocated] : [])];
+    if (!dep) return st.list;
+    if (dep === OTHER) return st.unplanned ? [st.unplanned] : [];
+    return [...(st.direct && pc.has(dep) ? [st.direct] : []), ...(allocDeps(st).includes(dep) ? [st.allocated] : [])];
   }
+  const label = (st, c) => `${names[c] || c} — ${c === st.allocated ? 'з розподілом' : c === st.unplanned ? 'позапланова' : 'пряма'}`;
 
-  // Відділи рядка: «Профітцентри» (пряма стаття) і «Власник статті …» (з розподілом); власник невідомий — «Інші
-  // відділи». Вибраний раніше відділ, якого в новому списку немає, скидається
-  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  // Відділи рядка: «Профітцентри — пряма стаття», «Власник статті …» (з розподілом; власник невідомий — «Інші
+  // відділи»), «Позапланова — на «Інше»». Вибраний раніше відділ, якого в новому списку немає, скидається
   function fillDeps(tr, st) {
     const sel = tr.querySelector('.split-dep');
     const was = sel.value || sel.dataset.selected || '';
     const deps = cfg.departments || [];
     const opt = d => `<option value="${esc(d.code)}">${esc(d.name)}</option>`;
-    const pcs = deps.filter(d => pc.has(d.code));
+    const pcs = st.direct ? deps.filter(d => pc.has(d.code)) : [];
     const ad = new Set(allocDeps(st));
-    const rest = deps.filter(d => ad.has(d.code) && (st.owners.length || !pc.has(d.code)));
+    const rest = deps.filter(d => ad.has(d.code) && (st.owners.length || !pcs.some(p => p.code === d.code)));
     let html = '<option value="">— відділ —</option>';
-    html += `<optgroup label="${st.allocated ? 'Профітцентри — пряма стаття' : 'Профітцентри (пряму статтю — лише на них)'}">${pcs.map(opt).join('')}</optgroup>`;
+    if (pcs.length) html += `<optgroup label="${st.allocated || st.unplanned ? 'Профітцентри — пряма стаття' : 'Профітцентри (пряму статтю — лише на них)'}">${pcs.map(opt).join('')}</optgroup>`;
     if (st.allocated) {
-      const label = st.owners.length ? `Власник статті «${names[st.allocated] || st.allocated}»` : 'Інші відділи — стаття з розподілом';
-      html += `<optgroup label="${esc(label)}">${rest.map(opt).join('')}</optgroup>`;
+      const lbl = st.owners.length ? `Власник статті «${names[st.allocated] || st.allocated}»` : 'Інші відділи — стаття з розподілом';
+      html += `<optgroup label="${esc(lbl)}">${rest.map(opt).join('')}</optgroup>`;
     }
+    if (st.unplanned) html += `<optgroup label="Позапланова — на «Інше»"><option value="${esc(OTHER)}">${esc(OTHER_NAME)}</option></optgroup>`;
     sel.innerHTML = html;
-    const ok = pcs.some(d => d.code === was) || ad.has(was);
+    const ok = pcs.some(d => d.code === was) || ad.has(was) || (st.unplanned && was === OTHER);
     sel.value = ok ? was : '';
     sel.dataset.selected = sel.value;
   }
@@ -69,25 +73,28 @@
     const sel = tr.querySelector('.split-item'), dep = tr.querySelector('.split-dep').value;
     const allowed = allowedItems(st, dep);
     const want = sel.value || sel.dataset.selected;
-    if (!allowed.length) {  // відділ не підходить жодній статті пари
+    if (!allowed.length) {  // відділ не підходить жодному варіанту групи
       sel.innerHTML = '<option value="">— лише на профітцентр —</option>';
       sel.dataset.selected = '';
       tr.classList.add('split-row-bad');
       return;
     }
     tr.classList.remove('split-row-bad');
-    sel.innerHTML = allowed.map(c => `<option value="${esc(c)}">${esc(names[c] || c)}${c === st.allocated ? ' — з розподілом' : ' — пряма'}</option>`).join('');
-    sel.value = allowed.includes(want) ? want : (dep && pc.has(dep) ? allowed[0] : allowed[allowed.length - 1]);
+    sel.innerHTML = allowed.map(c => `<option value="${esc(c)}">${esc(label(st, c))}</option>`).join('');
+    sel.value = allowed.includes(want) ? want : (!dep || (pc.has(dep) && st.direct) ? allowed[0] : allowed[allowed.length - 1]);
     sel.dataset.selected = sel.value;
   }
 
-  // Вибрали статтю в рядку: з розподілом — відділ = власник (якщо він один), пряма — відділ лише профітцентр
+  // Вибрали статтю в рядку: з розподілом — відділ = власник (якщо він один), позапланова — «Інше»,
+  // пряма — відділ лише профітцентр
   function itemChanged(tr, st) {
     const dep = tr.querySelector('.split-dep'), it = tr.querySelector('.split-item').value;
     tr.querySelector('.split-item').dataset.selected = it;
-    if (it && it === st.allocated && !allocDeps(st).includes(dep.value)) {
+    if (it && it === st.unplanned) {
+      dep.value = OTHER;
+    } else if (it && it === st.allocated && !allocDeps(st).includes(dep.value)) {
       dep.value = st.owners.length === 1 ? st.owners[0] : '';
-    } else if (it && st.directs.includes(it) && dep.value && !pc.has(dep.value)) {
+    } else if (it && it === st.direct && dep.value && !pc.has(dep.value)) {
       dep.value = '';
     }
     dep.dataset.selected = dep.value;
@@ -135,7 +142,30 @@
     }, 300));
   }
 
+  // «Інші варіанти: … · …» під статтею — варіанти її групи; варіант зі списку статей користувача підставляється кліком
+  const variantsEl = $('exp-variants');
+  function renderVariants() {
+    if (!variantsEl) return;
+    const code = item(), g = !contractor() && groups[code];
+    const others = g ? [['allocated', 'з розподілом'], ['direct', 'пряма'], ['unplanned', 'позапланова']]
+      .filter(([r]) => g[r] && g[r] !== code) : [];
+    variantsEl.hidden = !others.length;
+    if (!others.length) { variantsEl.textContent = ''; return; }
+    const picker = window.expensePicker;
+    variantsEl.innerHTML = 'Інші варіанти статті: ' + others.map(([r, kind]) => {
+      const c = g[r], text = `${esc(names[c] || c)} <span class="muted">(${kind})</span>`;
+      return picker && picker.has && picker.has(c)
+        ? `<button type="button" class="btn-link exp-variant" data-code="${esc(c)}">${text}</button>`
+        : `<span class="exp-variant-off" title="Цієї статті немає у вашому списку статей">${text}</span>`;
+    }).join(' · ');
+  }
+  if (variantsEl) variantsEl.addEventListener('click', e => {
+    const b = e.target.closest('.exp-variant');
+    if (b && window.expensePicker) { window.expensePicker.pick(b.dataset.code); render(); }
+  });
+
   function render() {
+    renderVariants();
     const st = state();
     box.hidden = !st;
     box.dataset.active = st ? '1' : '';
@@ -150,9 +180,12 @@
     body.hidden = !showBody;
     body.querySelectorAll('input, select').forEach(el => { el.disabled = !showBody; });
     if (showBody && !rowsEl.querySelector('.split-row')) {
-      // Перший рядок — уся сума: профітцентр — на свій відділ, інакше — порожній відділ
-      const own = department(), ad = allocDeps(st);
-      const first = pc.has(own) || ad.includes(own) ? own : (st.owners.length === 1 ? st.owners[0] : '');
+      // Перший рядок — уся сума: на вибраний варіант (позапланова — «Інше», з розподілом — власник), пряма —
+      // свій відділ-профітцентр або власник варіанта з розподілом
+      const own = department(), ad = allocDeps(st), code = item();
+      const first = code === st.unplanned ? OTHER
+        : (code === st.direct && pc.has(own)) || (code === st.allocated && ad.includes(own)) ? own
+        : (ad.includes(own) && st.allocated) ? own : (st.owners.length === 1 ? st.owners[0] : (pc.has(own) && st.direct ? own : ''));
       addRow(first, ($('amount') || {}).value || '');
       if (!st.required) addRow('', '');
     }

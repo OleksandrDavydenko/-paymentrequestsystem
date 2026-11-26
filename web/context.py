@@ -7,6 +7,7 @@ import counterparties
 import currencies
 import departments
 import expense_items
+import expense_split
 import holidays
 import notifications
 import organizations
@@ -39,6 +40,7 @@ def inject_refs():
         "CHANNELS": wf.CHANNELS,
         "channel_of": wf.channel_of,
         "dept_name": departments.get_name,
+        "split_dept_name": expense_split.dept_name,  # відділ рядка розподілу («Інше (позапланова)» для «-»)
         "STATUSES": db.STATUSES,
         "needs_handover": wf.needs_handover,
         "payer_label": payer_label,

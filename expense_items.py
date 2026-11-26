@@ -52,6 +52,8 @@ MOCK_ITEMS = [
     ("05.002", "Ремонт оргтехніки"),
     ("05.003", "Обслуговування автомобілів"),
     ("05.004", "Пальне"),
+    ("05.012", "Ремонт оргтехніки (прямий)"),
+    ("05.022", "Ремонт оргтехніки (позаплан)"),
     ("06.001", "Відрядження — проживання"),
     ("06.002", "Відрядження — квитки"),
     ("06.003", "Добові"),
@@ -83,6 +85,9 @@ MOCK_DEPARTMENTS = {
     "07": ["Адміністрація"],
     "10": ["Продажі"],
 }
+# Мокові статті з базою розподілу «Не розподіляти» (позапланові)
+MOCK_UNPLANNED = {"05.022"}
+UNPLANNED_BASE = "не розподіляти"
 # DepartmentGUID відділів мокових статей (як у departments.MOCK_DEPARTMENTS)
 MOCK_DEPARTMENT_GUIDS = {"Логістика": "DEP-LOG", "БАА": "DEP-BA", "ІТ": "DEP-IT", "Адміністрація": "DEP-ADM",
                          "Продажі": "DEP-SAL"}
@@ -204,7 +209,11 @@ def extract_items(rows):
             continue
         if any(h in node_type for h in GROUP_HINTS) or code in parents or name in parents:
             continue
-        item = by_code.setdefault(code, {"code": code, "name": name, "departments": [], "dept_guids": {}})
+        item = by_code.setdefault(code, {"code": code, "name": name, "departments": [], "dept_guids": {},
+                                         "unplanned": False})
+        # База розподілу 1С «Не розподіляти» — позапланова стаття (1С кидає її на «Інше»); колонки може й не бути
+        if str(r.get("БазаРозподілу") or "").strip().lower() == UNPLANNED_BASE:
+            item["unplanned"] = True
         dep = _department(r.get("Відділ"))
         guid = _department(r.get("DepartmentGUID")).upper() or None
         if guid and not guid.strip("0"):
@@ -231,9 +240,12 @@ def _mock_items():
     rows = []
     for code, name in MOCK_ITEMS:
         deps = MOCK_DEPARTMENTS.get(code) or MOCK_DEPARTMENTS.get(code.split(".")[0], [])
+        if code in MOCK_UNPLANNED or "(прямий)" in name:
+            deps = []  # пряма й позапланова — без відділу-власника
         for dep in deps or [None]:
             rows.append({"Код": code, "Назва": name, "Відділ": dep, "DepartmentGUID": MOCK_DEPARTMENT_GUIDS.get(dep),
-                         "Тип_вузла": "Елемент", "Батько": None})
+                         "Тип_вузла": "Елемент", "Батько": None,
+                         "БазаРозподілу": "Не розподіляти" if code in MOCK_UNPLANNED else ""})
     return extract_items(rows)
 
 

@@ -22,6 +22,7 @@ import employees
 import expense_items
 import google_login
 import holidays
+import item_groups
 import mailer
 import notify_log
 import org_structure
@@ -160,10 +161,12 @@ def _context(tab):
     elif tab == "split":
         items = sorted(expense_items.get_items(), key=lambda i: i["code"])
         names = {i["code"]: i["name"] for i in items}
-        ctx.update(split_pairs=[{"direct": p.get("direct"), "allocated": p.get("allocated"),
-                                 "direct_name": names.get(p.get("direct")), "allocated_name": names.get(p.get("allocated"))}
-                                for p in app_settings.get("split_pairs") or []],
-                   split_items=items)
+        _, ambiguous = item_groups.detect()
+        ctx.update(item_groups=[{**g, "names": {r: names.get(g[r]) for r in item_groups.ROLES}}
+                                for g in item_groups.groups()],
+                   item_groups_skip=app_settings.get("item_groups_skip") or [],
+                   item_groups_ambiguous=ambiguous, ROLE_LABELS=item_groups.ROLE_LABELS,
+                   unplanned_known=any(i.get("unplanned") for i in items), split_items=items)
     elif tab == "request":
         ctx.update(request_prefix=request_numbers.prefix(), request_digits=request_numbers.digits(),
                    request_prefix_history=[p for p in request_numbers.all_prefixes() if p != request_numbers.prefix()],
@@ -329,11 +332,12 @@ def _parse_ok_until(form, changes, errors):
         changes["payments_ok_until"] = until
 
 
-def _parse_split_pairs(form, changes, errors):
-    """Пари «пряма стаття → стаття з розподілом» з форми розділу «Розподіл прямих витрат». У полі — «код — назва»
-    з підказок або просто код; порожні рядки пропускаються."""
-    items = {i["code"]: i["name"] for i in expense_items.get_items()}
-    by_name = {n.strip().lower(): c for c, n in items.items()}
+def _parse_item_groups(form, changes, errors):
+    """Групи статей з форми розділу «Групи статей і розподіл». Рядок — три поля (з розподілом / пряма / позапланова:
+    «код — назва» з підказок або просто код) і база назви автоматичної групи. Автоматичний рядок без змін лишається
+    автоматичним, змінений — стає ручним, прибраний — потрапляє в item_groups_skip."""
+    items = {i["code"]: i for i in expense_items.get_items()}
+    by_name = {i["name"].strip().lower(): c for c, i in items.items()}
 
     def code_of(raw):
         raw = (raw or "").strip()
@@ -342,29 +346,55 @@ def _parse_split_pairs(form, changes, errors):
         code = raw.split(" — ")[0].strip()
         return code if code in items else by_name.get(raw.lower(), code)
 
-    pairs, seen = [], set()
-    for n, (d_raw, a_raw) in enumerate(zip(form.getlist("split_direct"), form.getlist("split_allocated")), 1):
-        d, a = code_of(d_raw), code_of(a_raw)
-        if not d and not a:
+    auto = {g["base"]: g for g in item_groups.detect()[0]}
+    cols = [form.getlist(f"group_{r}") for r in item_groups.ROLES]
+    bases = form.getlist("group_base")
+    manual, seen, kept = [], {}, set()
+    for n in range(max(len(c) for c in cols + [bases])):
+        g = {r: code_of(col[n] if n < len(col) else "") for r, col in zip(item_groups.ROLES, cols)}
+        base = (bases[n] if n < len(bases) else "").strip()
+        filled = [r for r in item_groups.ROLES if g[r]]
+        if not filled:
             continue
-        if not d or not a:
-            errors["split_pairs"] = f"Розподіл прямих витрат, рядок {n}: вкажіть обидві статті"
+        label = f"Групи статей, рядок {n + 1}"
+        if len(filled) < 2:
+            errors["item_groups"] = f"{label}: у групі мають бути щонайменше два варіанти статті"
             continue
-        if d not in items or a not in items:
-            errors["split_pairs"] = f"Розподіл прямих витрат, рядок {n}: статті «{d if d not in items else a}» немає в довіднику"
+        unknown = next((g[r] for r in filled if g[r] not in items), None)
+        if unknown:
+            errors["item_groups"] = f"{label}: статті «{unknown}» немає в довіднику"
             continue
-        if d == a:
-            errors["split_pairs"] = f"Розподіл прямих витрат, рядок {n}: пряма стаття й стаття з розподілом мають різнитися"
+        dup = next((g[r] for r in filled if g[r] in seen or list(g.values()).count(g[r]) > 1), None)
+        if dup:
+            errors["item_groups"] = f"Групи статей: стаття {dup} указана двічі — стаття може бути лише в одній групі"
             continue
-        if d in seen:
-            errors["split_pairs"] = f"Розподіл прямих витрат: пряма стаття {d} указана двічі"
+        if g["direct"] and items[g["direct"]].get("unplanned"):
+            errors["item_groups"] = (f"{label}: «{items[g['direct']]['name']}» у 1С має базу «Не розподіляти» — "
+                                     "це позапланова стаття, не пряма")
             continue
-        seen.add(d)
-        pairs.append({"direct": d, "allocated": a})
-    if not any(p["direct"] == q["allocated"] for p in pairs for q in pairs) and pairs != (app_settings.get("split_pairs") or []):
-        changes["split_pairs"] = pairs
-    elif any(p["direct"] == q["allocated"] for p in pairs for q in pairs):
-        errors["split_pairs"] = "Розподіл прямих витрат: стаття не може бути водночас прямою в одній парі й з розподілом в іншій"
+        for r in filled:
+            seen[g[r]] = n
+        if base in auto and all(g[r] == auto[base][r] for r in item_groups.ROLES):
+            kept.add(base)  # автоматична група без змін
+            continue
+        manual.append(g)
+    if "item_groups" in errors:
+        return
+    old_skip = set(app_settings.get("item_groups_skip") or [])
+    unskip = set(form.getlist("group_unskip"))
+    used = set(seen)
+    skip = sorted((old_skip - unskip) | {b for b, g in auto.items() if b not in kept and b not in old_skip
+                                         and not any(g[r] in used for r in item_groups.ROLES if g[r])})
+    if manual != (app_settings.get("item_groups") or []):
+        changes["item_groups"] = manual
+    if skip != sorted(old_skip):
+        changes["item_groups_skip"] = skip
+    if app_settings.get("split_pairs"):
+        changes["split_pairs"] = []  # старі пари вже показані в таблиці як ручні групи й збережені разом з нею
+    no_flag = [g["unplanned"] for g in manual if g["unplanned"] and not items[g["unplanned"]].get("unplanned")]
+    if no_flag and any(i.get("unplanned") for i in items.values()):
+        flash("Позапланові без бази «Не розподіляти» в 1С: " + ", ".join(no_flag) + " — перевірте, чи це не помилка",
+              "error")
 
 
 def _parse_cfo_rules(form, changes, errors):
@@ -477,8 +507,8 @@ def admin_settings(*, context):
         errors["cfo_threshold_usd"] = "Вкажіть поріг фіндиректора — суму в USD, більшу за 0"
     if tab == "approval" and "cfo_rules_sent" in request.form:
         _parse_cfo_rules(request.form, changes, errors)
-    if tab == "split" and "split_pairs_sent" in request.form:
-        _parse_split_pairs(request.form, changes, errors)
+    if tab == "split" and "item_groups_sent" in request.form:
+        _parse_item_groups(request.form, changes, errors)
     if tab == "reconcile" and "ok_until_sent" in request.form:
         _parse_ok_until(request.form, changes, errors)
     if "payments_since" in changes:

@@ -292,6 +292,14 @@
       }
       clearNote = '';
     },
+    // Підставити статтю за кодом (варіант статті з групи). false — статті немає в списку користувача
+    pick(code) {
+      const it = BY_CODE.get(code);
+      if (!it) return false;
+      select(it);
+      return true;
+    },
+    has(code) { return BY_CODE.has(code); },
     // Очистити вибрану статтю (змінили «Що оплачуємо?» — статтю обирають заново, нічого не підставляється)
     clear(text) {
       if (!hidden.value) return;

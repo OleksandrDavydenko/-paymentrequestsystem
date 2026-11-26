@@ -13,6 +13,7 @@
     const overTile = document.getElementById('bg-over-tile');
     const collapsed = new Set();      // згорнуті групи «відділ|група»
     const closedDepts = new Set();    // згорнуті відділи (видно лише рядок відділу)
+    const openFams = new Set();       // розгорнуті рядки груп статей (варіанти статті)
     // Кілька відділів — спершу огляд: лише рядки відділів, розгортаються кліком
     const deptBodies = table.querySelectorAll('tbody.bg-dept-body');
     if (deptBodies.length > 1) deptBodies.forEach(tb => closedDepts.add(tb.dataset.dept));
@@ -31,6 +32,9 @@
         const match = (!q || tr.dataset.search.includes(q)) && (!onlyOver || tr.dataset.over === '1');
         if (match) { shown[parent] = true; deptShown[dept] = true; }
         tr.hidden = !match || (!filtering && (collapsed.has(parent) || closedDepts.has(dept)));
+        // варіант статті — лише в розгорнутому рядку групи статей (під час пошуку — якщо підходить)
+        if (tr.dataset.fam && !tr.dataset.famHead && !filtering && !openFams.has(tr.dataset.fam)) tr.hidden = true;
+        if (tr.dataset.famHead) tr.querySelector('.bg-fam-toggle').setAttribute('aria-expanded', String(filtering || openFams.has(tr.dataset.fam)));
       });
       table.querySelectorAll('tr.bg-group').forEach(tr => {
         tr.hidden = filtering ? !shown[tr.dataset.group] : closedDepts.has(deptOf(tr.dataset.group));
@@ -48,7 +52,10 @@
       const toggle = e.target.closest('.bg-toggle');
       if (!toggle) return;
       const row = toggle.closest('tr');
-      if (row.classList.contains('bg-group')) {
+      if (row.dataset.famHead) {
+        const key = row.dataset.fam;
+        openFams.has(key) ? openFams.delete(key) : openFams.add(key);
+      } else if (row.classList.contains('bg-group')) {
         const key = row.dataset.group;
         collapsed.has(key) ? collapsed.delete(key) : collapsed.add(key);
       } else {  // відділ — показати / сховати його групи й статті
@@ -66,6 +73,7 @@
       apply();
     });
     if (expandBtn) expandBtn.addEventListener('click', () => { collapsed.clear(); closedDepts.clear(); apply(); });
+    if (collapseBtn) collapseBtn.addEventListener('click', () => { openFams.clear(); apply(); });
     search.addEventListener('input', apply);
     overOnly.addEventListener('change', apply);
     if (overTile) overTile.addEventListener('click', () => { overOnly.checked = !overOnly.checked; apply(); });

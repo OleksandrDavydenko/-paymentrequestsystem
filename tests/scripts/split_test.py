@@ -49,21 +49,49 @@ req, _ = submit("adm.ini@ftpua.com", 1000)
 check("no pairs: direct item from non-profit-center submits as before", req and req["status"] != "draft" and "split" not in req)
 check("no pairs: nothing applies", not expense_split.applies({"expense_code": DIRECT, "department": "ADM"}))
 
-# ---------- пари в адмінці
+# ---------- групи статей в адмінці (item_groups): автоматичні за назвою, старі пари, ручні
+import item_groups
+AUTO = {"allocated": "05.002", "direct": "05.012", "unplanned": "05.022"}   # мок: «Ремонт оргтехніки» (+ прямий, позаплан)
+check("auto group detected by name", [{k: g[k] for k in item_groups.ROLES} for g in item_groups.groups()] == [AUTO]
+      and item_groups.groups()[0]["auto"] and item_groups.groups()[0]["name"] == "Ремонт оргтехніки")
 login("adm@ftpua.com")
 html = page("/admin/settings?tab=split")
-check("settings: split section on the page", 'id="split-settings"' in html and "пар немає" in html)
-html = c.post("/admin/settings", data={"tab": "split", "split_pairs_sent": "1",
-                                       "split_direct": [f"{DIRECT} — Обслуговування автомобілів", ""],
-                                       "split_allocated": [ALLOC, ""]}, follow_redirects=True).get_data(as_text=True)
-check("settings: pair saved, journal with names", app_settings.get("split_pairs") == [{"direct": DIRECT, "allocated": ALLOC}]
-      and "Обслуговування автомобілів → Ремонт та обслуговування" in html)
-c.post("/admin/settings", data={"tab": "split", "split_pairs_sent": "1", "split_direct": [DIRECT, ALLOC],
-                                "split_allocated": [ALLOC, "04.002"]})
-check("settings: an item cannot be direct in one pair and allocated in another",
-      app_settings.get("split_pairs") == [{"direct": DIRECT, "allocated": ALLOC}])
-c.post("/admin/settings", data={"tab": "split", "split_pairs_sent": "1", "split_direct": ["99.999"], "split_allocated": [ALLOC]})
-check("settings: unknown item rejected", app_settings.get("split_pairs") == [{"direct": DIRECT, "allocated": ALLOC}])
+check("settings: groups section with the auto group", 'id="split-settings"' in html and "05.012 — Ремонт оргтехніки (прямий)" in html
+      and ">авто<" in html)
+app_settings.set("split_pairs", [{"direct": DIRECT, "allocated": ALLOC}], "t")   # старі пари — як ручні групи
+check("old pairs work as manual groups", item_groups.group_of(DIRECT)["allocated"] == ALLOC
+      and expense_split.pairs() == {DIRECT: ALLOC, "05.012": "05.002"})
+
+def save_groups(rows, **extra):
+    data = {"tab": "split", "item_groups_sent": "1", **extra}
+    for r in item_groups.ROLES:
+        data[f"group_{r}"] = [row.get(r, "") for row in rows]
+    data["group_base"] = [row.get("base", "") for row in rows]
+    return c.post("/admin/settings", data=data, follow_redirects=True).get_data(as_text=True)
+
+MANUAL = {"allocated": ALLOC, "direct": f"{DIRECT} — Обслуговування автомобілів", "unplanned": ""}
+html = save_groups([MANUAL, {**AUTO, "base": "ремонт оргтехніки"}, {}])
+check("settings: saved — manual group, auto stays auto, old pairs moved",
+      app_settings.get("item_groups") == [{"allocated": ALLOC, "direct": DIRECT, "unplanned": ""}]
+      and not app_settings.get("item_groups_skip") and app_settings.get("split_pairs") == []
+      and "Ремонт та обслуговування: з розподілом 05.001 / пряма 05.003" in html)
+save_groups([MANUAL])
+check("settings: removed auto group is skipped", app_settings.get("item_groups_skip") == ["ремонт оргтехніки"]
+      and item_groups.group_of("05.012") is None)
+save_groups([MANUAL], group_unskip="ремонт оргтехніки")
+check("settings: skipped auto group returned", app_settings.get("item_groups_skip") == [] and item_groups.group_of("05.012"))
+before = app_settings.get("item_groups")
+save_groups([MANUAL, {"allocated": ALLOC, "direct": "05.012"}])
+check("settings: item in two groups rejected", app_settings.get("item_groups") == before)
+save_groups([{"allocated": "99.999", "direct": DIRECT}])
+check("settings: unknown item rejected", app_settings.get("item_groups") == before)
+save_groups([MANUAL, {"allocated": "05.002", "direct": "05.022"}])
+check("settings: unplanned (1C base) cannot be direct", app_settings.get("item_groups") == before)
+save_groups([MANUAL, {"allocated": "05.002", "unplanned": "05.022", "base": "ремонт оргтехніки"}])
+check("settings: edited auto group becomes manual", {"allocated": "05.002", "direct": "", "unplanned": "05.022"}
+      in app_settings.get("item_groups") and not item_groups.group_of("05.012"))
+save_groups([MANUAL, {**AUTO, "base": "ремонт оргтехніки"}])
+check("settings: back to auto", app_settings.get("item_groups") == before and item_groups.group_of("05.022")["auto"])
 
 # ---------- непрофітцентр: розподіл обов'язковий
 req, html = submit("adm.ini@ftpua.com", 1000)
@@ -73,7 +101,9 @@ check("non-profit-center: draft can be saved without split", req and req["status
 login("adm.ini@ftpua.com")
 html = page("/requests/new")
 check("form: split block and data for the script", 'id="split-block"' in html and "expense-split.js" in html
-      and f'"{DIRECT}": "{ALLOC}"' in html)
+      and '"groups"' in html and 'id="exp-variants"' in html
+      and expense_split.form_config({})["groups"][DIRECT] == {"direct": DIRECT, "allocated": ALLOC, "unplanned": None,
+                                                              "name": "Ремонт та обслуговування"})
 req, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("ADM", ALLOC, "400")])
 check("split: submitted with two rows", req and req["status"] != "draft" and len(req["split"]) == 2
       and req["split"][0] == {"department": "LOG", "expense_code": DIRECT, "amount": Decimal("600.00")}
@@ -88,7 +118,7 @@ _, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", ALLOC, "600"), ("ADM",
 check("allocated item on a profit center (not owner) rejected, direct suggested",
       "розносить на відділ-власник" in html and "пряму статтю" in html)
 _, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("SAL", OTHER, "400")])
-check("item outside the pair rejected", "стаття має бути з пари" in html)
+check("item outside the group rejected", "стаття має бути з групи" in html)
 _, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("LOG", ALLOC, "400")])
 check("same department twice rejected", "указано двічі" in html)
 r_bad, html = submit("adm.ini@ftpua.com", 1000, rows=[("LOG", DIRECT, "600"), ("ADM", ALLOC, "300")])
@@ -115,7 +145,28 @@ check("allocated item: optional split kept", req and req["status"] != "draft" an
 check("allocated item not in a pair: no split", not expense_split.applies({"expense_code": OTHER, "department": "ADM"}))
 login("adm.ini@ftpua.com")
 html = page("/requests/new")
-check("form config: allocated -> directs and owners", f'"{ALLOC}": ["{DIRECT}"]' in html and f'"{ALLOC}": ["ADM"]' in html)
+check("form config: owners of the allocated item", expense_split.form_config({})["owners"][ALLOC] == ["ADM"])
+
+# ---------- позапланова стаття групи — рядок на «Інше» (група «Ремонт оргтехніки» складена автоматично)
+U_A, U_D, U_U = AUTO["allocated"], AUTO["direct"], AUTO["unplanned"]
+check("unplanned in group: applies, optional", expense_split.applies({"expense_code": U_U, "department": "ADM"})
+      and not expense_split.required({"expense_code": U_U, "department": "ADM"})
+      and expense_split.pair_items(U_A) == [U_D, U_A, U_U])
+req, _ = submit("adm.ini@ftpua.com", 1000, item=U_A, rows=[("LOG", U_D, "500"), ("ADM", U_A, "300"), ("-", U_U, "200")])
+check("unplanned row on «Інше» accepted", req and req["status"] != "draft"
+      and [r["department"] for r in req["split"]] == ["LOG", "ADM", "-"])
+unplanned_req = req
+req, _ = submit("adm.ini@ftpua.com", 1000, item=U_U, rows=[("LOG", U_D, "600"), ("", U_U, "400")])
+check("unplanned row without department goes to «Інше»", req and req["split"][1]["department"] == "-")
+_, html = submit("adm.ini@ftpua.com", 1000, item=U_A, rows=[("LOG", U_D, "600"), ("ADM", U_U, "400")])
+check("unplanned on a department rejected", "кидає на «Інше»" in html)
+_, html = submit("adm.ini@ftpua.com", 1000, item=U_A, rows=[("LOG", U_D, "600"), ("-", U_A, "400")])
+check("only unplanned goes to «Інше»", "на «Інше» йде лише позапланова" in html)
+o = onec_api.order(unplanned_req)
+check("1C payload: «Інше» row without department", o["allocation"][2]["department"] is None
+      and o["allocation"][2]["expense_item"]["code"] == U_U)
+login("cfo@ftpua.com")
+check("card: «Інше (позапланова)» row", "Інше (позапланова)" in page(f"/requests/{unplanned_req['id']}"))
 check("contractor branch: no split", not expense_split.applies({"expense_code": DIRECT, "department": "ADM",
                                                                 "payment_kind": "contractor"}))
 
@@ -169,7 +220,7 @@ check("card: snapshot of each row", html.count("на момент відправ
 app_settings.set("budget_enabled", False, "t")
 
 # ---------- пару прибрали: збережений розподіл лишається й показується
-app_settings.set("split_pairs", [], "t")
+app_settings.set("item_groups", [], "t")
 check("pair removed: existing split still shown", "Розподіл між відділами" in page(f"/requests/{split_req['id']}"))
 req, _ = submit("adm.ini@ftpua.com", 1000)
 check("pair removed: direct item from non-profit-center submits as before", req and req["status"] != "draft")
@@ -194,7 +245,8 @@ check("direct without pair: split onto profit centers only — submitted", req a
 req, _ = submit("log.ini@ftpua.com", 800, item=TAXI)
 check("direct without pair: profit center as before", req and req["status"] != "draft" and "split" not in req)
 login("adm.ini@ftpua.com")
-check("form knows direct items without a pair", f'"{TAXI}": null' in page("/requests/new"))
+check("form knows direct items without a pair", f'"{TAXI}"' in page("/requests/new")
+      and expense_split.form_config({})["groups"][TAXI]["allocated"] is None)
 req, _ = submit("adm.ini@ftpua.com", 800, item=OTHER)
 check("not direct, no pair: as before", req and req["status"] != "draft" and "split" not in req)
 expense_items.get_name, expense_items.get_items = real_name, real_items

@@ -1,13 +1,13 @@
-{# Розподіл прямої витрати між відділами (expense_split.py, static/expense-split.js). Блок з'являється, коли в непрямій
-   витраті вибрано пряму статтю або статтю з розподілом, що стоїть у парі (Налаштування → Заявка й погодження →
-   Розподіл прямих витрат): пряма стаття в непрофітцентрі — обов'язково, інакше — кнопкою «Розділити між відділами».
-   Пряма стаття — лише на профітцентр, з розподілом — на її відділ-власника. #}
+{# Розподіл заявки між відділами (expense_split.py, static/expense-split.js). Блок з'являється, коли в непрямій витраті
+   вибрано статтю з групи кількох варіантів (Налаштування → Заявка й погодження → Групи статей і розподіл) або пряму
+   статтю: пряма стаття в непрофітцентрі — обов'язково, інакше — кнопкою «Розділити між відділами».
+   Пряма — лише на профітцентр, з розподілом — на її відділ-власника, позапланова — на «Інше» («-»). #}
 {% macro split_row(r) -%}
 <tr class="split-row">
   <td data-label="Відділ"><select name="split_department" class="split-dep" aria-label="Відділ">
     <option value="">— відділ —</option>
     {% for d in split_cfg.departments %}<option value="{{ d.code }}" {{ 'selected' if r and r.department == d.code }}>{{ d.name }}</option>{% endfor %}
-    {% if r and r.department and r.department not in split_cfg.departments | map(attribute='code') | list %}<option value="{{ r.department }}" selected>{{ dept_name(r.department) }}</option>{% endif %}
+    {% if r and r.department and r.department not in split_cfg.departments | map(attribute='code') | list %}<option value="{{ r.department }}" selected>{{ split_dept_name(r.department) }}</option>{% endif %}
   </select></td>
   <td data-label="Стаття"><select name="split_item" class="split-item" aria-label="Стаття" data-selected="{{ r.expense_code if r else '' }}">
     {% if r and r.expense_code %}<option value="{{ r.expense_code }}" selected>{{ split_cfg.names.get(r.expense_code, r.expense_code) }}</option>{% endif %}
@@ -46,7 +46,7 @@
       <button type="button" class="btn-link" id="split-cancel">Не розподіляти</button>
     </div>
     <p class="field-hint split-rule">Пряму статтю можна віднести лише на профітцентр. Статтю з розподілом 1С розносить
-      на її відділ-власника, тож у рядку з нею — саме він. Немає пари з розподілом? Виберіть статтю без «(прямий)».</p>
+      на її відділ-власника, тож у рядку з нею — саме він. Позапланова стаття йде на «Інше».</p>
   </div>
   {{ err('split') }}
 </div>

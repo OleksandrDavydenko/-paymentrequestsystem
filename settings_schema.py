@@ -22,7 +22,7 @@ TABS = [
     ("approval", "Погодження"),
     ("request", "Заявка"),
     ("budget", "Бюджет"),
-    ("split", "Розподіл прямих витрат"),
+    ("split", "Групи статей і розподіл"),
     ("payment", "Оплата й готівка"),
     ("reconcile", "Звірка з 1С"),
     ("onec_api", "API для 1С"),
@@ -291,6 +291,16 @@ def _fmt_split_pairs(value):
     return "; ".join(f"{name(p.get('direct'))} → {name(p.get('allocated'))}" for p in value or []) or "жодної пари"
 
 
+def _fmt_item_groups(value):
+    """«Ремонт і сервіс: з розподілом 05.001 / пряма 05.011; …» — ручні групи статей для журналу змін."""
+    import item_groups
+    return "; ".join(item_groups.describe(g) for g in value or []) or "жодної"
+
+
+def _fmt_item_groups_skip(value):
+    return ", ".join(f"«{b}»" for b in value or []) or "жодної"
+
+
 def _budget_group_departments():
     """Відділи довідника (і вже вибрані, яких у ньому більше немає): {код: назва} за назвою — для «бюджет за групами»."""
     import app_settings
@@ -332,9 +342,13 @@ _LIST = [
             _budget_group_departments, fmt=_fmt_budget_group_departments),
     # «Інтеграція з 1С → Бюджет з 1С»: як часто PayDesk перечитує план і факт з Power BI (видно, коли бюджет увімкнено)
     Setting("budget_sync_minutes", "Бюджет з 1С: оновлювати кожні", "budget_sync", "choice", "30", _budget_sync_minutes),
-    # ---- Розподіл прямої витрати між відділами (expense_split.py): пари «пряма стаття → стаття з розподілом»
-    Setting("split_pairs", "Розподіл прямих витрат: пари статей", "split", "json", [], managed=True,
+    # ---- Групи статей і розподіл заявки між відділами (item_groups.py, expense_split.py)
+    Setting("split_pairs", "Старі пари статей (перенесено в групи статей)", "split", "json", [], managed=True,
             fmt=_fmt_split_pairs),
+    # ---- Групи статей (item_groups.py): «з розподілом / пряма / позапланова»; автоматичні — за назвою
+    Setting("item_groups", "Групи статей (вручну)", "split", "json", [], managed=True, fmt=_fmt_item_groups),
+    Setting("item_groups_skip", "Прибрані автоматичні групи статей", "split", "json", [], managed=True,
+            fmt=_fmt_item_groups_skip),
     # ---- Заявка
     # Номер заявки для людей (request_numbers.py): префікс і нулі — лише показ, у базі номер той самий
     Setting("request_prefix", "Префікс номера заявки", "request", "text", ""),

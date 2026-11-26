@@ -8,7 +8,7 @@
     <thead><tr><th>Відділ</th><th>Стаття</th><th class="num">Сума</th></tr></thead>
     <tbody>
       {% for r in req.split %}
-      <tr><td data-label="Відділ">{{ dept_name(r.department) }}</td>
+      <tr><td data-label="Відділ">{{ split_dept_name(r.department) }}</td>
         <td data-label="Стаття"><strong>{{ r.expense_code }}</strong> {{ expense_title(r.expense_code) or '' }}</td>
         <td class="num" data-label="Сума">{{ r.amount | money }} {{ req.currency }}</td></tr>
       {% endfor %}

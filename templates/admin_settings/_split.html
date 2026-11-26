@@ -1,47 +1,67 @@
+{% macro group_row(gr) -%}
+<tr class="{{ 'ig-auto' if gr and gr.auto }}">
+  {% for r in ('allocated', 'direct', 'unplanned') %}
+  <td data-label="{{ ROLE_LABELS[r] | capitalize }}"><input type="text" name="group_{{ r }}" list="split-items" autocomplete="off"
+      placeholder="Код або назва статті" value="{% if gr and gr[r] %}{{ gr[r] }}{{ ' — ' ~ gr.names[r] if gr.names[r] }}{% endif %}"></td>
+  {% endfor %}
+  <td class="ig-kind">{% if gr and gr.auto %}<span class="badge grey" title="Складено за назвою статей">авто</span>{% elif gr %}<span class="badge green">вручну</span>{% endif %}
+    <input type="hidden" name="group_base" value="{{ gr.base if gr and gr.auto else '' }}"></td>
+  <td><button type="button" class="btn-link split-pair-remove" title="Прибрати групу" aria-label="Прибрати групу">✕</button></td>
+</tr>
+{%- endmacro %}
 <form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="split-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="tab" value="split">
-  <input type="hidden" name="split_pairs_sent" value="1">
-  <div class="toolbar"><h2 style="margin:0">Розподіл прямих витрат між відділами</h2>
-    {% if split_pairs %}<span class="badge green">пар: {{ split_pairs | length }}</span>{% else %}<span class="badge grey">пар немає — розподіл не діє</span>{% endif %}</div>
-  <p class="muted" style="margin-top:0">Пряму статтю можна віднести лише на профітцентр. Пряма — та, що в назві має
-    «(прямий)», або стоїть ліворуч у парі нижче. Коли в непрямій витраті вибирають пряму статтю, заявку розподіляють між
-    відділами (рядки «відділ + стаття + сума»): для відділу, що не є профітцентром, — обов'язково, профітцентр — за
-    бажанням. Статтю з розподілом (праву в парі) теж можна розподілити за бажанням. Рядок зі статтею з розподілом
-    стоїть на її відділі-власнику (Owner статті в 1С — саме на нього 1С її розносить). Без пари пряму статтю можна
-    віднести лише на профітцентри. Позапланові статті (одразу на «Інше») сюди не додавайте — вони без розподілу.
-    Поки обробка 1С не доопрацьована, рядки розподілу бухгалтер вносить у платіжку вручну (видно в картці заявки).</p>
+  <input type="hidden" name="item_groups_sent" value="1">
+  <div class="toolbar"><h2 style="margin:0">Групи статей і розподіл між відділами</h2>
+    {% if item_groups %}<span class="badge green">груп: {{ item_groups | length }}</span>{% else %}<span class="badge grey">груп немає</span>{% endif %}</div>
+  <p class="muted" style="margin-top:0">У 1С одна стаття має кілька варіантів: <strong>з розподілом</strong> (1С розносить її
+    на відділ-власник статті), <strong>пряма</strong> («(прямий)» у назві — лише на профітцентр) і
+    <strong>позапланова</strong> (база «Не розподіляти» — 1С кидає її на «Інше»). Група зв'язує варіанти однієї статті.
+    Групи складаються <strong>автоматично</strong> за назвою (без дужок у кінці): позначка «авто». Виправте, якщо
+    треба: змінена група стає ручною, прибрана автоматична більше не з'явиться (її можна повернути нижче).</p>
+  <p class="muted">Що дає група: у заявці (непряма витрата) суму можна розподілити між відділами — пряма на
+    профітцентри, з розподілом на власника, позапланова на «Інше»; для прямої статті у відділі, що не є
+    профітцентром, розподіл обов'язковий. Під статтею в заявці видно інші варіанти. У вкладці «Бюджет» варіанти
+    статті показано одним рядком з розгортанням.</p>
+  {% if not unplanned_known %}<p class="field-hint">Ознаки «Не розподіляти» в довіднику статей поки немає — додайте
+    колонку <code>БазаРозподілу</code> у таблицю Power BI <code>Expense_Item</code> (запит — <code>sql/Expense_Item_Base.sql</code>),
+    тоді позапланові статті знайдуться автоматично. До того їх можна вписати вручну.</p>{% endif %}
 
   <div class="table-wrap">
   <table class="stack split-pairs">
-    <thead><tr><th>Пряма стаття (на відділ рядка)</th><th>Стаття з розподілом</th><th></th></tr></thead>
+    <thead><tr><th>З розподілом</th><th>Пряма</th><th>Позапланова</th><th></th><th></th></tr></thead>
     <tbody id="split-pairs-rows">
-      {% for p in split_pairs %}
-      <tr>
-        <td data-label="Пряма стаття"><input type="text" name="split_direct" list="split-items" value="{{ p.direct }}{{ ' — ' ~ p.direct_name if p.direct_name }}" autocomplete="off" placeholder="Код або назва статті"></td>
-        <td data-label="З розподілом"><input type="text" name="split_allocated" list="split-items" value="{{ p.allocated }}{{ ' — ' ~ p.allocated_name if p.allocated_name }}" autocomplete="off" placeholder="Код або назва статті"></td>
-        <td><button type="button" class="btn-link split-pair-remove" title="Прибрати пару" aria-label="Прибрати пару">✕</button></td>
-      </tr>
-      {% endfor %}
-      {% for _ in range(1 if split_pairs else 3) %}
-      <tr>
-        <td data-label="Пряма стаття"><input type="text" name="split_direct" list="split-items" autocomplete="off" placeholder="Код або назва статті"></td>
-        <td data-label="З розподілом"><input type="text" name="split_allocated" list="split-items" autocomplete="off" placeholder="Код або назва статті"></td>
-        <td><button type="button" class="btn-link split-pair-remove" title="Прибрати пару" aria-label="Прибрати пару">✕</button></td>
-      </tr>
-      {% endfor %}
+      {% for gr in item_groups %}{{ group_row(gr) }}{% endfor %}
+      {% for _ in range(1 if item_groups else 3) %}{{ group_row(none) }}{% endfor %}
     </tbody>
   </table>
   </div>
   <datalist id="split-items">{% for i in split_items %}<option value="{{ i.code }} — {{ i.name }}"></option>{% endfor %}</datalist>
-  <p><button type="button" class="btn btn-sm" id="split-pair-add">+ Додати пару</button></p>
-  <button type="submit" class="btn btn-primary btn-sm">Зберегти</button>
+  <p><button type="button" class="btn btn-sm" id="split-pair-add">+ Додати групу</button></p>
+
+  {% if item_groups_ambiguous %}
+  <details class="ig-more"><summary>Не вдалося розібрати за назвою: {{ item_groups_ambiguous | length }}</summary>
+    <p class="muted">У цих статей однакова назва, але на одну роль припадає кілька статей. Якщо це варіанти однієї статті —
+      додайте групу вручну.</p>
+    <ul>{% for a in item_groups_ambiguous %}<li><strong>{{ a.base }}</strong>:
+      {% for i in a['items'] %}{{ i.code }} {{ i.name }} ({{ ROLE_LABELS[i.role] }}){{ ', ' if not loop.last }}{% endfor %}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+  {% if item_groups_skip %}
+  <details class="ig-more"><summary>Прибрані автоматичні групи: {{ item_groups_skip | length }}</summary>
+    {% for b in item_groups_skip %}<label class="check"><input type="checkbox" name="group_unskip" value="{{ b }}"> повернути «{{ b }}»</label>{% endfor %}
+  </details>
+  {% endif %}
+  <p><button type="submit" class="btn btn-primary btn-sm">Зберегти</button></p>
 </form>
 <script>
-(function () {  // додати / прибрати рядок пари
+(function () {  // додати / прибрати групу
   const rows = document.getElementById('split-pairs-rows');
   document.getElementById('split-pair-add').addEventListener('click', () => {
     const tr = rows.lastElementChild.cloneNode(true);
+    tr.className = '';
     tr.querySelectorAll('input').forEach(i => { i.value = ''; });
+    tr.querySelector('.ig-kind').querySelectorAll('.badge').forEach(b => b.remove());
     rows.appendChild(tr);
     tr.querySelector('input').focus();
   });

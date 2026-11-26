@@ -31,6 +31,7 @@ import app_settings
 import clock
 import departments
 import expense_items
+import item_groups
 import pbi_cache
 
 logger = logging.getLogger(__name__)
@@ -135,7 +136,7 @@ MOCK_LINES = {
     "ACC": ["04.001", "08.002", "02.005"],
     "FIN": ["09.001", "08.002", "04.001"],
     "SAL": ["10.001", "10.002", "06.001", "06.002", "06.003", "02.002"],
-    "IT": ["02.001", "02.003", "02.004", "05.002"],
+    "IT": ["02.001", "02.003", "02.004", "05.002", "05.012"],  # 05.002 + 05.012 — варіанти однієї статті (група)
     "BA": ["01.001", "02.001", "02.002", "04.001", "07.001", "08.003"],
     "ADM": ["03.001", "03.002", "03.003", "03.004", "04.002", "07.002", "07.003"],
 }
@@ -353,15 +354,51 @@ def report(allowed, dept, year, months, view="table", grouped=()):
             _add(target, it["plan_m"], it["fact_m"], months)
 
     depts = sorted(tree.values(), key=lambda d: (d["key"] == OTHER_KEY, d["name"].lower()))
+    fam_of = item_groups.by_code()
     for d in depts:
         d["groups"] = sorted(d["groups"].values(), key=lambda g: (g["name"] == "(без групи)", g["name"].lower()))
         for g in d["groups"]:
             g["rows"].sort(key=lambda i: (i["name"].lower(), _natural(i["code"])))  # за назвою, як у зведеній Excel
+            g["rows"] = _families(g["rows"], fam_of, f"{d['key']}|{g['name']}")
             g["level"] = level(g["plan"], g["fact"])
         d["level"] = level(d["plan"], d["fact"])
     total["level"] = level(total["plan"], total["fact"])
     return {"departments": depts, "total": total, "over": over,
-            "count": sum(len(g["rows"]) for d in depts for g in d["groups"])}
+            "count": sum(len(r.get("children") or [r]) for d in depts for g in d["groups"] for r in g["rows"])}
+
+
+def _families(rows, fam_of, prefix):
+    """Варіанти однієї статті (група статей: з розподілом / пряма / позапланова, item_groups) — одним рядком
+    {"family": True, "children": [...]} на місці першого варіанта; стаття без інших варіантів у цьому списку — як є."""
+    buckets = {}
+    for r in rows:
+        g = fam_of.get(r["code"])
+        if g:
+            buckets.setdefault(tuple(g[k] for k in item_groups.ROLES), []).append(r)
+    out, done = [], set()
+    for r in rows:
+        g = fam_of.get(r["code"])
+        key = tuple(g[k] for k in item_groups.ROLES) if g else None
+        if not key or len(buckets[key]) < 2:
+            out.append(r)
+            continue
+        if key in done:
+            continue
+        done.add(key)
+        fam = f"{prefix}|{'+'.join(c for c in key if c)}"
+        node = {**_blank(), "family": True, "fam": fam, "name": g["name"], "code": "", "dept": r["dept"],
+                "owner": False, "children": buckets[key]}
+        for c in node["children"]:
+            c.update(child=True, fam=fam)
+            node["plan"] += c["plan"]
+            node["fact"] += c["fact"]
+            for i in range(12):
+                node["months"][i][0] += c["months"][i][0]
+                node["months"][i][1] += c["months"][i][1]
+        node["level"] = level(node["plan"], node["fact"])
+        node["search"] = " ".join(f"{c['code']} {c['name']}" for c in node["children"]).lower() + " " + node["name"].lower()
+        out.append(node)
+    return out
 
 
 # ---------------------------------------------------------------- розшифровка факту
@@ -451,9 +488,7 @@ def budget_department(dept_code, item_code):
     owner = _index()["owners"].get(item_code)
     if owner:
         return owner
-    if not dept_code:
-        return None
-    return (departments.guid_of(dept_code) or "").upper() or None
+    return dept_guid_of(dept_code)  # «-» — «Інше» (рядок розподілу з позаплановою статтею)
 
 
 def target_month(pay_date=None):
@@ -524,7 +559,7 @@ def _pending(guid, item_code, month, exclude_id):
         if request_month(r) != month:
             continue
         rows = [s for s in expense_split.spend_rows(r) if s["expense_code"] == item_code
-                and (owner or (departments.guid_of(s["department"]) or "").upper() == guid)]
+                and (owner or dept_guid_of(s["department"]) == guid)]
         if not rows:
             continue
         cand.append({**r, "amount": sum((Decimal(str(s["amount"] or 0)) for s in rows), Decimal("0"))})

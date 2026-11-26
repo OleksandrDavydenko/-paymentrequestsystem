@@ -25,6 +25,8 @@
     <ul class="exp-suggest" id="exp-suggest" role="listbox" hidden></ul>
   </div>
   <span class="field-hint exp-note" id="exp-note" hidden></span>
+  {# Інші варіанти статті з її групи (item_groups.py) — заповнює static/expense-split.js #}
+  <div class="field-hint exp-variants" id="exp-variants" hidden></div>
   {% if budget_hint_on() %}
   {# Залишок бюджету статті на місяць оплати (static/budget-hint.js, /budget/remaining) #}
   <div class="budget-hint" id="budget-hint" hidden aria-live="polite"

@@ -1702,6 +1702,18 @@ button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
 .split-rest.is-bad { color: var(--bad-ink); font-weight: 600; }
 .split-row-bad td { background: var(--bad-faint); }
 .split-row-bad .split-item { color: var(--bad-ink); }
+/* Інші варіанти статті з групи (під полем статті) */
+.exp-variants { margin-top: 4px; }
+.exp-variants .exp-variant { padding: 0; font: inherit; }
+.exp-variant-off { opacity: .6; }
+/* Бюджет: рядок групи статей і його варіанти */
+.bg-fam .bg-fam-toggle { font-weight: 600; }
+.bg-fam-child td:first-child { padding-left: 28px; }
+.bg-fam-child .bg-item-name { opacity: .9; }
+/* Адмінка: групи статей */
+.split-pairs .ig-kind { white-space: nowrap; }
+.ig-more { margin: 8px 0; }
+.ig-more summary { cursor: pointer; }
 .split-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; }
 .split-foot .spacer { flex: 1; }
 .split-total { font-weight: 600; font-variant-numeric: tabular-nums; }

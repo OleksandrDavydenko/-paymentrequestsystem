@@ -146,8 +146,10 @@ def order(req, base_url=""):
         "expense_item": {"code": req.get("expense_code"), "name": expense_items.get_name(req.get("expense_code"))},
         "department": _ref(departments.guid_of(dep), code=dep, name=departments.get_name(dep) if dep else None),
         # Розподіл між відділами (expense_split): рядки розшифровки платіжки — відділ, стаття, сума; без розподілу — null
-        "allocation": [{"department": _ref(departments.guid_of(s.get("department")), code=s.get("department"),
-                                           name=departments.get_name(s.get("department")) if s.get("department") else None),
+        # «Інше» (позапланова стаття, відділ «-») — без відділу: 1С сама кидає таку статтю на «Інше»
+        "allocation": [{"department": None if s.get("department") in (None, "", "-") else
+                        _ref(departments.guid_of(s.get("department")), code=s.get("department"),
+                             name=departments.get_name(s.get("department"))),
                         "expense_item": {"code": s.get("expense_code"), "name": expense_items.get_name(s.get("expense_code"))},
                         "amount": f"{s['amount']:.2f}" if s.get("amount") is not None else None}
                        for s in req.get("split") or []] or None,
