@@ -9,6 +9,11 @@ tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, ADMIN_EMAILS="adm@ftpua.com")
 import app as m
 import app_settings, counterparties, payment_accounts, payments, payment_types, settings_log, user_roles
+import clock
+from datetime import datetime
+# Демо-платежі датовані вереснем–жовтнем 2026, а лічильник «Звірка» й звіт за замовчуванням — за останні 30 днів:
+# фіксуємо «сьогодні» поруч із ними, щоб тест не залежав від дати запуску
+clock.now = lambda: datetime(2026, 10, 25, 12, 0)
 import storage as db
 
 ok = True
