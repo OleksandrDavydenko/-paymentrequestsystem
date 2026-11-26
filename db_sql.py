@@ -24,6 +24,7 @@
 import json
 import logging
 import os
+import re
 import struct
 import threading
 import time
@@ -339,17 +340,30 @@ def _token():
 TRANSIENT_ERRORS = ("40613", "40197", "40501", "40540", "49918", "49919", "49920", "4221", "10928", "10929",
                     "10053", "10054", "10060")
 TRANSIENT_STATES = ("08S01", "HYT00")
+# На Linux (App Service) обрив TCP драйвер подає номером errno, а не віндовим 10053/10054/10060:
+# «TCP Provider: Error code 0x68 (104)» — з'єднання скинуто (ECONNRESET) ще під час підключення.
+TCP_ERRNOS = {"32": "EPIPE", "104": "ECONNRESET", "110": "ETIMEDOUT", "111": "ECONNREFUSED"}
+_TCP_ERROR = re.compile(r"(?:TCP|SSL) Provider: Error code 0x[0-9a-f]+ \((\d+)\)", re.I)
 CONNECT_RETRY_DELAYS = (1, 3, 6)  # секунд між спробами; разом — до ~10 с, далі помилка як була
+
+
+def _tcp_errno(text):
+    m = _TCP_ERROR.search(text)
+    return m.group(1) if m and m.group(1) in TCP_ERRNOS else None
 
 
 def _transient(e):
     text = str(e)
-    return (bool(e.args) and e.args[0] in TRANSIENT_STATES) or any(f"({code})" in text for code in TRANSIENT_ERRORS)
+    return ((bool(e.args) and e.args[0] in TRANSIENT_STATES) or any(f"({code})" in text for code in TRANSIENT_ERRORS)
+            or _tcp_errno(text) is not None)
 
 
 def _error_code(e):
-    """Код помилки для журналу: номер Azure SQL (40613…) або SQLSTATE (08S01…)."""
+    """Код помилки для журналу: номер Azure SQL (40613…), обрив TCP (ECONNRESET…) або SQLSTATE (08S01…)."""
     text = str(e)
+    tcp = _tcp_errno(text)
+    if tcp:
+        return TCP_ERRNOS[tcp]
     return next((c for c in TRANSIENT_ERRORS if f"({c})" in text), str(e.args[0]) if e.args else "?")
 
 

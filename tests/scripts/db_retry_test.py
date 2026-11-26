@@ -34,6 +34,18 @@ check("40613 and a dropped link are transient, login failure is not",
       db_sql._transient(UNAVAILABLE) and db_sql._transient(pyodbc.OperationalError("08S01", "Communication link failure"))
       and not db_sql._transient(LOGIN_FAILED))
 
+# 26.11.2026 на App Service (Linux): з'єднання скинуто під час підключення — повторюємо, як і віндовий 10054
+RESET = pyodbc.OperationalError("08001", "[08001] [Microsoft][ODBC Driver 18 for SQL Server]TCP Provider: Error code "
+                                         "0x68 (104) (SQLDriverConnect)")
+NO_DRIVER = pyodbc.InterfaceError("IM002", "[IM002] [unixODBC][Driver Manager]Data source name not found (0) "
+                                           "(SQLDriverConnect)")
+check("Linux TCP reset (errno 104) is transient and named in the journal, a missing driver is not",
+      db_sql._transient(RESET) and db_sql._error_code(RESET) == "ECONNRESET" and not db_sql._transient(NO_DRIVER))
+pyodbc.connect = fake_connect([RESET, "conn"])
+check("TCP reset while connecting: connected on the second try", db_sql._azure_connect() == "conn"
+      and len(calls) == 2 and slept == [1] and db_sql.retry_stats(reset=True) == (1, 1.0, ["ECONNRESET"]))
+calls.clear(); slept.clear()
+
 pyodbc.connect = fake_connect([UNAVAILABLE, UNAVAILABLE, "conn"])
 check("database briefly unavailable: connected on the third try", db_sql._azure_connect() == "conn"
       and len(calls) == 3 and slept == [1, 3])
