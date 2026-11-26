@@ -131,12 +131,16 @@ def timed(name):
     """Фонова задача: тривалість і підсумок (info["result"] = що повернула) — у журнал; помилка — статус error."""
     t0 = time.monotonic()
     info = {}
+    db_sql.retry_stats(reset=True)
     try:
         yield info
     except Exception as e:
-        record("job", name, (time.monotonic() - t0) * 1000, "error", f"{type(e).__name__}: {e}")
+        record("job", name, (time.monotonic() - t0) * 1000, "error",
+               " · ".join(x for x in (f"{type(e).__name__}: {e}", db_sql.retry_text(db_sql.retry_stats())) if x))
         raise
     status, detail = summary(info.get("result"))
+    # база відмовляла й підключення вдалося з повторної спроби — видно в підсумку задачі
+    detail = " · ".join(x for x in (detail, db_sql.retry_text(db_sql.retry_stats())) if x)
     record("job", name, (time.monotonic() - t0) * 1000, status, detail)
 
 

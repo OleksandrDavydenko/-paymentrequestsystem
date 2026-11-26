@@ -24,6 +24,11 @@ timings = []
 def _keep_timings(resp):
     timings.append(dict(g.get("timings") or {}))
     return resp
+fake_retry = []
+@m.app.before_request
+def _fake_retry():  # як _azure_connect, коли база з першої спроби відмовила (40613)
+    if fake_retry:
+        db_sql._retries.n, db_sql._retries.wait, db_sql._retries.codes = 1, 1.0, ["40613"]
 c = m.app.test_client()
 
 # ---------- шаблони: компіляція під час запиту видна; після прогріву — немає
@@ -61,7 +66,23 @@ if db_sql.configured():
     queries.clear()
     c.get("/requests")
     check("ordinary page: session from the database as before", any("sessions" in q.lower() for q in queries))
+    bot = m.app.test_client()  # сканер без cookie: адреси, яких на сайті немає
+    queries.clear()
+    for url in ("/.env.bak", "/.git/HEAD", "/id_rsa", "/openai-proxy/config.json"):
+        check(f"{url}: 404", bot.get(url).status_code == 404)
+    check("unknown addresses (scanners): no database queries", not queries)
 else:
     r = c.get("/site.webmanifest")
     check("manifest served (memory storage)", r.status_code == 200 and "short_name" in r.get_data(as_text=True))
+# ---------- база відмовила з першої спроби — запит у журналі роботи, навіть швидкий, з кодом помилки
+import ops_log
+fake_retry.append(1)
+c.get("/requests/new")
+fake_retry.clear()
+row = next((r for r in ops_log.query(20) if r["kind"] == "slow" and r["name"] == "GET /requests/new"), None)
+check("connection retried: request logged even when fast, with the code", row is not None
+      and "повторні спроби підключення до бази: 1 (40613), очікування 1 с" in (row["detail"] or ""))
+n = len(ops_log.query(50))
+c.get("/requests/new")
+check("next request of the thread: counter reset, nothing logged", len(ops_log.query(50)) == n)
 print("ALL OK" if ok else "SOME FAILED")

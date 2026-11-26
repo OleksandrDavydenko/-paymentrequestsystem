@@ -347,6 +347,32 @@ def _transient(e):
     return (bool(e.args) and e.args[0] in TRANSIENT_STATES) or any(f"({code})" in text for code in TRANSIENT_ERRORS)
 
 
+def _error_code(e):
+    """Код помилки для журналу: номер Azure SQL (40613…) або SQLSTATE (08S01…)."""
+    text = str(e)
+    return next((c for c in TRANSIENT_ERRORS if f"({c})" in text), str(e.args[0]) if e.args else "?")
+
+
+_retries = threading.local()  # повторні спроби підключення в цьому потоці (запит сторінки чи фонова задача)
+
+
+def retry_stats(reset=False):
+    """Повторні спроби підключення до бази в цьому потоці з останнього скидання: (скільки, секунд очікування,
+    [коди помилок]). Скидають request_timing (на початку запиту) і ops_log.timed (на початку фонової задачі)."""
+    stats = (getattr(_retries, "n", 0), getattr(_retries, "wait", 0.0), list(getattr(_retries, "codes", ())))
+    if reset:
+        _retries.n, _retries.wait, _retries.codes = 0, 0.0, []
+    return stats
+
+
+def retry_text(stats):
+    """«повторні спроби підключення до бази: 2 (40613, 40613), очікування 4 с» або ""."""
+    n, wait, codes = stats
+    if not n:
+        return ""
+    return f"повторні спроби підключення до бази: {n} ({', '.join(codes)}), очікування {wait:.0f} с"
+
+
 def _azure_connect():
     import ops_log
     import pyodbc
@@ -361,6 +387,10 @@ def _azure_connect():
                 if delay is None or not _transient(e):
                     raise
                 logging.getLogger(__name__).warning("База тимчасово недоступна, нова спроба за %s с: %s", delay, e)
+                # у журнал роботи: підсумок запиту сторінки чи фонової задачі покаже, що база відмовляла і скільки чекали
+                _retries.n = getattr(_retries, "n", 0) + 1
+                _retries.wait = getattr(_retries, "wait", 0.0) + delay
+                _retries.codes = [*getattr(_retries, "codes", ()), _error_code(e)]
                 time.sleep(delay)
     finally:
         ops_log.add_timing("db_connect", time.monotonic() - t0)  # нове з'єднання (з токеном Entra) — у підсумок запиту

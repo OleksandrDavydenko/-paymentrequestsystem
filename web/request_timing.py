@@ -15,6 +15,7 @@ import time
 from flask import g, request
 
 import clock
+import db_sql
 import ops_log
 
 PROFILE_ARG = "_profile"
@@ -46,8 +47,11 @@ def _finish(response):
         user = getattr(g, "user", None) or {}
         if prof is not None and "admin" in (getattr(g, "roles", None) or ()):
             _save_profile(prof, ms, response.status_code)
-        if ms >= ops_log.SLOW_MS and request.path not in PLATFORM_PROBES:
-            detail = " · ".join(x for x in (user.get("email") or "", ops_log.timing_summary(g.get("timings"))) if x)
+        retries = db_sql.retry_text(db_sql.retry_stats())
+        # база відмовляла й підключилися з повторної спроби — у журнал, навіть якщо запит устиг за SLOW_MS
+        if (ms >= ops_log.SLOW_MS or retries) and request.path not in PLATFORM_PROBES:
+            detail = " · ".join(x for x in (user.get("email") or "", ops_log.timing_summary(g.get("timings")), retries)
+                                if x)
             ops_log.record("slow", f"{request.method} {request.path}", ms, response.status_code, detail)
     return response
 
@@ -80,6 +84,13 @@ def _save_profile(prof, ms, status):
         ops_log.logger.exception("Не вдалося зберегти профіль запиту")
 
 
+def _forget_retries(_exc=None):
+    """Кінець запиту: лічильник повторних спроб підключення — з нуля для наступного запиту цього потоку (скидаємо
+    в кінці, а не на початку: сеанс входу читається з бази ще до перевірок запиту)."""
+    db_sql.retry_stats(reset=True)
+
+
 def init_app(app):
     app.before_request(_start)
     app.after_request(_finish)
+    app.teardown_request(_forget_retries)

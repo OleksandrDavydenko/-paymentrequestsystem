@@ -37,6 +37,19 @@ check("40613 and a dropped link are transient, login failure is not",
 pyodbc.connect = fake_connect([UNAVAILABLE, UNAVAILABLE, "conn"])
 check("database briefly unavailable: connected on the third try", db_sql._azure_connect() == "conn"
       and len(calls) == 3 and slept == [1, 3])
+check("retries counted for the ops journal", db_sql.retry_stats() == (2, 4.0, ["40613", "40613"])
+      and db_sql.retry_text(db_sql.retry_stats()) == "повторні спроби підключення до бази: 2 (40613, 40613), очікування 4 с")
+import ops_log
+recorded = []  # SQL_SERVER тут вигаданий — журнал перехоплюємо, а не пишемо в базу
+ops_log.record = lambda kind, name, ms=None, status="", detail="": recorded.append((kind, name, status, detail))
+with ops_log.timed("db_retry_test_job") as info:  # фонова задача: лічильник з нуля, спроби — у підсумку
+    pyodbc.connect = fake_connect([UNAVAILABLE, "conn"])
+    info["result"] = {"done": 1} if db_sql._azure_connect() == "conn" else None
+detail = next(d for k, n, st, d in recorded if n == "db_retry_test_job")
+check("background job: retries in its summary", "повторні спроби підключення до бази: 1 (40613), очікування 1 с"
+      in detail and "done: 1" in detail)
+db_sql.retry_stats(reset=True)
+check("reset: nothing to report", db_sql.retry_text(db_sql.retry_stats()) == "")
 
 calls.clear(); slept.clear()
 pyodbc.connect = fake_connect([LOGIN_FAILED])

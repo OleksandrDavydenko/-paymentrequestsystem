@@ -7,6 +7,12 @@ import os, sys, tempfile
 sys.path.insert(0, os.getcwd())
 tmp = tempfile.mkdtemp()
 os.environ.update(UPLOAD_DIR=tmp, ADMIN_EMAILS="adm@ftpua.com")
+from datetime import datetime
+import clock
+# Демо-платежі — вересень–жовтень 2026, а лічильник «Без заявки» — за останні 30 днів: годинник зсунуто на 05.11.2026
+# (час іде далі), інакше тест залежить від того, коли його запустили
+_real_now, _shift = clock.now, datetime(2026, 11, 5, 12, 0) - clock.now()
+clock.now = lambda: _real_now() + _shift
 import app as m
 import app_settings, counterparties, payment_accounts, payments, payment_types, settings_log, user_roles
 import storage as db
