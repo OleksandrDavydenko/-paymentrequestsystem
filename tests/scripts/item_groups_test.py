@@ -74,6 +74,37 @@ check("admin: table save keeps groups, unskip returns the suggestion", app_setti
 c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1", "group_allocated": ["R1", "B1"],
                                 "group_direct": ["R2", "R2"], "group_unplanned": ["R3", ""]})
 check("admin: item in two groups rejected", len(app_settings.get("item_groups")) == 2)
+# ---------- «Додати групу вручну» і «Зібрати групу» з «Не вдалося розібрати»
+html = c.get("/admin/settings?tab=split", follow_redirects=True).get_data(as_text=True)
+check("admin: manual add card", 'id="ig-add"' in html and 'name="add_direct"' in html and "Додати групу вручну" in html)
+html = c.post("/admin/settings", data={"tab": "split", "add_group_sent": "1", "add_allocated": "S1 — Оренда Склад (3800)",
+                                       "add_direct": "", "add_unplanned": "оренда склад (9200)"},
+              follow_redirects=True).get_data(as_text=True)
+check("admin: manual group added (code or name)", app_settings.get("item_groups")[-1]
+      == {"allocated": "S1", "direct": "", "unplanned": "S2"} and len(app_settings.get("item_groups")) == 3)
+html = c.post("/admin/settings", data={"tab": "split", "add_group_sent": "1", "add_allocated": "C1", "add_direct": "R2"},
+              follow_redirects=True).get_data(as_text=True)
+check("admin: manual add — item already in a group rejected, input kept", len(app_settings.get("item_groups")) == 3
+      and "указана двічі" in html and 'value="R2"' in html)
+html = c.post("/admin/settings", data={"tab": "split", "add_group_sent": "1", "add_allocated": "C1"},
+              follow_redirects=True).get_data(as_text=True)
+check("admin: manual add — one variant rejected", len(app_settings.get("item_groups")) == 3 and "два варіанти" in html)
+c.post("/admin/settings", data={"tab": "split", "add_group_sent": "1", "add_allocated": "C1", "add_direct": "A3"})
+check("admin: manual add — 1C unplanned cannot be direct", len(app_settings.get("item_groups")) == 3)
+app_settings.set("item_groups", [], "t")
+html = c.get("/admin/settings?tab=split&find=1", follow_redirects=True).get_data(as_text=True)
+check("admin: ambiguous items get role selects", 'id="ig-ambiguous"' in html and 'name="amb_role"' in html)
+html = c.post("/admin/settings", data={"tab": "split", "amb_sent": "1", "amb_base": "таксі", "amb_code": ["B1", "B2", "B3"],
+                                       "amb_role": ["allocated", "allocated", "skip"]}, follow_redirects=True).get_data(as_text=True)
+check("admin: ambiguous — repeated role rejected", app_settings.get("item_groups") == [] and "залиште одну" in html)
+c.post("/admin/settings", data={"tab": "split", "amb_sent": "1", "amb_base": "таксі", "amb_code": ["B1", "B2", "B3"],
+                                "amb_role": ["allocated", "direct", "skip"]})
+check("admin: ambiguous — group assembled, «not included» skipped",
+      app_settings.get("item_groups") == [{"allocated": "B1", "direct": "B2", "unplanned": ""}])
+c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1"})
+check("admin: removing all rows from the table clears groups", app_settings.get("item_groups") == [])
+c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1", "group_allocated": ["R1", "A1"],
+                                "group_direct": ["R2", "A2"], "group_unplanned": ["R3", "A3"]})
 app_settings.set("item_groups", [], "t")
 app_settings.set("split_pairs", [{"direct": "B2", "allocated": "B1"}], "t")
 check("old pairs act as groups", item_groups.group_of("B2")["allocated"] == "B1")

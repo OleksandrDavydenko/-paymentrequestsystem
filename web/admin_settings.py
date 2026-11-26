@@ -167,7 +167,11 @@ def _context(tab):
                    item_groups_skip=app_settings.get("item_groups_skip") or [],
                    item_groups_found=found[0] if found else None, item_groups_ambiguous=found[1] if found else None,
                    ROLE_LABELS=item_groups.ROLE_LABELS, GROUP_ROLES=item_groups.ROLES,
-                   unplanned_known=any(i.get("unplanned") for i in items), split_items=items)
+                   unplanned_known=any(i.get("unplanned") for i in items), split_items=items,
+                   ig_add_draft=session.pop("ig_add_draft", None) or {},
+                   # роль кожної статті за довідником — підказка під полями «Додати групу вручну»
+                   item_roles={i["code"]: item_groups.guess_role(i) for i in items},
+                   item_unplanned_1c=[i["code"] for i in items if i.get("unplanned")])
     elif tab == "request":
         ctx.update(request_prefix=request_numbers.prefix(), request_digits=request_numbers.digits(),
                    request_prefix_history=[p for p in request_numbers.all_prefixes() if p != request_numbers.prefix()],
@@ -350,23 +354,62 @@ def _check_group(g, items, seen, label):
     return None
 
 
+def _item_code(raw, items, by_name):
+    """Код статті з поля «код — назва» (з підказок), просто коду чи назви."""
+    raw = (raw or "").strip()
+    if not raw:
+        return ""
+    code = raw.split(" — ")[0].strip()
+    return code if code in items else by_name.get(raw.lower(), code)
+
+
+def _items_index():
+    items = {i["code"]: i for i in expense_items.get_items()}
+    return items, {i["name"].strip().lower(): c for c, i in items.items()}
+
+
+def _parse_add_group(form, changes, errors):
+    """Нова група вручну: картка «Додати групу вручну» (add_allocated / add_direct / add_unplanned) або «Додати групу»
+    в збігу «Не вдалося розібрати» (amb_code + amb_role, роль skip — стаття не входить). Додається до збережених."""
+    items, by_name = _items_index()
+    if "amb_sent" in form:
+        g, label = {r: "" for r in item_groups.ROLES}, f"Групи статей, «{form.get('amb_base', '')}»"
+        for code, role in zip(form.getlist("amb_code"), form.getlist("amb_role")):
+            if role not in item_groups.ROLES:
+                continue
+            if g[role]:
+                errors["item_groups"] = (f"{label}: дві статті з роллю «{item_groups.ROLE_LABELS[role]}» — залиште одну, "
+                                         "решті виберіть іншу роль або «не входить»")
+                return
+            g[role] = code
+    else:
+        g = {r: _item_code(form.get(f"add_{r}"), items, by_name) for r in item_groups.ROLES}
+        label = "Нова група статей"
+        session["ig_add_draft"] = {r: form.get(f"add_{r}") or "" for r in item_groups.ROLES}
+    current = [{r: x[r] for r in item_groups.ROLES} for x in item_groups.manual()]
+    seen = {c for x in current for c in x.values() if c}
+    error = _check_group(g, items, seen, label)
+    if error:
+        errors["item_groups"] = error
+        return
+    session.pop("ig_add_draft", None)
+    changes["item_groups"] = current + [g]
+    if app_settings.get("split_pairs"):
+        changes["split_pairs"] = []
+
+
 def _parse_item_groups(form, changes, errors):
     """Групи статей з таблиці розділу «Групи статей і розподіл»: рядок — три поля (з розподілом / пряма /
     позапланова: «код — назва» з підказок або просто код). Порожні рядки пропускаються; group_unskip — повернути
     базу назви в пропозиції."""
-    items = {i["code"]: i for i in expense_items.get_items()}
-    by_name = {i["name"].strip().lower(): c for c, i in items.items()}
+    items, by_name = _items_index()
 
     def code_of(raw):
-        raw = (raw or "").strip()
-        if not raw:
-            return ""
-        code = raw.split(" — ")[0].strip()
-        return code if code in items else by_name.get(raw.lower(), code)
+        return _item_code(raw, items, by_name)
 
     cols = [form.getlist(f"group_{r}") for r in item_groups.ROLES]
     groups, seen = [], set()
-    for n in range(max(len(c) for c in cols)):
+    for n in range(max([len(c) for c in cols] + [0])):
         g = {r: code_of(col[n] if n < len(col) else "") for r, col in zip(item_groups.ROLES, cols)}
         if not any(g.values()):
             continue
@@ -538,6 +581,8 @@ def admin_settings(*, context):
         _parse_item_groups(request.form, changes, errors)
     if tab == "split" and "found_sent" in request.form:
         _parse_found(request.form, changes, errors)
+    if tab == "split" and ("add_group_sent" in request.form or "amb_sent" in request.form):
+        _parse_add_group(request.form, changes, errors)
     if tab == "reconcile" and "ok_until_sent" in request.form:
         _parse_ok_until(request.form, changes, errors)
     if "payments_since" in changes:
@@ -554,8 +599,10 @@ def admin_settings(*, context):
     if changes.get("doc_extensions") == []:
         errors["doc_extensions"] = "Залиште дозволеним хоча б один формат документів"
     back = settings_url("approval" if legacy else tab)
-    if tab == "split" and "found_sent" in request.form:  # лишитися в результатах пошуку груп
+    if tab == "split" and ("found_sent" in request.form or "amb_sent" in request.form):  # лишитися в результатах пошуку
         back = url_for("admin.admin_settings", tab="split", find=1) + "#ig-found"
+    elif tab == "split" and "add_group_sent" in request.form:
+        back = url_for("admin.admin_settings", tab="split") + "#ig-add"
     if not errors and (error := _check_login_switch(changes)):
         errors["login_methods"] = error
     if errors:
