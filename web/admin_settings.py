@@ -161,11 +161,12 @@ def _context(tab):
     elif tab == "split":
         items = sorted(expense_items.get_items(), key=lambda i: i["code"])
         names = {i["code"]: i["name"] for i in items}
-        _, ambiguous = item_groups.detect()
+        found = item_groups.suggest() if request.args.get("find") else None  # лише за кнопкою «Знайти групи»
         ctx.update(item_groups=[{**g, "names": {r: names.get(g[r]) for r in item_groups.ROLES}}
                                 for g in item_groups.groups()],
                    item_groups_skip=app_settings.get("item_groups_skip") or [],
-                   item_groups_ambiguous=ambiguous, ROLE_LABELS=item_groups.ROLE_LABELS,
+                   item_groups_found=found[0] if found else None, item_groups_ambiguous=found[1] if found else None,
+                   ROLE_LABELS=item_groups.ROLE_LABELS, GROUP_ROLES=item_groups.ROLES,
                    unplanned_known=any(i.get("unplanned") for i in items), split_items=items)
     elif tab == "request":
         ctx.update(request_prefix=request_numbers.prefix(), request_digits=request_numbers.digits(),
@@ -332,10 +333,27 @@ def _parse_ok_until(form, changes, errors):
         changes["payments_ok_until"] = until
 
 
+def _check_group(g, items, seen, label):
+    """Помилка групи (або None): щонайменше два варіанти, статті з довідника, кожна — в одній групі, пряма — не
+    позапланова за ознакою 1С."""
+    filled = [r for r in item_groups.ROLES if g[r]]
+    if len(filled) < 2:
+        return f"{label}: у групі мають бути щонайменше два варіанти статті"
+    unknown = next((g[r] for r in filled if g[r] not in items), None)
+    if unknown:
+        return f"{label}: статті «{unknown}» немає в довіднику"
+    dup = next((g[r] for r in filled if g[r] in seen or [g[x] for x in filled].count(g[r]) > 1), None)
+    if dup:
+        return f"Групи статей: стаття {dup} указана двічі — стаття може бути лише в одній групі"
+    if g["direct"] and items[g["direct"]].get("unplanned"):
+        return f"{label}: «{items[g['direct']]['name']}» у 1С має базу «Не розподіляти» — це позапланова стаття, не пряма"
+    return None
+
+
 def _parse_item_groups(form, changes, errors):
-    """Групи статей з форми розділу «Групи статей і розподіл». Рядок — три поля (з розподілом / пряма / позапланова:
-    «код — назва» з підказок або просто код) і база назви автоматичної групи. Автоматичний рядок без змін лишається
-    автоматичним, змінений — стає ручним, прибраний — потрапляє в item_groups_skip."""
+    """Групи статей з таблиці розділу «Групи статей і розподіл»: рядок — три поля (з розподілом / пряма /
+    позапланова: «код — назва» з підказок або просто код). Порожні рядки пропускаються; group_unskip — повернути
+    базу назви в пропозиції."""
     items = {i["code"]: i for i in expense_items.get_items()}
     by_name = {i["name"].strip().lower(): c for c, i in items.items()}
 
@@ -346,55 +364,64 @@ def _parse_item_groups(form, changes, errors):
         code = raw.split(" — ")[0].strip()
         return code if code in items else by_name.get(raw.lower(), code)
 
-    auto = {g["base"]: g for g in item_groups.detect()[0]}
     cols = [form.getlist(f"group_{r}") for r in item_groups.ROLES]
-    bases = form.getlist("group_base")
-    manual, seen, kept = [], {}, set()
-    for n in range(max(len(c) for c in cols + [bases])):
+    groups, seen = [], set()
+    for n in range(max(len(c) for c in cols)):
         g = {r: code_of(col[n] if n < len(col) else "") for r, col in zip(item_groups.ROLES, cols)}
-        base = (bases[n] if n < len(bases) else "").strip()
-        filled = [r for r in item_groups.ROLES if g[r]]
-        if not filled:
+        if not any(g.values()):
             continue
-        label = f"Групи статей, рядок {n + 1}"
-        if len(filled) < 2:
-            errors["item_groups"] = f"{label}: у групі мають бути щонайменше два варіанти статті"
-            continue
-        unknown = next((g[r] for r in filled if g[r] not in items), None)
-        if unknown:
-            errors["item_groups"] = f"{label}: статті «{unknown}» немає в довіднику"
-            continue
-        dup = next((g[r] for r in filled if g[r] in seen or list(g.values()).count(g[r]) > 1), None)
-        if dup:
-            errors["item_groups"] = f"Групи статей: стаття {dup} указана двічі — стаття може бути лише в одній групі"
-            continue
-        if g["direct"] and items[g["direct"]].get("unplanned"):
-            errors["item_groups"] = (f"{label}: «{items[g['direct']]['name']}» у 1С має базу «Не розподіляти» — "
-                                     "це позапланова стаття, не пряма")
-            continue
-        for r in filled:
-            seen[g[r]] = n
-        if base in auto and all(g[r] == auto[base][r] for r in item_groups.ROLES):
-            kept.add(base)  # автоматична група без змін
-            continue
-        manual.append(g)
-    if "item_groups" in errors:
-        return
-    old_skip = set(app_settings.get("item_groups_skip") or [])
-    unskip = set(form.getlist("group_unskip"))
-    used = set(seen)
-    skip = sorted((old_skip - unskip) | {b for b, g in auto.items() if b not in kept and b not in old_skip
-                                         and not any(g[r] in used for r in item_groups.ROLES if g[r])})
-    if manual != (app_settings.get("item_groups") or []):
-        changes["item_groups"] = manual
-    if skip != sorted(old_skip):
-        changes["item_groups_skip"] = skip
+        error = _check_group(g, items, seen, f"Групи статей, рядок {n + 1}")
+        if error:
+            errors["item_groups"] = error
+            return
+        seen |= {c for c in g.values() if c}
+        groups.append(g)
+    if groups != (app_settings.get("item_groups") or []):
+        changes["item_groups"] = groups
     if app_settings.get("split_pairs"):
-        changes["split_pairs"] = []  # старі пари вже показані в таблиці як ручні групи й збережені разом з нею
-    no_flag = [g["unplanned"] for g in manual if g["unplanned"] and not items[g["unplanned"]].get("unplanned")]
-    if no_flag and any(i.get("unplanned") for i in items.values()):
-        flash("Позапланові без бази «Не розподіляти» в 1С: " + ", ".join(no_flag) + " — перевірте, чи це не помилка",
-              "error")
+        changes["split_pairs"] = []  # старі пари вже показані в таблиці як групи й збережені разом з нею
+    unskip = set(form.getlist("group_unskip"))
+    if unskip:
+        changes["item_groups_skip"] = [b for b in app_settings.get("item_groups_skip") or [] if b not in unskip]
+    no_flag = [g["unplanned"] for g in groups if g["unplanned"] and not items[g["unplanned"]].get("unplanned")
+               and not item_groups.unplanned_by_name(items[g["unplanned"]]["name"])]
+    if no_flag:
+        flash("Позапланові без бази «Не розподіляти» в 1С і без «поза план» у назві: " + ", ".join(no_flag)
+              + " — перевірте, чи це не помилка", "error")
+
+
+def _parse_found(form, changes, errors):
+    """Пропозиції «Знайти групи за назвою»: «Додати вибрані» (found — бази назв) додає їх до груп; кнопка «Не
+    пропонувати» (no_suggest — база назви) — у item_groups_skip."""
+    found, _ = item_groups.suggest()
+    by_base = {g["base"]: g for g in found}
+    if form.get("no_suggest"):
+        base = form["no_suggest"]
+        skip = list(app_settings.get("item_groups_skip") or [])
+        if base not in skip:
+            changes["item_groups_skip"] = skip + [base]
+        return
+    items = {i["code"]: i for i in expense_items.get_items()}
+    current = [{r: g[r] for r in item_groups.ROLES} for g in item_groups.manual()]
+    seen = {c for g in current for c in g.values() if c}
+    added = []
+    for base in form.getlist("found"):
+        g = by_base.get(base)
+        if not g:
+            continue
+        g = {r: g[r] for r in item_groups.ROLES}
+        error = _check_group(g, items, seen, f"Групи статей, «{base}»")
+        if error:
+            errors["item_groups"] = error
+            return
+        seen |= {c for c in g.values() if c}
+        added.append(g)
+    if not added:
+        errors["item_groups"] = "Групи статей: не вибрано жодної знайденої групи"
+        return
+    changes["item_groups"] = current + added
+    if app_settings.get("split_pairs"):
+        changes["split_pairs"] = []
 
 
 def _parse_cfo_rules(form, changes, errors):
@@ -509,6 +536,8 @@ def admin_settings(*, context):
         _parse_cfo_rules(request.form, changes, errors)
     if tab == "split" and "item_groups_sent" in request.form:
         _parse_item_groups(request.form, changes, errors)
+    if tab == "split" and "found_sent" in request.form:
+        _parse_found(request.form, changes, errors)
     if tab == "reconcile" and "ok_until_sent" in request.form:
         _parse_ok_until(request.form, changes, errors)
     if "payments_since" in changes:
@@ -525,6 +554,8 @@ def admin_settings(*, context):
     if changes.get("doc_extensions") == []:
         errors["doc_extensions"] = "Залиште дозволеним хоча б один формат документів"
     back = settings_url("approval" if legacy else tab)
+    if tab == "split" and "found_sent" in request.form:  # лишитися в результатах пошуку груп
+        back = url_for("admin.admin_settings", tab="split", find=1) + "#ig-found"
     if not errors and (error := _check_login_switch(changes)):
         errors["login_methods"] = error
     if errors:

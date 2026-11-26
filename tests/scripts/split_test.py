@@ -49,37 +49,30 @@ req, _ = submit("adm.ini@ftpua.com", 1000)
 check("no pairs: direct item from non-profit-center submits as before", req and req["status"] != "draft" and "split" not in req)
 check("no pairs: nothing applies", not expense_split.applies({"expense_code": DIRECT, "department": "ADM"}))
 
-# ---------- групи статей в адмінці (item_groups): автоматичні за назвою, старі пари, ручні
+# ---------- групи статей в адмінці (item_groups): старі пари, «Знайти групи» → додати, таблиця
 import item_groups
 AUTO = {"allocated": "05.002", "direct": "05.012", "unplanned": "05.022"}   # мок: «Ремонт оргтехніки» (+ прямий, позаплан)
-check("auto group detected by name", [{k: g[k] for k in item_groups.ROLES} for g in item_groups.groups()] == [AUTO]
-      and item_groups.groups()[0]["auto"] and item_groups.groups()[0]["name"] == "Ремонт оргтехніки")
+check("found by name, but not active until added", item_groups.groups() == []
+      and [{k: g[k] for k in item_groups.ROLES} for g in item_groups.suggest()[0]] == [AUTO])
 login("adm@ftpua.com")
-html = page("/admin/settings?tab=split")
-check("settings: groups section with the auto group", 'id="split-settings"' in html and "05.012 — Ремонт оргтехніки (прямий)" in html
-      and ">авто<" in html)
-app_settings.set("split_pairs", [{"direct": DIRECT, "allocated": ALLOC}], "t")   # старі пари — як ручні групи
-check("old pairs work as manual groups", item_groups.group_of(DIRECT)["allocated"] == ALLOC
-      and expense_split.pairs() == {DIRECT: ALLOC, "05.012": "05.002"})
+html = page("/admin/settings?tab=split&find=1")
+check("settings: groups section and found groups", 'id="split-settings"' in html and 'id="ig-found"' in html
+      and 'value="ремонт оргтехніки"' in html)
+app_settings.set("split_pairs", [{"direct": DIRECT, "allocated": ALLOC}], "t")   # старі пари — як групи
+check("old pairs work as groups", item_groups.group_of(DIRECT)["allocated"] == ALLOC and expense_split.pairs() == {DIRECT: ALLOC})
+html = c.post("/admin/settings", data={"tab": "split", "found_sent": "1", "found": "ремонт оргтехніки"},
+              follow_redirects=True).get_data(as_text=True)
+check("found group added (old pairs kept as groups)", app_settings.get("item_groups") == [
+    {"allocated": ALLOC, "direct": DIRECT, "unplanned": ""}, AUTO] and app_settings.get("split_pairs") == []
+      and "Ремонт оргтехніки: з розподілом 05.002 / пряма 05.012 / позапланова 05.022" in html)
 
-def save_groups(rows, **extra):
-    data = {"tab": "split", "item_groups_sent": "1", **extra}
+def save_groups(rows):
+    data = {"tab": "split", "item_groups_sent": "1"}
     for r in item_groups.ROLES:
         data[f"group_{r}"] = [row.get(r, "") for row in rows]
-    data["group_base"] = [row.get("base", "") for row in rows]
     return c.post("/admin/settings", data=data, follow_redirects=True).get_data(as_text=True)
 
 MANUAL = {"allocated": ALLOC, "direct": f"{DIRECT} — Обслуговування автомобілів", "unplanned": ""}
-html = save_groups([MANUAL, {**AUTO, "base": "ремонт оргтехніки"}, {}])
-check("settings: saved — manual group, auto stays auto, old pairs moved",
-      app_settings.get("item_groups") == [{"allocated": ALLOC, "direct": DIRECT, "unplanned": ""}]
-      and not app_settings.get("item_groups_skip") and app_settings.get("split_pairs") == []
-      and "Ремонт та обслуговування: з розподілом 05.001 / пряма 05.003" in html)
-save_groups([MANUAL])
-check("settings: removed auto group is skipped", app_settings.get("item_groups_skip") == ["ремонт оргтехніки"]
-      and item_groups.group_of("05.012") is None)
-save_groups([MANUAL], group_unskip="ремонт оргтехніки")
-check("settings: skipped auto group returned", app_settings.get("item_groups_skip") == [] and item_groups.group_of("05.012"))
 before = app_settings.get("item_groups")
 save_groups([MANUAL, {"allocated": ALLOC, "direct": "05.012"}])
 check("settings: item in two groups rejected", app_settings.get("item_groups") == before)
@@ -87,11 +80,10 @@ save_groups([{"allocated": "99.999", "direct": DIRECT}])
 check("settings: unknown item rejected", app_settings.get("item_groups") == before)
 save_groups([MANUAL, {"allocated": "05.002", "direct": "05.022"}])
 check("settings: unplanned (1C base) cannot be direct", app_settings.get("item_groups") == before)
-save_groups([MANUAL, {"allocated": "05.002", "unplanned": "05.022", "base": "ремонт оргтехніки"}])
-check("settings: edited auto group becomes manual", {"allocated": "05.002", "direct": "", "unplanned": "05.022"}
-      in app_settings.get("item_groups") and not item_groups.group_of("05.012"))
-save_groups([MANUAL, {**AUTO, "base": "ремонт оргтехніки"}])
-check("settings: back to auto", app_settings.get("item_groups") == before and item_groups.group_of("05.022")["auto"])
+save_groups([MANUAL, {"allocated": "05.002"}])
+check("settings: group needs two variants", app_settings.get("item_groups") == before)
+save_groups([MANUAL, AUTO, {}])
+check("settings: table saved as is", app_settings.get("item_groups") == before)
 
 # ---------- непрофітцентр: розподіл обов'язковий
 req, html = submit("adm.ini@ftpua.com", 1000)

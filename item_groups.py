@@ -3,16 +3,14 @@
 У довіднику 1С одна стаття часто має кілька варіантів:
   • з розподілом — «Ремонт і сервіс»: 1С розносить її на відділ-власник статті (Owner);
   • пряма — «Ремонт і сервіс (прямий)»: лягає на відділ рядка, можлива лише для профітцентру;
-  • позапланова — база розподілу «Не розподіляти»: 1С кидає її на «Інше».
-У 1С варіанти між собою не пов'язані, тож групу складаємо самі:
-  • автоматично — за назвою без дужок у кінці («Ремонт і сервіс (прямий)» → «ремонт і сервіс»); роль варіанта:
-    позапланова — ознака «Не розподіляти» з довідника (expense_items: unplanned), пряма — «(прямий)» у назві,
-    решта — з розподілом. Група автоматична, лише коли на кожну роль не більше однієї статті і варіантів хоча б два;
-    інакше — у список «не вдалося розібрати»;
-  • вручну — адміністратор («Налаштування → Заявка й погодження → Групи статей і розподіл»): item_groups. Автоматичну
-    групу можна прибрати (item_groups_skip — база назви). Старі пари split_pairs («пряма → з розподілом») діють як
-    ручні групи, доки адміністратор не збереже розділ.
-Діють: ручні групи + автоматичні, у яких немає статей з ручних і які не прибрано.
+  • позапланова — база розподілу «Не розподіляти» (або «поза план» у назві): 1С кидає її на «Інше».
+У 1С варіанти між собою не пов'язані, тож групи задає адміністратор («Налаштування → Заявка й погодження → Групи
+статей і розподіл», item_groups). Діють лише збережені групи — довідник, що змінився в 1С, їх сам не міняє.
+Кнопка «Знайти групи за назвою» (suggest) пропонує групи за назвою без дужок у кінці («Ремонт і сервіс (прямий)» →
+«ремонт і сервіс»): роль — guess_role; пропозиція є, лише коли на кожну роль одна стаття й варіантів хоча б два,
+інакше — «не вдалося розібрати». Пропозицію адміністратор додає (тоді вона — звичайна збережена група) або позначає
+«не пропонувати» (item_groups_skip — база назви). Старі пари split_pairs («пряма → з розподілом») діють як групи, доки
+розділ не збережено.
 
 Для чого група: розподіл заявки між відділами (expense_split), рядок групи у вкладці «Бюджет» (budget.report),
 підказка «Інші варіанти» під статтею в заявці.
@@ -25,6 +23,7 @@ import expense_items
 ROLES = ("allocated", "direct", "unplanned")
 ROLE_LABELS = {"allocated": "з розподілом", "direct": "пряма", "unplanned": "позапланова"}
 DIRECT_MARK = "(прямий)"  # так у довіднику 1С названо прямі статті
+UNPLANNED_NAME = re.compile(r"поза\s*план", re.IGNORECASE)  # «(поза план)», «(позапланові)», «(позапланова)»
 _TAIL = re.compile(r"\s*\([^()]*\)\s*$")
 
 
@@ -39,24 +38,30 @@ def base_name(name):
     return re.sub(r"\s+", " ", name).strip().lower()
 
 
+def unplanned_by_name(name):
+    return bool(UNPLANNED_NAME.search(name or ""))
+
+
 def guess_role(item):
-    """Роль статті в групі за довідником: позапланова (ознака 1С), пряма («(прямий)» у назві) або з розподілом."""
-    if item.get("unplanned"):
+    """Роль статті в групі за довідником: позапланова (ознака 1С «Не розподіляти» або «поза план» у назві), пряма
+    («(прямий)» у назві) або з розподілом."""
+    name = item.get("name") or ""
+    if item.get("unplanned") or unplanned_by_name(name):
         return "unplanned"
-    if DIRECT_MARK in (item.get("name") or "").lower():
+    if DIRECT_MARK in name.lower():
         return "direct"
     return "allocated"
 
 
-_auto_cache = {}
+_detect_cache = {}
 
 
 def detect():
-    """Автоматичні групи за назвою: (групи, неоднозначні). Група — {"base", "allocated", "direct", "unplanned"};
-    неоднозначна — {"base", "items": [{"code", "name", "role"}]} (на одну роль кілька статей)."""
+    """Збіги за назвою в усьому довіднику: (групи, неоднозначні). Група — {"base", "allocated", "direct",
+    "unplanned"}; неоднозначна — {"base", "items": [{"code", "name", "role"}], "why"} (на одну роль кілька статей)."""
     items = expense_items.get_items()
-    if _auto_cache.get("key") is items:
-        return _auto_cache["value"]
+    if _detect_cache.get("key") is items:
+        return _detect_cache["value"]
     by_base = {}
     for i in items:
         b = base_name(i.get("name"))
@@ -70,14 +75,31 @@ def detect():
         for i in members:
             roles.setdefault(guess_role(i), []).append(i["code"])
         if any(len(v) > 1 for v in roles.values()):
-            ambiguous.append({"base": b, "items": [{"code": i["code"], "name": i["name"], "role": guess_role(i)}
-                                                   for i in members]})
+            why = "; ".join(f"{ROLE_LABELS[r]} — {len(v)} статті" for r, v in roles.items() if len(v) > 1)
+            ambiguous.append({"base": b, "why": why,
+                              "items": [{"code": i["code"], "name": i["name"], "role": guess_role(i)} for i in members]})
             continue
         g = {"base": b, **{r: (roles.get(r) or [""])[0] for r in ROLES}}
         if sum(1 for r in ROLES if g[r]) >= 2:
             groups.append(g)
-    _auto_cache.update(key=items, value=(groups, ambiguous))
+    _detect_cache.update(key=items, value=(groups, ambiguous))
     return groups, ambiguous
+
+
+def suggest():
+    """Пропозиції кнопки «Знайти групи за назвою»: (групи, неоднозначні) без статей, що вже в групах, і без баз назв
+    «не пропонувати»."""
+    used = {g[r] for g in manual() for r in ROLES if g[r]}
+    skip = set(app_settings.get("item_groups_skip") or [])
+    found, ambiguous = detect()
+    names = {i["code"]: i["name"] for i in expense_items.get_items()}
+    out = []
+    for g in found:
+        if g["base"] in skip or any(g[r] in used for r in ROLES if g[r]):
+            continue
+        out.append({**g, "name": title(g, names), "names": {r: names.get(g[r]) for r in ROLES}})
+    amb = [a for a in ambiguous if a["base"] not in skip and not all(i["code"] in used for i in a["items"])]
+    return out, amb
 
 
 def _clean(g):
@@ -85,7 +107,7 @@ def _clean(g):
 
 
 def manual():
-    """Ручні групи: item_groups, а поки розділ не збережено — ще й старі пари split_pairs."""
+    """Збережені групи: item_groups, а поки розділ не збережено — ще й старі пари split_pairs."""
     out = [_clean(g) for g in app_settings.get("item_groups") or []]
     used = {g[r] for g in out for r in ROLES if g[r]}
     for p in app_settings.get("split_pairs") or []:
@@ -97,21 +119,9 @@ def manual():
 
 
 def groups():
-    """Діючі групи: [{"allocated", "direct", "unplanned", "auto", "base", "name"}] — ручні, потім автоматичні."""
+    """Діючі групи (лише збережені): [{"allocated", "direct", "unplanned", "name"}]."""
     names = {i["code"]: i["name"] for i in expense_items.get_items()}
-    out = []
-    for g in manual():
-        out.append({**g, "auto": False, "base": ""})
-    used = {g[r] for g in out for r in ROLES if g[r]}
-    skip = set(app_settings.get("item_groups_skip") or [])
-    auto, _ = detect()
-    for g in auto:
-        if g["base"] in skip or any(g[r] in used for r in ROLES if g[r]):
-            continue
-        out.append({**g, "auto": True})
-    for g in out:
-        g["name"] = title(g, names)
-    return out
+    return [{**g, "name": title(g, names)} for g in manual()]
 
 
 def title(g, names=None):
@@ -148,13 +158,13 @@ def role(code):
 
 
 def is_unplanned(code):
-    """Позапланова стаття: роль у групі або ознака «Не розподіляти» з довідника."""
+    """Позапланова стаття: роль у групі, ознака «Не розподіляти» з довідника або «поза план» у назві."""
     if not code:
         return False
     if role(code) == "unplanned":
         return True
     item = expense_items.get_map().get(code)
-    return bool(item and item.get("unplanned"))
+    return bool(item and (item.get("unplanned") or unplanned_by_name(item.get("name"))))
 
 
 def describe(g):

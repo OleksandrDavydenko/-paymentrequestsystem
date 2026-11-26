@@ -1,11 +1,9 @@
 {% macro group_row(gr) -%}
-<tr class="{{ 'ig-auto' if gr and gr.auto }}">
-  {% for r in ('allocated', 'direct', 'unplanned') %}
+<tr>
+  {% for r in GROUP_ROLES %}
   <td data-label="{{ ROLE_LABELS[r] | capitalize }}"><input type="text" name="group_{{ r }}" list="split-items" autocomplete="off"
       placeholder="Код або назва статті" value="{% if gr and gr[r] %}{{ gr[r] }}{{ ' — ' ~ gr.names[r] if gr.names[r] }}{% endif %}"></td>
   {% endfor %}
-  <td class="ig-kind">{% if gr and gr.auto %}<span class="badge grey" title="Складено за назвою статей">авто</span>{% elif gr %}<span class="badge green">вручну</span>{% endif %}
-    <input type="hidden" name="group_base" value="{{ gr.base if gr and gr.auto else '' }}"></td>
   <td><button type="button" class="btn-link split-pair-remove" title="Прибрати групу" aria-label="Прибрати групу">✕</button></td>
 </tr>
 {%- endmacro %}
@@ -13,23 +11,26 @@
   <input type="hidden" name="tab" value="split">
   <input type="hidden" name="item_groups_sent" value="1">
   <div class="toolbar"><h2 style="margin:0">Групи статей і розподіл між відділами</h2>
-    {% if item_groups %}<span class="badge green">груп: {{ item_groups | length }}</span>{% else %}<span class="badge grey">груп немає</span>{% endif %}</div>
+    {% if item_groups %}<span class="badge green">груп: {{ item_groups | length }}</span>{% else %}<span class="badge grey">груп немає</span>{% endif %}
+    <span class="spacer"></span>
+    <a class="btn btn-sm" href="{{ url_for('admin.admin_settings', tab='split', find=1) }}#ig-found">Знайти групи за назвою</a></div>
   <p class="muted" style="margin-top:0">У 1С одна стаття має кілька варіантів: <strong>з розподілом</strong> (1С розносить її
     на відділ-власник статті), <strong>пряма</strong> («(прямий)» у назві — лише на профітцентр) і
-    <strong>позапланова</strong> (база «Не розподіляти» — 1С кидає її на «Інше»). Група зв'язує варіанти однієї статті.
-    Групи складаються <strong>автоматично</strong> за назвою (без дужок у кінці): позначка «авто». Виправте, якщо
-    треба: змінена група стає ручною, прибрана автоматична більше не з'явиться (її можна повернути нижче).</p>
+    <strong>позапланова</strong> (база «Не розподіляти» або «поза план» у назві — 1С кидає її на «Інше»). Група
+    зв'язує варіанти однієї статті. Діють лише групи з цієї таблиці: зміни довідника в 1С їх самі не міняють.
+    Кнопка «Знайти групи за назвою» запропонує групи зі статей з однаковою назвою (без дужок у кінці) — додасте ті,
+    що підходять.</p>
   <p class="muted">Що дає група: у заявці (непряма витрата) суму можна розподілити між відділами — пряма на
     профітцентри, з розподілом на власника, позапланова на «Інше»; для прямої статті у відділі, що не є
     профітцентром, розподіл обов'язковий. Під статтею в заявці видно інші варіанти. У вкладці «Бюджет» варіанти
     статті показано одним рядком з розгортанням.</p>
-  {% if not unplanned_known %}<p class="field-hint">Ознаки «Не розподіляти» в довіднику статей поки немає — додайте
-    колонку <code>БазаРозподілу</code> у таблицю Power BI <code>Expense_Item</code> (запит — <code>sql/Expense_Item_Base.sql</code>),
-    тоді позапланові статті знайдуться автоматично. До того їх можна вписати вручну.</p>{% endif %}
+  {% if not unplanned_known %}<p class="field-hint">Ознаки «Не розподіляти» в довіднику статей поки немає — позапланові
+    знаходяться лише за «поза план» у назві. Щоб брати ознаку з 1С, додайте колонку <code>БазаРозподілу</code> у таблицю
+    Power BI <code>Expense_Item</code> (запит — <code>sql/Expense_Item_Base.sql</code>).</p>{% endif %}
 
   <div class="table-wrap">
   <table class="stack split-pairs">
-    <thead><tr><th>З розподілом</th><th>Пряма</th><th>Позапланова</th><th></th><th></th></tr></thead>
+    <thead><tr>{% for r in GROUP_ROLES %}<th>{{ ROLE_LABELS[r] | capitalize }}</th>{% endfor %}<th></th></tr></thead>
     <tbody id="split-pairs-rows">
       {% for gr in item_groups %}{{ group_row(gr) }}{% endfor %}
       {% for _ in range(1 if item_groups else 3) %}{{ group_row(none) }}{% endfor %}
@@ -38,30 +39,61 @@
   </div>
   <datalist id="split-items">{% for i in split_items %}<option value="{{ i.code }} — {{ i.name }}"></option>{% endfor %}</datalist>
   <p><button type="button" class="btn btn-sm" id="split-pair-add">+ Додати групу</button></p>
-
-  {% if item_groups_ambiguous %}
-  <details class="ig-more"><summary>Не вдалося розібрати за назвою: {{ item_groups_ambiguous | length }}</summary>
-    <p class="muted">У цих статей однакова назва, але на одну роль припадає кілька статей. Якщо це варіанти однієї статті —
-      додайте групу вручну.</p>
-    <ul>{% for a in item_groups_ambiguous %}<li><strong>{{ a.base }}</strong>:
-      {% for i in a['items'] %}{{ i.code }} {{ i.name }} ({{ ROLE_LABELS[i.role] }}){{ ', ' if not loop.last }}{% endfor %}</li>{% endfor %}</ul>
-  </details>
-  {% endif %}
   {% if item_groups_skip %}
-  <details class="ig-more"><summary>Прибрані автоматичні групи: {{ item_groups_skip | length }}</summary>
-    {% for b in item_groups_skip %}<label class="check"><input type="checkbox" name="group_unskip" value="{{ b }}"> повернути «{{ b }}»</label>{% endfor %}
+  <details class="ig-more"><summary>Не пропонувати за назвою: {{ item_groups_skip | length }}</summary>
+    {% for b in item_groups_skip %}<label class="check"><input type="checkbox" name="group_unskip" value="{{ b }}"> знову пропонувати «{{ b }}»</label>{% endfor %}
   </details>
   {% endif %}
   <p><button type="submit" class="btn btn-primary btn-sm">Зберегти</button></p>
 </form>
+
+{% if item_groups_found is not none %}
+<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="ig-found"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="tab" value="split">
+  <input type="hidden" name="found_sent" value="1">
+  <div class="toolbar"><h2 style="margin:0">Знайдено за назвою</h2>
+    <span class="badge {{ 'green' if item_groups_found else 'grey' }}">{{ item_groups_found | length }}</span>
+    <span class="spacer"></span>
+    <a class="btn-link" href="{{ url_for('admin.admin_settings', tab='split') }}">Сховати</a></div>
+  {% if item_groups_found %}
+  <p class="muted" style="margin-top:0">Статті з однаковою назвою (без дужок у кінці), яких ще немає в групах. Роль:
+    позапланова — база «Не розподіляти» або «поза план» у назві, пряма — «(прямий)», решта — з розподілом. Позначте
+    ті, що підходять, і додайте; решту можна більше не пропонувати.</p>
+  <div class="table-wrap">
+  <table class="stack split-pairs">
+    <thead><tr><th></th><th>Група</th>{% for r in GROUP_ROLES %}<th>{{ ROLE_LABELS[r] | capitalize }}</th>{% endfor %}<th></th></tr></thead>
+    <tbody>
+      {% for f in item_groups_found %}
+      <tr>
+        <td><input type="checkbox" name="found" value="{{ f.base }}" checked aria-label="Додати групу «{{ f.name }}»"></td>
+        <td data-label="Група"><strong>{{ f.name }}</strong></td>
+        {% for r in GROUP_ROLES %}<td data-label="{{ ROLE_LABELS[r] | capitalize }}">{% if f[r] %}<span class="bg-code">{{ f[r] }}</span> {{ f.names[r] }}{% else %}<span class="muted">—</span>{% endif %}</td>{% endfor %}
+        <td><button type="submit" class="btn-link" name="no_suggest" value="{{ f.base }}" formnovalidate>Не пропонувати</button></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p><button type="submit" class="btn btn-primary btn-sm">Додати вибрані</button></p>
+  {% else %}
+  <p class="muted">Нових груп за назвою не знайдено: варіанти статей уже в групах або назви не збігаються.</p>
+  {% endif %}
+  {% if item_groups_ambiguous %}
+  <details class="ig-more"><summary>Не вдалося розібрати: {{ item_groups_ambiguous | length }}</summary>
+    <p class="muted">Однакова назва, але на одну роль припадає кілька статей — найчастіше це різні статті (наприклад,
+      «(3800)» і «(9200)»). Якщо це все ж варіанти однієї статті — додайте групу вручну в таблицю вище.</p>
+    <ul>{% for a in item_groups_ambiguous %}<li><strong>{{ a.base }}</strong> <span class="muted">({{ a.why }})</span>:
+      {% for i in a['items'] %}{{ i.code }} {{ i.name }} ({{ ROLE_LABELS[i.role] }}){{ ', ' if not loop.last }}{% endfor %}</li>{% endfor %}</ul>
+  </details>
+  {% endif %}
+</form>
+{% endif %}
 <script>
 (function () {  // додати / прибрати групу
   const rows = document.getElementById('split-pairs-rows');
   document.getElementById('split-pair-add').addEventListener('click', () => {
     const tr = rows.lastElementChild.cloneNode(true);
-    tr.className = '';
     tr.querySelectorAll('input').forEach(i => { i.value = ''; });
-    tr.querySelector('.ig-kind').querySelectorAll('.badge').forEach(b => b.remove());
     rows.appendChild(tr);
     tr.querySelector('input').focus();
   });

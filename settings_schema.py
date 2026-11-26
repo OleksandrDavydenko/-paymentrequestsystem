@@ -346,8 +346,8 @@ _LIST = [
     Setting("split_pairs", "Старі пари статей (перенесено в групи статей)", "split", "json", [], managed=True,
             fmt=_fmt_split_pairs),
     # ---- Групи статей (item_groups.py): «з розподілом / пряма / позапланова»; автоматичні — за назвою
-    Setting("item_groups", "Групи статей (вручну)", "split", "json", [], managed=True, fmt=_fmt_item_groups),
-    Setting("item_groups_skip", "Прибрані автоматичні групи статей", "split", "json", [], managed=True,
+    Setting("item_groups", "Групи статей", "split", "json", [], managed=True, fmt=_fmt_item_groups),
+    Setting("item_groups_skip", "Не пропонувати групи статей за назвою", "split", "json", [], managed=True,
             fmt=_fmt_item_groups_skip),
     # ---- Заявка
     # Номер заявки для людей (request_numbers.py): префікс і нулі — лише показ, у базі номер той самий
