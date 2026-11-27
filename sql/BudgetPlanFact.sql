@@ -12,7 +12,9 @@
             а якщо він порожній — «Отдел» шапки документа-джерела; статті немає — нульовий відділ («Інше»).
             Без премій керівникам: НачислениеЗПпоОкладам з Вид (_Fld15975RRef, _Enum15970) = порядок 1.
    GUID — 32 hex без 0x (як Departments[DepartmentGUID]); нулі — «не вказано».
-   Без CTE (WITH): рахунки 8100/8200 — вкладеним запитом, щоб запит працював у Power BI як є. */
+   Швидкодія: з 2025 року; проводки відсікаються за рахунком дебету до розгортання на сторони; WITH (NOLOCK) — не
+   блокує 1С і не стає жертвою deadlock; OPTION (MAXDOP 1) — без deadlock між потоками паралельного плану (якщо
+   Power BI не прийме OPTION, рядок можна прибрати). Без CTE (WITH ... AS), щоб запит працював у Power BI як є. */
 SELECT
     a.[Month],
     CONVERT(varchar(32), a.DepRef, 2)                                   AS DepartmentGUID,
@@ -34,8 +36,8 @@ FROM (
             COALESCE(s._Fld19038RRef, 0x00000000000000000000000000000000)    AS ItemRef,
             CAST(m.Amount AS numeric(28,2))                                  AS PlanUSD,
             CAST(0 AS numeric(28,2))                                         AS FactUSD
-        FROM dbo._Document11459 d
-        INNER JOIN dbo._Document11459_VT11489 s ON s._Document11459_IDRRef = d._IDRRef
+        FROM dbo._Document11459 d WITH (NOLOCK)
+        INNER JOIN dbo._Document11459_VT11489 s WITH (NOLOCK) ON s._Document11459_IDRRef = d._IDRRef
         CROSS APPLY (SELECT CASE WHEN PATINDEX('%[0-9][0-9][0-9][0-9]%', d._Fld11488) > 0
                          THEN CAST(SUBSTRING(d._Fld11488, PATINDEX('%[0-9][0-9][0-9][0-9]%', d._Fld11488), 4) AS int)
                      END AS Yr) y
@@ -44,7 +46,7 @@ FROM (
             (5,  s._Fld11509), (6,  s._Fld11510), (7,  s._Fld11511), (8,  s._Fld11512),
             (9,  s._Fld11513), (10, s._Fld11514), (11, s._Fld11515), (12, s._Fld11516)
         ) m(MonthNo, Amount)
-        WHERE d._Marked = 0x00 AND m.Amount <> 0 AND y.Yr IS NOT NULL
+        WHERE d._Marked = 0x00 AND m.Amount <> 0 AND y.Yr >= 2025
 
         UNION ALL
 
@@ -57,31 +59,41 @@ FROM (
             COALESCE(sk.ItemRef, 0x00000000000000000000000000000000)         AS ItemRef,
             CAST(0 AS numeric(28,2))                                         AS PlanUSD,
             CAST(sd.Sign * r._Fld6735 AS numeric(28,2))                      AS FactUSD
-        FROM dbo._AccRg6732 r
-        CROSS APPLY (VALUES
-            (0,  1, r._AccountDtRRef, r._Fld17936DtRRef),    -- дебет: витрата
-            (1, -1, r._AccountCtRRef, r._Fld17936CtRRef)     -- кредит: сторно при перекласифікації
-        ) sd(Side, Sign, AccRef, DepLineRef)
+        FROM dbo._AccRg6732 r WITH (NOLOCK)
+        -- Обидві сторони вимагають дебет 8100/8200 (Дт — витрата; Кт — лише перекласифікація між 8100/8200), тож проводки
+        -- відсікаються одразу за рахунком дебету — індексом, без подвоєння всіх рядків регістру
         INNER JOIN (
-            SELECT ac._IDRRef
-            FROM dbo._Acc6699 ac
-            LEFT JOIN dbo._Acc6699 p1 ON p1._IDRRef = ac._ParentIDRRef
-            LEFT JOIN dbo._Acc6699 p2 ON p2._IDRRef = p1._ParentIDRRef
+        SELECT ac._IDRRef, ac._Code AS Code
+            FROM dbo._Acc6699 ac WITH (NOLOCK)
+            LEFT JOIN dbo._Acc6699 p1 WITH (NOLOCK) ON p1._IDRRef = ac._ParentIDRRef
+            LEFT JOIN dbo._Acc6699 p2 WITH (NOLOCK) ON p2._IDRRef = p1._ParentIDRRef
             WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')
-        ) acc ON acc._IDRRef = sd.AccRef
+        ) adt ON adt._IDRRef = r._AccountDtRRef
+        LEFT JOIN (
+        SELECT ac._IDRRef, ac._Code AS Code
+            FROM dbo._Acc6699 ac WITH (NOLOCK)
+            LEFT JOIN dbo._Acc6699 p1 WITH (NOLOCK) ON p1._IDRRef = ac._ParentIDRRef
+            LEFT JOIN dbo._Acc6699 p2 WITH (NOLOCK) ON p2._IDRRef = p1._ParentIDRRef
+            WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')
+        ) act ON act._IDRRef = r._AccountCtRRef
+        CROSS APPLY (
+            SELECT 0 AS Side,  1 AS Sign, r._AccountDtRRef AS AccRef, r._AccountCtRRef AS CorAccRef, r._Fld17936DtRRef AS DepLineRef, adt.Code AS AccCode
+            UNION ALL                                                              -- кредит: сторно при перекласифікації
+            SELECT 1, -1, r._AccountCtRRef, r._AccountDtRRef, r._Fld17936CtRRef, act.Code WHERE act._IDRRef IS NOT NULL
+        ) sd
         OUTER APPLY (
-            SELECT MAX(CASE WHEN ed._Value_RTRef = 0x0000133C THEN ed._Value_RRRef END) AS ItemRef
-            FROM dbo._AccRgED6757 ed
+            SELECT MAX(ed._Value_RRRef) AS ItemRef                                   -- субконто «Вид расходов» своєї сторони
+            FROM dbo._AccRgED6757 ed WITH (NOLOCK)
             WHERE ed._RecorderTRef = r._RecorderTRef AND ed._RecorderRRef = r._RecorderRRef
-              AND ed._LineNo = r._LineNo AND ed._Correspond = sd.Side
+              AND ed._LineNo = r._LineNo AND ed._Correspond = sd.Side AND ed._Value_RTRef = 0x0000133C
         ) sk
-        LEFT JOIN dbo._Reference4924  vr      ON vr._IDRRef      = sk.ItemRef            -- без фільтра _Marked, щоб не губити суми
-        LEFT JOIN dbo._Document7811   spis    ON spis._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x00001E83
-        LEFT JOIN dbo._Document7810   nakl    ON nakl._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x00001E82
-        LEFT JOIN dbo._Document15307  zp_okl  ON zp_okl._IDRRef  = r._RecorderRRef AND r._RecorderTRef = 0x00003BCB
-        LEFT JOIN dbo._Document15308  zp_proc ON zp_proc._IDRRef = r._RecorderRRef AND r._RecorderTRef = 0x00003BCC
-        LEFT JOIN dbo._Enum15970      zp_vid  ON zp_vid._IDRRef  = zp_okl._Fld15975RRef  -- ВидЗП документа нарахування ЗП
-        LEFT JOIN dbo._Reference13165 hdr_dep ON hdr_dep._IDRRef = CASE r._RecorderTRef  -- «Отдел» шапки документа-джерела
+        LEFT JOIN dbo._Reference4924  vr       WITH (NOLOCK) ON vr._IDRRef       = sk.ItemRef      -- без фільтра _Marked, щоб не губити суми
+        LEFT JOIN dbo._Document7811   spis     WITH (NOLOCK) ON spis._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001E83
+        LEFT JOIN dbo._Document7810   nakl     WITH (NOLOCK) ON nakl._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001E82
+        LEFT JOIN dbo._Document15307  zp_okl   WITH (NOLOCK) ON zp_okl._IDRRef   = r._RecorderRRef AND r._RecorderTRef = 0x00003BCB
+        LEFT JOIN dbo._Document15308  zp_proc  WITH (NOLOCK) ON zp_proc._IDRRef  = r._RecorderRRef AND r._RecorderTRef = 0x00003BCC
+        LEFT JOIN dbo._Enum15970      zp_vid   WITH (NOLOCK) ON zp_vid._IDRRef   = zp_okl._Fld15975RRef  -- ВидЗП документа нарахування ЗП
+        LEFT JOIN dbo._Reference13165 hdr_dep  WITH (NOLOCK) ON hdr_dep._IDRRef  = CASE r._RecorderTRef  -- «Отдел» шапки документа-джерела
                 WHEN 0x00001E83 THEN spis._Fld14095RRef     -- СписаниеДенСредств.Отдел
                 WHEN 0x00001E82 THEN nakl._Fld13855RRef     -- НакладныеРасходы.Отдел
                 WHEN 0x00003BCB THEN zp_okl._Fld15638RRef   -- НачислениеЗПпоОкладам.Отдел
@@ -97,17 +109,12 @@ FROM (
             END AS Route) rt
         CROSS APPLY (SELECT CAST(DATEADD(year, -2000, r._Period) AS date) AS D) dt
         WHERE r._Active = 0x01
-          AND r._Period >= '4024-01-01'
-          AND (sd.Side = 0 OR r._AccountDtRRef IN (
-                SELECT ac._IDRRef
-                FROM dbo._Acc6699 ac
-                LEFT JOIN dbo._Acc6699 p1 ON p1._IDRRef = ac._ParentIDRRef
-                LEFT JOIN dbo._Acc6699 p2 ON p2._IDRRef = p1._ParentIDRRef
-                WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')))
+          AND r._Period >= '4025-01-01'                                                   -- з 2025 року
           AND NOT (r._RecorderTRef = 0x00003BCB AND COALESCE(zp_vid._EnumOrder, -1) = 1)   -- без премій керівникам
     ) u
     GROUP BY u.[Month], u.DepRef, u.ItemRef
 ) a
-LEFT JOIN dbo._Reference13165 dep ON dep._IDRRef = a.DepRef
-LEFT JOIN dbo._Reference4924  e   ON e._IDRRef   = a.ItemRef
-LEFT JOIN dbo._Reference4924  grp ON grp._IDRRef = e._ParentIDRRef
+LEFT JOIN dbo._Reference13165 dep WITH (NOLOCK) ON dep._IDRRef = a.DepRef
+LEFT JOIN dbo._Reference4924  e   WITH (NOLOCK) ON e._IDRRef   = a.ItemRef
+LEFT JOIN dbo._Reference4924  grp WITH (NOLOCK) ON grp._IDRRef = e._ParentIDRRef
+OPTION (MAXDOP 1)

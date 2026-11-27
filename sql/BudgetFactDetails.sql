@@ -1,12 +1,20 @@
 /* PayDesk · BudgetFactDetails — розшифровка факту бюджету: проводки 1С по рахунках 8100 / 8200 з документом-джерелом, USD.
-   Та сама логіка, що й ФАКТ у BudgetPlanFact (і fact_actual куба FTP_Budgeting): регістр «Хозрасчетный» (_AccRg6732),
-   дебет 8100/8200 (+), кредит 8100/8200 лише при перекласифікації між ними (−, сторно); стаття — субконто своєї сторони;
-   відділ — Owner статті, інакше відділ проводки (ОтделДт/Кт), інакше «Отдел» шапки документа-джерела; без премій
-   керівникам (НачислениеЗПпоОкладам, Вид = порядок 1).
+   Та сама логіка, що й ФАКТ у BudgetPlanFact (і fact_actual куба FTP_Budgeting):
+     ФАКТ — РегистрБухгалтерии.Хозрасчетный (_AccRg6732), рахунки 8100 / 8200 і їхні субрахунки: рядок факту з'являється
+            одразу після проведення документа-джерела (документ «Розподіл накладних витрат» більше не використовується).
+            +  дебет 8100/8200 (будь-який кор. рахунок)                           -> аналітика Дт;
+            -  кредит 8100/8200, ЛИШЕ якщо дебет теж 8100/8200 (перекласифікація) -> аналітика Кт;
+            кредит 8100/8200 на інші рахунки (закриття періоду тощо) не береться.
+            СТАТТЯ — субконто проводки своєї сторони (_AccRgED6757, тип 0x0000133C = Справочник.ВидыРасходов).
+            ВІДДІЛ — Owner статті (_Fld19036RRef), якщо заповнений; інакше відділ проводки (ОтделДт/Кт _Fld17936),
+            а якщо він порожній — «Отдел» шапки документа-джерела; статті немає — нульовий відділ («Інше»).
+            Без премій керівникам: НачислениеЗПпоОкладам з Вид (_Fld15975RRef, _Enum15970) = порядок 1.
    DepartmentGUID / ExpenseItemGUID / Month — ті самі, що в BudgetPlanFact. LineDepartmentGUID — відділ документа.
    SourceDocumentGUID — документ-реєстратор проводки: за ним PayDesk бачить, що платіж оплаченої заявки вже у факті.
    EmployeeGUID — лише для «Списання» (СписаниеДенСредств.Сотрудник = _Fld10416RRef), як у кубі.
-   Без CTE (WITH): рахунки й типи документів — вкладеними запитами, щоб запит працював у Power BI як є. */
+   Швидкодія: з 2025 року; проводки відсікаються за рахунком дебету до розгортання на сторони; WITH (NOLOCK) — не
+   блокує 1С і не стає жертвою deadlock; OPTION (MAXDOP 1) — без deadlock між потоками паралельного плану (якщо
+   Power BI не прийме OPTION, рядок можна прибрати). Без CTE (WITH ... AS), щоб запит працював у Power BI як є. */
 SELECT
     dt.D                                                                AS [Date],
     DATEFROMPARTS(YEAR(dt.D), MONTH(dt.D), 1)                           AS [Month],
@@ -40,23 +48,33 @@ SELECT
     CONVERT(varchar(32), COALESCE(CASE WHEN r._RecorderTRef = 0x00001E83 THEN spis._Fld10416RRef END,
                                   0x00000000000000000000000000000000), 2) AS EmployeeGUID,
     COALESCE(p._Description, N'')                                       AS EmployeeName,
-    RTRIM(a.Code)                                                       AS Account,
+    RTRIM(sd.AccCode)                                                   AS Account,
     RTRIM(cor._Code)                                                    AS CorrAccount,
     CASE sd.Side WHEN 0 THEN N'Дт' ELSE N'Кт' END                       AS Side,
     r._Fld6738                                                          AS EntryText
-FROM dbo._AccRg6732 r
-CROSS APPLY (VALUES
-    (0,  1, r._AccountDtRRef, r._AccountCtRRef, r._Fld17936DtRRef),    -- дебет: витрата
-    (1, -1, r._AccountCtRRef, r._AccountDtRRef, r._Fld17936CtRRef)     -- кредит: сторно при перекласифікації
-) sd(Side, Sign, AccRef, CorAccRef, DepLineRef)
+FROM dbo._AccRg6732 r WITH (NOLOCK)
+-- Обидві сторони вимагають дебет 8100/8200 (Дт — витрата; Кт — лише перекласифікація між 8100/8200), тож проводки
+-- відсікаються одразу за рахунком дебету — індексом, без подвоєння всіх рядків регістру
 INNER JOIN (
-    SELECT ac._IDRRef, ac._Code AS Code
-    FROM dbo._Acc6699 ac
-    LEFT JOIN dbo._Acc6699 p1 ON p1._IDRRef = ac._ParentIDRRef
-    LEFT JOIN dbo._Acc6699 p2 ON p2._IDRRef = p1._ParentIDRRef
+SELECT ac._IDRRef, ac._Code AS Code
+    FROM dbo._Acc6699 ac WITH (NOLOCK)
+    LEFT JOIN dbo._Acc6699 p1 WITH (NOLOCK) ON p1._IDRRef = ac._ParentIDRRef
+    LEFT JOIN dbo._Acc6699 p2 WITH (NOLOCK) ON p2._IDRRef = p1._ParentIDRRef
     WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')
-) a ON a._IDRRef = sd.AccRef
-LEFT JOIN dbo._Acc6699 cor ON cor._IDRRef = sd.CorAccRef
+) adt ON adt._IDRRef = r._AccountDtRRef
+LEFT JOIN (
+SELECT ac._IDRRef, ac._Code AS Code
+    FROM dbo._Acc6699 ac WITH (NOLOCK)
+    LEFT JOIN dbo._Acc6699 p1 WITH (NOLOCK) ON p1._IDRRef = ac._ParentIDRRef
+    LEFT JOIN dbo._Acc6699 p2 WITH (NOLOCK) ON p2._IDRRef = p1._ParentIDRRef
+    WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')
+) act ON act._IDRRef = r._AccountCtRRef
+CROSS APPLY (
+    SELECT 0 AS Side,  1 AS Sign, r._AccountDtRRef AS AccRef, r._AccountCtRRef AS CorAccRef, r._Fld17936DtRRef AS DepLineRef, adt.Code AS AccCode
+    UNION ALL                                                              -- кредит: сторно при перекласифікації
+    SELECT 1, -1, r._AccountCtRRef, r._AccountDtRRef, r._Fld17936CtRRef, act.Code WHERE act._IDRRef IS NOT NULL
+) sd
+LEFT JOIN dbo._Acc6699 cor WITH (NOLOCK) ON cor._IDRRef = sd.CorAccRef
 LEFT JOIN (VALUES
         (0x000012EB, N'Сделка'),
         (0x00001318, N'Счет'),
@@ -154,28 +172,28 @@ LEFT JOIN (VALUES
         (0x00004A01, N'ПланированиеПродаж')
 ) tp(TRef, Name) ON tp.TRef = r._RecorderTRef
 OUTER APPLY (
-    SELECT MAX(CASE WHEN ed._Value_RTRef = 0x0000133C THEN ed._Value_RRRef END) AS ItemRef
-    FROM dbo._AccRgED6757 ed
+    SELECT MAX(ed._Value_RRRef) AS ItemRef                                   -- субконто «Вид расходов» своєї сторони
+    FROM dbo._AccRgED6757 ed WITH (NOLOCK)
     WHERE ed._RecorderTRef = r._RecorderTRef AND ed._RecorderRRef = r._RecorderRRef
-      AND ed._LineNo = r._LineNo AND ed._Correspond = sd.Side
+      AND ed._LineNo = r._LineNo AND ed._Correspond = sd.Side AND ed._Value_RTRef = 0x0000133C
 ) sk
-LEFT JOIN dbo._Reference4924  vr       ON vr._IDRRef       = sk.ItemRef           -- без фільтра _Marked, щоб не губити суми
-LEFT JOIN dbo._Document7811   spis     ON spis._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001E83
-LEFT JOIN dbo._Document7810   nakl     ON nakl._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001E82
-LEFT JOIN dbo._Document4935   prih     ON prih._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001347
-LEFT JOIN dbo._Document6618   vnutr    ON vnutr._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x000019DA
-LEFT JOIN dbo._Document13888  obmen    ON obmen._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x00003640
-LEFT JOIN dbo._Document15307  zp_okl   ON zp_okl._IDRRef   = r._RecorderRRef AND r._RecorderTRef = 0x00003BCB
-LEFT JOIN dbo._Document15308  zp_proc  ON zp_proc._IDRRef  = r._RecorderRRef AND r._RecorderTRef = 0x00003BCC
-LEFT JOIN dbo._Document18759  kom_bank ON kom_bank._IDRRef = r._RecorderRRef AND r._RecorderTRef = 0x00004947
-LEFT JOIN dbo._Enum15970      zp_vid   ON zp_vid._IDRRef   = zp_okl._Fld15975RRef  -- ВидЗП документа нарахування ЗП
-LEFT JOIN dbo._Reference13165 hdr_dep  ON hdr_dep._IDRRef  = CASE r._RecorderTRef  -- «Отдел» шапки документа-джерела
+LEFT JOIN dbo._Reference4924  vr       WITH (NOLOCK) ON vr._IDRRef       = sk.ItemRef      -- без фільтра _Marked, щоб не губити суми
+LEFT JOIN dbo._Document7811   spis     WITH (NOLOCK) ON spis._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001E83
+LEFT JOIN dbo._Document7810   nakl     WITH (NOLOCK) ON nakl._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001E82
+LEFT JOIN dbo._Document4935   prih     WITH (NOLOCK) ON prih._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001347
+LEFT JOIN dbo._Document6618   vnutr    WITH (NOLOCK) ON vnutr._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x000019DA
+LEFT JOIN dbo._Document13888  obmen    WITH (NOLOCK) ON obmen._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x00003640
+LEFT JOIN dbo._Document15307  zp_okl   WITH (NOLOCK) ON zp_okl._IDRRef   = r._RecorderRRef AND r._RecorderTRef = 0x00003BCB
+LEFT JOIN dbo._Document15308  zp_proc  WITH (NOLOCK) ON zp_proc._IDRRef  = r._RecorderRRef AND r._RecorderTRef = 0x00003BCC
+LEFT JOIN dbo._Document18759  kom_bank WITH (NOLOCK) ON kom_bank._IDRRef = r._RecorderRRef AND r._RecorderTRef = 0x00004947
+LEFT JOIN dbo._Enum15970      zp_vid   WITH (NOLOCK) ON zp_vid._IDRRef   = zp_okl._Fld15975RRef  -- ВидЗП документа нарахування ЗП
+LEFT JOIN dbo._Reference13165 hdr_dep  WITH (NOLOCK) ON hdr_dep._IDRRef  = CASE r._RecorderTRef  -- «Отдел» шапки документа-джерела
         WHEN 0x00001E83 THEN spis._Fld14095RRef     -- СписаниеДенСредств.Отдел
         WHEN 0x00001E82 THEN nakl._Fld13855RRef     -- НакладныеРасходы.Отдел
         WHEN 0x00003BCB THEN zp_okl._Fld15638RRef   -- НачислениеЗПпоОкладам.Отдел
         WHEN 0x00003BCC THEN zp_proc._Fld15639RRef  -- ПрочееНачислениеУдержаниеПоЗП.Отдел
     END
-LEFT JOIN dbo._Reference59    p        ON p._IDRRef        = CASE WHEN r._RecorderTRef = 0x00001E83 THEN spis._Fld10416RRef END
+LEFT JOIN dbo._Reference59    p        WITH (NOLOCK) ON p._IDRRef        = CASE WHEN r._RecorderTRef = 0x00001E83 THEN spis._Fld10416RRef END
 CROSS APPLY (SELECT
     COALESCE(NULLIF(sd.DepLineRef, 0x00000000000000000000000000000000), hdr_dep._IDRRef) AS DocDep,
     NULLIF(vr._Fld19036RRef, 0x00000000000000000000000000000000)                        AS OwnerDep) k
@@ -186,11 +204,6 @@ CROSS APPLY (SELECT CASE
     END AS Route) rt
 CROSS APPLY (SELECT CAST(DATEADD(year, -2000, r._Period) AS date) AS D) dt
 WHERE r._Active = 0x01
-  AND r._Period >= '4024-01-01'
-  AND (sd.Side = 0 OR r._AccountDtRRef IN (
-        SELECT ac._IDRRef
-            FROM dbo._Acc6699 ac
-            LEFT JOIN dbo._Acc6699 p1 ON p1._IDRRef = ac._ParentIDRRef
-            LEFT JOIN dbo._Acc6699 p2 ON p2._IDRRef = p1._ParentIDRRef
-            WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')))
+  AND r._Period >= '4025-01-01'                                                   -- з 2025 року
   AND NOT (r._RecorderTRef = 0x00003BCB AND COALESCE(zp_vid._EnumOrder, -1) = 1)   -- без премій керівникам
+OPTION (MAXDOP 1)
