@@ -67,6 +67,13 @@
       {% else %}<span class="muted">У довіднику немає відділів</span>
       {% endfor %}
     </div>
+    <label class="mode-option" style="margin-top:10px">
+      <input type="checkbox" name="budget_group_variants" value="1" {{ 'checked' if budget_group_variants }}>
+      <span><strong>Варіанти статті — одним рядком</strong>
+        <span class="mode-hint">Варіанти однієї статті з «Групи статей і розподіл» (з розподілом, пряма, позапланова)
+          показано одним рядком із сумою, який розгортається. Вимкніть, щоб бачити кожен варіант окремим рядком.
+          На розподіл у заявці не впливає.</span></span>
+    </label>
 
     <div class="budget-section-title">Залишок у заявці</div>
     <label class="mode-option">

@@ -154,6 +154,7 @@ def _context(tab):
         ctx.update(budget_enabled=on, budget_hint=app_settings.get("budget_hint"),
                    budget_over_mode=app_settings.get("budget_over_mode"), BUDGET_OVER_MODES=budget.OVER_MODES,
                    budget_group_departments=app_settings.get("budget_group_departments") or [],
+                   budget_group_variants=app_settings.get("budget_group_variants"),
                    BUDGET_GROUP_DEPARTMENTS=schema.SETTINGS["budget_group_departments"].choices(),
                    budget_viewers=_budget_viewers() if on else [],
                    budget_state=budget.status() if on else None, budget_table=budget._table.table,

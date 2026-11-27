@@ -110,5 +110,18 @@ check("budget page: family row and its variants", 'data-fam-head="1"' in html an
       and "варіантів: 2" in html)
 html = c.get("/budget?dep=IT&view=months", follow_redirects=True).get_data(as_text=True)
 check("budget page, months: family row", 'data-fam-head="1"' in html)
+# вимикач «Варіанти статті — одним рядком» (budget_group_variants): вимкнено — кожен варіант окремим рядком
+rep = budget.report(None, "IT", clock.today().year, list(range(1, 13)), variants=False)
+rows_ = [r for d in rep["departments"] for g in d["groups"] for r in g["rows"]]
+check("budget: variants off -> separate rows", not any(r.get("family") for r in rows_)
+      and {"05.002", "05.012"} <= {r.get("code") for r in rows_})
+c.post("/admin/settings", data={"tab": "budget", "budget_enabled": "1"})
+check("admin: unchecked «variants in one row» saved", app_settings.get("budget_group_variants") is False)
+html = c.get("/budget?dep=IT", follow_redirects=True).get_data(as_text=True)
+check("budget page: variants off -> no family row", 'data-fam-head="1"' not in html)
+c.post("/admin/settings", data={"tab": "budget", "budget_enabled": "1", "budget_group_variants": "1"})
+html = c.get("/budget?dep=IT", follow_redirects=True).get_data(as_text=True)
+check("budget page: variants on again -> family row", app_settings.get("budget_group_variants") is True
+      and 'data-fam-head="1"' in html)
 
 print("ALL OK" if ok else "SOME FAILED")

@@ -340,6 +340,8 @@ _LIST = [
     # Вкладка «Бюджет»: типово під відділом — одразу статті; для цих відділів — за групами статей з підсумками
     Setting("budget_group_departments", "Бюджет за групами статей: відділи", "budget", "multi", [],
             _budget_group_departments, fmt=_fmt_budget_group_departments),
+    # Варіанти однієї статті з «Групи статей і розподіл» (з розподілом / пряма / позапланова) — одним рядком
+    Setting("budget_group_variants", "Бюджет: варіанти статті одним рядком", "budget", "bool", True),
     # «Інтеграція з 1С → Бюджет з 1С»: як часто PayDesk перечитує план і факт з Power BI (видно, коли бюджет увімкнено)
     Setting("budget_sync_minutes", "Бюджет з 1С: оновлювати кожні", "budget_sync", "choice", "30", _budget_sync_minutes),
     # ---- Групи статей і розподіл заявки між відділами (item_groups.py, expense_split.py)

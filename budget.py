@@ -311,11 +311,12 @@ def _add(node, plan_m, fact_m, months):
     node["fact"] += sum(fact_m[m - 1] for m in months)
 
 
-def report(allowed, dept, year, months, view="table", grouped=()):
+def report(allowed, dept, year, months, view="table", grouped=(), variants=True):
     """Дерево відділ → група → стаття з підсумками за період (months) і по місяцях року.
     dept — ключ відділу або "*" (усі доступні). У «Таблиці» — статті з планом чи фактом у періоді,
     «По місяцях» — з планом чи фактом у році. grouped — ключі відділів, які показуємо за групами статей (налаштування
-    budget_group_departments); решта — "flat": статті одним списком (одна група без назви), як у зведеній Excel."""
+    budget_group_departments); решта — "flat": статті одним списком (одна група без назви), як у зведеній Excel.
+    variants — варіанти однієї статті з групи статей одним рядком з розгортанням (budget_group_variants)."""
     items = {}
     for r in rows():
         if int(r["month"][:4]) != year:
@@ -357,7 +358,7 @@ def report(allowed, dept, year, months, view="table", grouped=()):
             _add(target, it["plan_m"], it["fact_m"], months)
 
     depts = sorted(tree.values(), key=lambda d: (d["key"] == OTHER_KEY, d["name"].lower()))
-    fam_of = item_groups.by_code()
+    fam_of = item_groups.by_code() if variants else {}
     for d in depts:
         d["groups"] = sorted(d["groups"].values(), key=lambda g: (g["name"] == "(без групи)", g["name"].lower()))
         for g in d["groups"]:

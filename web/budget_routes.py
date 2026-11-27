@@ -68,7 +68,8 @@ def index(*, context):
     months = budget.period_months(kind, year, month, quarter)
     # Типово під відділом одразу статті; за групами статей — лише відділи з налаштування (напр. маркетинг)
     grouped = frozenset(app_settings.get("budget_group_departments") or [])
-    rep = budget.report(allowed, dep, year, months, view, grouped) if options else None
+    rep = budget.report(allowed, dep, year, months, view, grouped,
+                        variants=bool(app_settings.get("budget_group_variants"))) if options else None
     today = clock.today()
     return render_template(
         "budget.html", user_name=g.user["name"], rep=rep, options=options, dep=dep, year=year, years=years,
