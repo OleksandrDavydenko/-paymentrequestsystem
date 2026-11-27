@@ -55,14 +55,15 @@ AUTO = {"allocated": "05.002", "direct": "05.012", "unplanned": "05.022"}   # м
 check("found by name, but not active until added", item_groups.groups() == []
       and [{k: g[k] for k in item_groups.ROLES} for g in item_groups.suggest()[0]] == [AUTO])
 login("adm@ftpua.com")
-html = page("/admin/settings?tab=split&find=1")
-check("settings: groups section and found groups", 'id="split-settings"' in html and 'id="ig-found"' in html
-      and 'value="ремонт оргтехніки"' in html)
+html = page("/admin/settings?tab=split")
+check("settings: groups section with suggestions for «fill by name»", 'id="split-settings"' in html and 'id="ig-fill"' in html
+      and "05.012 — Ремонт оргтехніки (прямий)" in html)
 app_settings.set("split_pairs", [{"direct": DIRECT, "allocated": ALLOC}], "t")   # старі пари — як групи
 check("old pairs work as groups", item_groups.group_of(DIRECT)["allocated"] == ALLOC and expense_split.pairs() == {DIRECT: ALLOC})
-html = c.post("/admin/settings", data={"tab": "split", "found_sent": "1", "found": "ремонт оргтехніки"},
+html = c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1", "group_allocated": [ALLOC, "05.002"],
+                                       "group_direct": [DIRECT, "05.012"], "group_unplanned": ["", "05.022"]},
               follow_redirects=True).get_data(as_text=True)
-check("found group added (old pairs kept as groups)", app_settings.get("item_groups") == [
+check("found group saved with the table (old pairs kept as groups)", app_settings.get("item_groups") == [
     {"allocated": ALLOC, "direct": DIRECT, "unplanned": ""}, AUTO] and app_settings.get("split_pairs") == []
       and "Ремонт оргтехніки: з розподілом 05.002 / пряма 05.012 / позапланова 05.022" in html)
 

@@ -161,15 +161,17 @@ def _context(tab):
     elif tab == "split":
         items = sorted(expense_items.get_items(), key=lambda i: i["code"])
         names = {i["code"]: i["name"] for i in items}
-        found = item_groups.suggest() if request.args.get("find") else None  # лише за кнопкою «Знайти групи»
-        ctx.update(item_groups=[{**g, "names": {r: names.get(g[r]) for r in item_groups.ROLES}}
-                                for g in item_groups.groups()],
-                   item_groups_skip=app_settings.get("item_groups_skip") or [],
-                   item_groups_found=found[0] if found else None, item_groups_ambiguous=found[1] if found else None,
-                   ROLE_LABELS=item_groups.ROLE_LABELS, GROUP_ROLES=item_groups.ROLES,
+        label = lambda c: f"{c} — {names[c]}" if c in names else c  # noqa: E731
+        draft = session.pop("ig_table_draft", None)  # таблиця з помилкою — як її надіслали
+        rows = draft if draft is not None else [{r: label(g[r]) if g[r] else "" for r in item_groups.ROLES}
+                                                for g in item_groups.groups()]
+        found, ambiguous = item_groups.suggest()
+        ctx.update(ig_rows=rows, ig_count=len(item_groups.groups()),
+                   # «Заповнити за назвою» дописує ці групи в таблицю на сторінці (JS), без запитів
+                   ig_suggest=[{r: label(f[r]) if f[r] else "" for r in item_groups.ROLES} for f in found],
+                   item_groups_ambiguous=ambiguous, ROLE_LABELS=item_groups.ROLE_LABELS, GROUP_ROLES=item_groups.ROLES,
                    unplanned_known=any(i.get("unplanned") for i in items), split_items=items,
-                   ig_add_draft=session.pop("ig_add_draft", None) or {},
-                   # роль кожної статті за довідником — підказка під полями «Додати групу вручну»
+                   # роль кожної статті за довідником — підсвітка поля, де стаття не у своїй колонці
                    item_roles={i["code"]: item_groups.guess_role(i) for i in items},
                    item_unplanned_1c=[i["code"] for i in items if i.get("unplanned")])
     elif tab == "request":
@@ -368,28 +370,10 @@ def _items_index():
     return items, {i["name"].strip().lower(): c for c, i in items.items()}
 
 
-def _parse_add_group(form, changes, errors):
-    """Нова група вручну: картка «Додати групу вручну» (add_allocated / add_direct / add_unplanned). Додається до
-    збережених; при помилці введене лишається в полях (session)."""
-    items, by_name = _items_index()
-    g = {r: _item_code(form.get(f"add_{r}"), items, by_name) for r in item_groups.ROLES}
-    session["ig_add_draft"] = {r: form.get(f"add_{r}") or "" for r in item_groups.ROLES}
-    current = [{r: x[r] for r in item_groups.ROLES} for x in item_groups.manual()]
-    seen = {c for x in current for c in x.values() if c}
-    error = _check_group(g, items, seen, "Нова група статей")
-    if error:
-        errors["item_groups"] = error
-        return
-    session.pop("ig_add_draft", None)
-    changes["item_groups"] = current + [g]
-    if app_settings.get("split_pairs"):
-        changes["split_pairs"] = []
-
-
 def _parse_item_groups(form, changes, errors):
     """Групи статей з таблиці розділу «Групи статей і розподіл»: рядок — три поля (з розподілом / пряма /
-    позапланова: «код — назва» з підказок або просто код). Порожні рядки пропускаються; group_unskip — повернути
-    базу назви в пропозиції."""
+    позапланова: «код — назва» з підказок або просто код). Порожні рядки пропускаються. При помилці таблиця, як її
+    надіслали (з дописаними «Заповнити за назвою» рядками), повертається на сторінку (session)."""
     items, by_name = _items_index()
 
     def code_of(raw):
@@ -404,6 +388,10 @@ def _parse_item_groups(form, changes, errors):
         error = _check_group(g, items, seen, f"Групи статей, рядок {n + 1}")
         if error:
             errors["item_groups"] = error
+            session["ig_table_draft"] = [
+                {r: (col[i] if i < len(col) else "").strip() for r, col in zip(item_groups.ROLES, cols)}
+                for i in range(max(len(c) for c in cols))
+                if any((col[i] if i < len(col) else "").strip() for col in cols)]
             return
         seen |= {c for c in g.values() if c}
         groups.append(g)
@@ -411,55 +399,11 @@ def _parse_item_groups(form, changes, errors):
         changes["item_groups"] = groups
     if app_settings.get("split_pairs"):
         changes["split_pairs"] = []  # старі пари вже показані в таблиці як групи й збережені разом з нею
-    unskip = set(form.getlist("group_unskip"))
-    if unskip:
-        changes["item_groups_skip"] = [b for b in app_settings.get("item_groups_skip") or [] if b not in unskip]
     no_flag = [g["unplanned"] for g in groups if g["unplanned"] and not items[g["unplanned"]].get("unplanned")
                and not item_groups.unplanned_by_name(items[g["unplanned"]]["name"])]
     if no_flag:
         flash("Позапланові без бази «Не розподіляти» в 1С і без «поза план» у назві: " + ", ".join(no_flag)
               + " — перевірте, чи це не помилка", "error")
-
-
-def _parse_found(form, changes, errors):
-    """Пропозиції «Знайти групи за назвою»: «Додати вибрані» (found — бази назв) додає їх до груп; кнопка «Не
-    пропонувати» (no_suggest — база назви) — у item_groups_skip."""
-    found, _ = item_groups.suggest()
-    by_base = {g["base"]: g for g in found}
-    if form.get("no_suggest"):
-        base = form["no_suggest"]
-        skip = list(app_settings.get("item_groups_skip") or [])
-        if base not in skip:
-            changes["item_groups_skip"] = skip + [base]
-        return
-    items, by_name = _items_index()
-    # Рядки пропозицій із форми: знайдені статті (приховані) й дописані вручну в порожню роль
-    rows = {}
-    bases = form.getlist("f_base")
-    cols = {r: form.getlist(f"f_{r}") for r in item_groups.ROLES}
-    for n, base in enumerate(bases):
-        rows[base] = {r: _item_code(cols[r][n] if n < len(cols[r]) else "", items, by_name) for r in item_groups.ROLES}
-    current = [{r: g[r] for r in item_groups.ROLES} for g in item_groups.manual()]
-    seen = {c for g in current for c in g.values() if c}
-    added = []
-    for base in form.getlist("found"):
-        if base not in by_base:
-            continue
-        found = by_base[base]
-        g = rows.get(base) or {r: found[r] for r in item_groups.ROLES}
-        g = {r: found[r] or g[r] for r in item_groups.ROLES}  # знайдене за назвою не підміняється
-        error = _check_group(g, items, seen, f"Групи статей, «{base}»")
-        if error:
-            errors["item_groups"] = error
-            return
-        seen |= {c for c in g.values() if c}
-        added.append(g)
-    if not added:
-        errors["item_groups"] = "Групи статей: не вибрано жодної знайденої групи"
-        return
-    changes["item_groups"] = current + added
-    if app_settings.get("split_pairs"):
-        changes["split_pairs"] = []
 
 
 def _parse_cfo_rules(form, changes, errors):
@@ -574,10 +518,6 @@ def admin_settings(*, context):
         _parse_cfo_rules(request.form, changes, errors)
     if tab == "split" and "item_groups_sent" in request.form:
         _parse_item_groups(request.form, changes, errors)
-    if tab == "split" and "found_sent" in request.form:
-        _parse_found(request.form, changes, errors)
-    if tab == "split" and "add_group_sent" in request.form:
-        _parse_add_group(request.form, changes, errors)
     if tab == "reconcile" and "ok_until_sent" in request.form:
         _parse_ok_until(request.form, changes, errors)
     if "payments_since" in changes:
@@ -594,10 +534,6 @@ def admin_settings(*, context):
     if changes.get("doc_extensions") == []:
         errors["doc_extensions"] = "Залиште дозволеним хоча б один формат документів"
     back = settings_url("approval" if legacy else tab)
-    if tab == "split" and "found_sent" in request.form:  # лишитися в результатах пошуку
-        back = url_for("admin.admin_settings", tab="split", find=1) + "#ig-found"
-    elif tab == "split" and "add_group_sent" in request.form:
-        back = url_for("admin.admin_settings", tab="split") + "#ig-add"
     if not errors and (error := _check_login_switch(changes)):
         errors["login_methods"] = error
     if errors:

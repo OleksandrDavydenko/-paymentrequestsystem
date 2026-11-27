@@ -1,142 +1,99 @@
-{% macro group_row(gr) -%}
-<tr>
+{% macro group_row(gr, fresh=false) -%}
+<tr class="{{ 'ig-new' if fresh }}">
   {% for r in GROUP_ROLES %}
   <td data-label="{{ ROLE_LABELS[r] | capitalize }}"><input type="text" name="group_{{ r }}" list="split-items" autocomplete="off"
-      placeholder="Код або назва статті" value="{% if gr and gr[r] %}{{ gr[r] }}{{ ' — ' ~ gr.names[r] if gr.names[r] }}{% endif %}"></td>
+      placeholder="Код або назва статті" value="{{ gr[r] if gr else '' }}" data-role="{{ r }}"></td>
   {% endfor %}
-  <td><button type="button" class="btn-link split-pair-remove" title="Прибрати групу" aria-label="Прибрати групу">✕</button></td>
+  <td class="ig-act"><span class="badge blue ig-new-badge">нова</span>
+    <button type="button" class="btn-link split-pair-remove" title="Прибрати рядок" aria-label="Прибрати рядок">✕</button></td>
 </tr>
 {%- endmacro %}
-<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="ig-add"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="tab" value="split">
-  <input type="hidden" name="add_group_sent" value="1">
-  <div class="toolbar"><h2 style="margin:0">Групи статей і розподіл між відділами</h2>
-    {% if item_groups %}<span class="badge green">груп: {{ item_groups | length }}</span>{% else %}<span class="badge grey">груп немає</span>{% endif %}
-    <span class="spacer"></span>
-    <a class="btn btn-sm" href="{{ url_for('admin.admin_settings', tab='split', find=1) }}#ig-found">Знайти групи за назвою</a></div>
-  <p class="muted" style="margin-top:0">У 1С одна стаття має кілька варіантів: <strong>з розподілом</strong> (1С розносить її
-    на відділ-власник статті), <strong>пряма</strong> («(прямий)» у назві — лише на профітцентр) і
-    <strong>позапланова</strong> (база «Не розподіляти» або «поза план» у назві — 1С кидає її на «Інше»). Група
-    зв'язує варіанти однієї статті. Діють лише збережені групи: зміни довідника в 1С їх самі не міняють. Групу можна
-    додати вручну (нижче) або знайти за назвою — кнопка праворуч запропонує групи зі статей з однаковою назвою.</p>
-  <p class="muted">Що дає група: у заявці (непряма витрата) суму можна розподілити між відділами — пряма на
-    профітцентри, з розподілом на власника, позапланова на «Інше»; для прямої статті у відділі, що не є
-    профітцентром, розподіл обов'язковий. Під статтею в заявці видно інші варіанти. У вкладці «Бюджет» варіанти
-    статті показано одним рядком з розгортанням.</p>
-  {% if not unplanned_known %}<p class="field-hint">Ознаки «Не розподіляти» в довіднику статей поки немає — позапланові
-    знаходяться лише за «поза план» у назві. Щоб брати ознаку з 1С, додайте колонку <code>БазаРозподілу</code> у таблицю
-    Power BI <code>Expense_Item</code> (запит — <code>sql/Expense_Item_Base.sql</code>).</p>{% endif %}
-
-  <h3 class="ig-sub">Додати групу вручну</h3>
-  <p class="muted" style="margin-top:0">Вкажіть щонайменше два варіанти однієї статті — код або назву, підказки з
-    довідника. Кожна стаття може бути лише в одній групі.</p>
-  <div class="ig-add-grid">
-    {% for r in GROUP_ROLES %}
-    <label class="ig-add-field"><span>{{ ROLE_LABELS[r] | capitalize }}</span>
-      <input type="text" name="add_{{ r }}" list="split-items" autocomplete="off" placeholder="Код або назва статті"
-             value="{{ ig_add_draft.get(r, '') }}" data-role="{{ r }}">
-      <small class="field-hint ig-role-hint"></small></label>
-    {% endfor %}
-  </div>
-  <p><button type="submit" class="btn btn-primary btn-sm">Додати групу</button></p>
-  <datalist id="split-items">{% for i in split_items %}<option value="{{ i.code }} — {{ i.name }}"></option>{% endfor %}</datalist>
-</form>
-
 <form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="split-settings"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="tab" value="split">
   <input type="hidden" name="item_groups_sent" value="1">
-  <h3 class="ig-sub" style="margin-top:0">Збережені групи</h3>
-  {% if item_groups %}
-  <p class="muted" style="margin-top:0">Змініть статті або приберіть групу (✕) і натисніть «Зберегти».</p>
+  <div class="toolbar"><h2 style="margin:0">Групи статей і розподіл між відділами</h2>
+    {% if ig_count %}<span class="badge green">груп: {{ ig_count }}</span>{% else %}<span class="badge grey">груп немає</span>{% endif %}
+    <span class="spacer"></span>
+    <span class="muted ig-fill-note" id="ig-fill-note" aria-live="polite"></span>
+    <button type="button" class="btn btn-sm" id="ig-fill">Заповнити за назвою</button></div>
+  <p class="muted" style="margin-top:0">Група зв'язує варіанти однієї статті: <strong>з розподілом</strong> (1С розносить
+    на відділ-власник), <strong>пряма</strong> («(прямий)» — лише на профітцентр) і <strong>позапланова</strong> («Не
+    розподіляти» або «поза план» — на «Інше»). «Заповнити за назвою» допише групи зі статей з однаковою назвою —
+    перевірте, підправте й натисніть «Зберегти». Діють лише збережені групи.</p>
+  {% if not unplanned_known %}<p class="field-hint">Ознаки «Не розподіляти» в довіднику поки немає — позапланові
+    знаходяться лише за «поза план» у назві (колонка <code>БазаРозподілу</code> в Power BI — <code>sql/Expense_Item_Base.sql</code>).</p>{% endif %}
+
   <div class="table-wrap">
   <table class="stack split-pairs">
     <thead><tr>{% for r in GROUP_ROLES %}<th>{{ ROLE_LABELS[r] | capitalize }}</th>{% endfor %}<th></th></tr></thead>
     <tbody id="split-pairs-rows">
-      {% for gr in item_groups %}{{ group_row(gr) }}{% endfor %}
+      {% for gr in ig_rows %}{{ group_row(gr) }}{% endfor %}
+      {% for _ in range(1 if ig_rows else 3) %}{{ group_row(none) }}{% endfor %}
     </tbody>
   </table>
   </div>
-  {% else %}
-  <p class="muted">Груп ще немає — додайте вручну вище або знайдіть за назвою.</p>
-  {% endif %}
-  {% if item_groups_skip %}
-  <details class="ig-more"><summary>Не пропонувати за назвою: {{ item_groups_skip | length }}</summary>
-    {% for b in item_groups_skip %}<label class="check"><input type="checkbox" name="group_unskip" value="{{ b }}"> знову пропонувати «{{ b }}»</label>{% endfor %}
+  <template id="ig-row-tpl">{{ group_row(none, true) }}</template>
+  <datalist id="split-items">{% for i in split_items %}<option value="{{ i.code }} — {{ i.name }}"></option>{% endfor %}</datalist>
+  <p class="ig-actions"><button type="button" class="btn btn-sm" id="split-pair-add">+ Додати рядок</button>
+    <button type="submit" class="btn btn-primary btn-sm">Зберегти</button></p>
+
+  {% if item_groups_ambiguous %}
+  <details class="ig-more"><summary>Не вдалося розібрати за назвою: {{ item_groups_ambiguous | length }}</summary>
+    <p class="muted">Однакова назва, але на одну роль припадає кілька статей — найчастіше це різні статті (наприклад,
+      «(3800)» і «(9200)»). Якщо це все ж варіанти однієї статті — впишіть групу в таблицю.</p>
+    <ul>{% for a in item_groups_ambiguous %}<li><strong>{{ a.base }}</strong> <span class="muted">({{ a.why }})</span>:
+      {% for i in a['items'] %}{{ i.code }} {{ i.name }} ({{ ROLE_LABELS[i.role] }}){{ ', ' if not loop.last }}{% endfor %}</li>{% endfor %}</ul>
   </details>
   {% endif %}
-  {% if item_groups or item_groups_skip %}<p><button type="submit" class="btn btn-primary btn-sm">Зберегти</button></p>{% endif %}
 </form>
-
-{% if item_groups_found is not none %}
-<form method="post" action="{{ url_for('admin.admin_settings') }}" class="card process-settings" id="ig-found"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="tab" value="split">
-  <input type="hidden" name="found_sent" value="1">
-  <div class="toolbar"><h2 style="margin:0">Знайдено за назвою</h2>
-    <span class="badge {{ 'green' if item_groups_found else 'grey' }}">{{ item_groups_found | length }}</span>
-    <span class="spacer"></span>
-    <a class="btn-link" href="{{ url_for('admin.admin_settings', tab='split') }}">Сховати</a></div>
-  {% if item_groups_found %}
-  <p class="muted" style="margin-top:0">Статті з однаковою назвою (без дужок у кінці), яких ще немає в групах. Роль:
-    позапланова — база «Не розподіляти» або «поза план» у назві, пряма — «(прямий)», решта — з розподілом. Позначте
-    ті, що підходять, і додайте; решту можна більше не пропонувати. Порожню роль можна дописати вручну — код або назва
-    статті в полі «додати статтю».</p>
-  <div class="table-wrap">
-  <table class="stack split-pairs">
-    <thead><tr><th></th><th>Група</th>{% for r in GROUP_ROLES %}<th>{{ ROLE_LABELS[r] | capitalize }}</th>{% endfor %}<th></th></tr></thead>
-    <tbody>
-      {% for f in item_groups_found %}
-      <tr>
-        <td><input type="checkbox" name="found" value="{{ f.base }}" checked aria-label="Додати групу «{{ f.name }}»">
-          <input type="hidden" name="f_base" value="{{ f.base }}"></td>
-        <td data-label="Група"><strong>{{ f.name }}</strong></td>
-        {% for r in GROUP_ROLES %}<td data-label="{{ ROLE_LABELS[r] | capitalize }}">{% if f[r] %}<input type="hidden" name="f_{{ r }}" value="{{ f[r] }}"><span class="bg-code">{{ f[r] }}</span> {{ f.names[r] }}
-          {%- else %}<input type="text" name="f_{{ r }}" list="split-items" autocomplete="off" class="ig-found-add"
-                 placeholder="додати статтю" aria-label="{{ ROLE_LABELS[r] | capitalize }} для «{{ f.name }}»">{% endif %}</td>{% endfor %}
-        <td><button type="submit" class="btn-link" name="no_suggest" value="{{ f.base }}" formnovalidate>Не пропонувати</button></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  </div>
-  <p><button type="submit" class="btn btn-primary btn-sm">Додати вибрані</button></p>
-  {% else %}
-  <p class="muted">Нових груп за назвою не знайдено: варіанти статей уже в групах або назви не збігаються.</p>
-  {% endif %}
-</form>
-{% if item_groups_ambiguous %}
-<div class="card process-settings" id="ig-ambiguous">
-  <h3 class="ig-sub" style="margin-top:0">Не вдалося розібрати: {{ item_groups_ambiguous | length }}</h3>
-  <p class="muted" style="margin-top:0">Однакова назва, але на одну роль припадає кілька статей — найчастіше це різні
-    статті (наприклад, «(3800)» і «(9200)»). Якщо це все ж варіанти однієї статті — додайте групу в картці «Додати
-    групу вручну».</p>
-  <ul>{% for a in item_groups_ambiguous %}<li><strong>{{ a.base }}</strong> <span class="muted">({{ a.why }})</span>:
-    {% for i in a['items'] %}{{ i.code }} {{ i.name }} ({{ ROLE_LABELS[i.role] }}){{ ', ' if not loop.last }}{% endfor %}</li>{% endfor %}</ul>
-</div>
-{% endif %}
-{% endif %}
-<script type="application/json" id="ig-roles">{{ {'roles': item_roles, 'labels': ROLE_LABELS, 'flag': item_unplanned_1c} | tojson }}</script>
+<script type="application/json" id="ig-data">{{ {'suggest': ig_suggest, 'roles': item_roles, 'labels': ROLE_LABELS, 'flag': item_unplanned_1c} | tojson }}</script>
 <script>
 (function () {
-  // Збережені групи: прибрати рядок (✕)
-  const rows = document.getElementById('split-pairs-rows');
-  if (rows) rows.addEventListener('click', e => {
+  const data = JSON.parse(document.getElementById('ig-data').textContent || '{}');
+  const rows = document.getElementById('split-pairs-rows'), tpl = document.getElementById('ig-row-tpl');
+  const note = document.getElementById('ig-fill-note'), flag = new Set(data.flag || []);
+  const code = v => (v || '').split(' — ')[0].trim();
+  const isEmpty = tr => [...tr.querySelectorAll('input[data-role]')].every(i => !i.value.trim());
+
+  // Поле, де стаття стоїть не у своїй колонці (за довідником), — підсвічене з підказкою
+  function check(inp) {
+    const c = code(inp.value), role = (data.roles || {})[c];
+    const bad = !!c && !!role && role !== inp.dataset.role;
+    inp.classList.toggle('ig-role-bad', bad);
+    inp.title = !c ? '' : !role ? 'Немає в довіднику статей'
+      : (flag.has(c) ? 'У 1С: Не розподіляти' : 'За назвою: ' + data.labels[role]) + (bad ? ' — перевірте колонку' : '');
+  }
+  function newRow(values) {
+    const tr = tpl.content.firstElementChild.cloneNode(true);
+    tr.querySelectorAll('input[data-role]').forEach(i => { i.value = (values && values[i.dataset.role]) || ''; check(i); });
+    return tr;
+  }
+
+  // «Заповнити за назвою»: дописати знайдені групи, статей яких ще немає в таблиці (у порожні рядки, потім нові)
+  document.getElementById('ig-fill').addEventListener('click', () => {
+    const used = new Set([...rows.querySelectorAll('input[data-role]')].map(i => code(i.value)).filter(Boolean));
+    let added = 0;
+    (data.suggest || []).forEach(g => {
+      const codes = Object.values(g).map(code).filter(Boolean);
+      if (codes.some(c => used.has(c))) return;
+      codes.forEach(c => used.add(c));
+      const empty = [...rows.children].find(isEmpty);
+      const tr = newRow(g);
+      empty ? rows.replaceChild(tr, empty) : rows.appendChild(tr);
+      added++;
+    });
+    note.textContent = added ? `Додано груп: ${added} — перевірте й натисніть «Зберегти»` : 'Нових груп за назвою немає';
+  });
+  document.getElementById('split-pair-add').addEventListener('click', () => {
+    const tr = newRow(); tr.classList.remove('ig-new'); rows.appendChild(tr); tr.querySelector('input').focus();
+  });
+  rows.addEventListener('click', e => {
     const b = e.target.closest('.split-pair-remove');
-    if (b) b.closest('tr').remove();
+    if (!b) return;
+    const tr = b.closest('tr');
+    if (rows.children.length > 1) tr.remove(); else tr.querySelectorAll('input').forEach(i => { i.value = ''; check(i); });
   });
-  // «Додати групу вручну»: під полем — роль статті за довідником (щоб не переплутати варіанти)
-  const data = JSON.parse(document.getElementById('ig-roles').textContent || '{}');
-  const flag = new Set(data.flag || []);
-  document.querySelectorAll('#ig-add input[data-role]').forEach(inp => {
-    const hint = inp.parentElement.querySelector('.ig-role-hint');
-    const show = () => {
-      const code = (inp.value || '').split(' — ')[0].trim();
-      const role = (data.roles || {})[code];
-      if (!code || !role) { hint.textContent = code ? 'Немає в довіднику' : ''; hint.className = 'field-hint ig-role-hint' + (code ? ' is-bad' : ''); return; }
-      const why = flag.has(code) ? 'у 1С: Не розподіляти' : 'за назвою: ' + data.labels[role];
-      hint.textContent = (role === inp.dataset.role ? '✓ ' : '⚠ ') + why;
-      hint.className = 'field-hint ig-role-hint' + (role === inp.dataset.role ? '' : ' is-bad');
-    };
-    inp.addEventListener('input', show); inp.addEventListener('change', show); show();
-  });
+  rows.addEventListener('input', e => { if (e.target.dataset.role) check(e.target); });
+  rows.querySelectorAll('input[data-role]').forEach(check);
 })();
 </script>

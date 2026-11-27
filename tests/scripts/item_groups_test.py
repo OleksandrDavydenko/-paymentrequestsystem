@@ -49,75 +49,41 @@ check("suggest: variants by name, unplanned by flag or name",
 check("suggest: different items with the same base -> ambiguous", sorted(a["base"] for a in ambiguous)
       == ["оренда склад", "таксі"] and "з розподілом — 2 статті" in ambiguous[0]["why"])
 
-# ---------- адмінка: «Знайти групи» → «Додати вибрані» / «Не пропонувати»
+# ---------- адмінка: один розділ — таблиця груп, «Заповнити за назвою» (JSON на сторінці), «Зберегти»
 user_roles.set_roles("adm@ftpua.com", "adm@ftpua.com", "Adm", ["admin"], "t")
 m.auth._auth.get_user = lambda: {"name": "adm", "preferred_username": "adm@ftpua.com", "oid": "adm@ftpua.com"}
 m.app.config["WTF_CSRF_ENABLED"] = False
 c = m.app.test_client()
 html = c.get("/admin/settings?tab=split", follow_redirects=True).get_data(as_text=True)
-check("admin: no search until the button", "Знайти групи за назвою" in html and 'id="ig-found"' not in html)
-html = c.get("/admin/settings?tab=split&find=1", follow_redirects=True).get_data(as_text=True)
-check("admin: found groups listed", 'id="ig-found"' in html and 'value="ремонт і сервіс"' in html
-      and "Не вдалося розібрати: 2" in html)
-html = c.post("/admin/settings", data={"tab": "split", "found_sent": "1", "found": ["ремонт і сервіс", "меблі"]},
-              follow_redirects=True).get_data(as_text=True)
-check("admin: selected found groups added", app_settings.get("item_groups") == [
-    {"allocated": "R1", "direct": "R2", "unplanned": "R3"}, {"allocated": "A1", "direct": "A2", "unplanned": "A3"}]
-      and item_groups.group_of("R3")["allocated"] == "R1" and 'id="ig-found"' in html)
-c.post("/admin/settings", data={"tab": "split", "found_sent": "1", "no_suggest": "корпоративи"})
-check("admin: «do not suggest»", app_settings.get("item_groups_skip") == ["корпоративи"]
-      and item_groups.suggest()[0] == [] and len(app_settings.get("item_groups")) == 2)
-c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1", "group_allocated": ["R1", "A1"],
-                                "group_direct": ["R2", "A2"], "group_unplanned": ["R3", "A3"], "group_unskip": "корпоративи"})
-check("admin: table save keeps groups, unskip returns the suggestion", app_settings.get("item_groups_skip") == []
-      and [g["base"] for g in item_groups.suggest()[0]] == ["корпоративи"])
-c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1", "group_allocated": ["R1", "B1"],
-                                "group_direct": ["R2", "R2"], "group_unplanned": ["R3", ""]})
-check("admin: item in two groups rejected", len(app_settings.get("item_groups")) == 2)
-# ---------- «Додати групу вручну» і «Зібрати групу» з «Не вдалося розібрати»
-html = c.get("/admin/settings?tab=split", follow_redirects=True).get_data(as_text=True)
-check("admin: manual add card", 'id="ig-add"' in html and 'name="add_direct"' in html and "Додати групу вручну" in html)
-html = c.post("/admin/settings", data={"tab": "split", "add_group_sent": "1", "add_allocated": "S1 — Оренда Склад (3800)",
-                                       "add_direct": "", "add_unplanned": "оренда склад (9200)"},
-              follow_redirects=True).get_data(as_text=True)
-check("admin: manual group added (code or name)", app_settings.get("item_groups")[-1]
-      == {"allocated": "S1", "direct": "", "unplanned": "S2"} and len(app_settings.get("item_groups")) == 3)
-html = c.post("/admin/settings", data={"tab": "split", "add_group_sent": "1", "add_allocated": "C1", "add_direct": "R2"},
-              follow_redirects=True).get_data(as_text=True)
-check("admin: manual add — item already in a group rejected, input kept", len(app_settings.get("item_groups")) == 3
-      and "указана двічі" in html and 'value="R2"' in html)
-html = c.post("/admin/settings", data={"tab": "split", "add_group_sent": "1", "add_allocated": "C1"},
-              follow_redirects=True).get_data(as_text=True)
-check("admin: manual add — one variant rejected", len(app_settings.get("item_groups")) == 3 and "два варіанти" in html)
-c.post("/admin/settings", data={"tab": "split", "add_group_sent": "1", "add_allocated": "C1", "add_direct": "A3"})
-check("admin: manual add — 1C unplanned cannot be direct", len(app_settings.get("item_groups")) == 3)
-app_settings.set("item_groups", [], "t")
-html = c.get("/admin/settings?tab=split&find=1", follow_redirects=True).get_data(as_text=True)
-check("admin: ambiguous list is information only", 'id="ig-ambiguous"' in html and 'name="amb_role"' not in html
-      and "оренда склад" in html)
-check("admin: empty role of a suggestion is an input", 'name="f_direct" list="split-items"' in html)
-# «корпоративи» (K1 + K2 позапланова): дописати пряму вручну — S1 (будь-яка стаття з довідника для перевірки)
-sug = [g["base"] for g in item_groups.suggest()[0]]
-def found_form(direct_for_korp):
-    data = {"tab": "split", "found_sent": "1", "found": "корпоративи", "f_base": [], "f_allocated": [], "f_direct": [],
-            "f_unplanned": []}
-    for g in item_groups.suggest()[0]:
-        data["f_base"].append(g["base"])
-        for r in item_groups.ROLES:
-            data[f"f_{r}"].append(g[r] or (direct_for_korp if g["base"] == "корпоративи" and r == "direct" else ""))
+check("admin: one form with the table and the fill button", html.count('id="split-settings"') == 1
+      and 'id="ig-fill"' in html and 'id="ig-found"' not in html and 'id="ig-add"' not in html)
+check("admin: suggestions for «fill by name» are on the page", '"suggest"' in html and "R2 — Ремонт і сервіс (прямий)" in html)
+check("admin: ambiguous list is information only", "Не вдалося розібрати за назвою: 2" in html and "оренда склад" in html
+      and 'name="amb_role"' not in html)
+
+def save(rows):
+    data = {"tab": "split", "item_groups_sent": "1"}
+    for r in item_groups.ROLES:
+        data[f"group_{r}"] = [row.get(r, "") for row in rows]
     return c.post("/admin/settings", data=data, follow_redirects=True).get_data(as_text=True)
-app_settings.set("item_groups", [{"allocated": "R1", "direct": "R2", "unplanned": "R3"}], "t")
-html = found_form("R2")
-check("admin: written-in item already in a group rejected", len(app_settings.get("item_groups")) == 1
-      and "указана двічі" in html)
-found_form("S1 — Оренда Склад (3800)")
-check("admin: suggestion added with the written-in item", app_settings.get("item_groups")[-1]
-      == {"allocated": "K1", "direct": "S1", "unplanned": "K2"})
-c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1"})
-check("admin: removing all rows from the table clears groups", app_settings.get("item_groups") == [])
-c.post("/admin/settings", data={"tab": "split", "item_groups_sent": "1", "group_allocated": ["R1", "A1"],
-                                "group_direct": ["R2", "A2"], "group_unplanned": ["R3", "A3"]})
-app_settings.set("item_groups", [], "t")
+
+html = save([{"allocated": "R1 — Ремонт і сервіс", "direct": "R2 — Ремонт і сервіс (прямий)", "unplanned": "R3"},
+             {"allocated": "K1", "direct": "S1 — Оренда Склад (3800)", "unplanned": "корпоративи (поза план)"}, {}])
+check("admin: table saved (code, «code — name» or name)", app_settings.get("item_groups") == [
+    {"allocated": "R1", "direct": "R2", "unplanned": "R3"}, {"allocated": "K1", "direct": "S1", "unplanned": "K2"}])
+check("admin: saved groups are not suggested again", [g["base"] for g in item_groups.suggest()[0]] == ["меблі"])
+html = save([{"allocated": "R1", "direct": "R2", "unplanned": "R3"}, {"allocated": "A1", "direct": "R2"},
+             {"allocated": "B1", "direct": "B2"}])
+check("admin: item twice rejected, the sent table comes back", len(app_settings.get("item_groups")) == 2
+      and "указана двічі" in html and 'value="B2" data-role="direct"' in html and 'value="A1" data-role="allocated"' in html)
+html = c.get("/admin/settings?tab=split", follow_redirects=True).get_data(as_text=True)
+check("admin: draft shown once, then saved groups again", 'value="B2" data-role' not in html and "K1 — Корпоративи" in html)
+save([{"allocated": "C1"}])
+check("admin: one variant rejected", len(app_settings.get("item_groups")) == 2)
+save([{"allocated": "C1", "direct": "A3"}])
+check("admin: 1C unplanned cannot be direct", len(app_settings.get("item_groups")) == 2)
+save([])
+check("admin: empty table clears groups", app_settings.get("item_groups") == [])
 app_settings.set("split_pairs", [{"direct": "B2", "allocated": "B1"}], "t")
 check("old pairs act as groups", item_groups.group_of("B2")["allocated"] == "B1")
 check("describe for the journal", item_groups.describe({"allocated": "A1", "direct": "A2", "unplanned": "A3"})

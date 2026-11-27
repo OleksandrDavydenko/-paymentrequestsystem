@@ -1711,15 +1711,16 @@ button.bg-tile-over:disabled { cursor: default; border-top-color: var(--ok); }
 .bg-fam-child td:first-child { padding-left: 28px; }
 .bg-fam-child .bg-item-name { opacity: .9; }
 /* Адмінка: групи статей */
-.split-pairs .ig-kind { white-space: nowrap; }
 .ig-more { margin: 8px 0; }
 .ig-more summary { cursor: pointer; }
-.ig-sub { font-size: 1.05rem; margin: 18px 0 6px; }
-.ig-add-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
-.ig-add-field { display: flex; flex-direction: column; gap: 4px; }
-.ig-add-field > span { font-weight: 600; }
-.ig-role-hint.is-bad { color: var(--bad-ink); }
-.ig-found-add { width: 100%; min-width: 160px; }
+/* таблиця груп: рядки, дописані «Заповнити за назвою», і поле зі статтею не у своїй колонці */
+.split-pairs tr .ig-new-badge { display: none; }
+.split-pairs tr.ig-new .ig-new-badge { display: inline-block; }
+.split-pairs tr.ig-new td { background: var(--primary-100); }
+.split-pairs .ig-act { white-space: nowrap; text-align: right; }
+.split-pairs input.ig-role-bad { border-color: var(--bad-ink); background: var(--bad-faint); }
+.ig-actions { display: flex; gap: 8px; align-items: center; }
+.ig-fill-note { font-size: .9em; }
 .split-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; margin-top: 6px; }
 .split-foot .spacer { flex: 1; }
 .split-total { font-weight: 600; font-variant-numeric: tabular-nums; }
