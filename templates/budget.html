@@ -122,7 +122,8 @@
           data-search="{{ it.search if it.family else (it.code ~ ' ' ~ it.name) | lower }}"{% if it.fam %} data-fam="{{ it.fam }}"{% endif %}{% if it.family %} data-fam-head="1"{% endif %}
           data-over="{{ 1 if it.level == 'over' else 0 }}">
         <td data-label="Стаття">{% if it.family %}{{ fam_name(it) }}{% else %}<span class="bg-item-name">{{ it.name }}</span>{% if it.code %} <span class="bg-code">{{ it.code }}</span>{% endif %}
-          {% if it.owner %}<span class="badge grey" title="Стаття з відділом-власником (Owner): витрати всіх відділів за нею — у бюджеті власника">Owner</span>{% endif %}{% endif %}</td>
+          {% if it.owner %}<span class="badge grey" title="Стаття з відділом-власником (Owner): витрати всіх відділів за нею — у бюджеті власника">Owner</span>{% endif %}
+          {% if it.role %}<span class="badge grey bg-role">{{ VARIANT_LABELS[it.role] }}</span>{% endif %}{% endif %}</td>
         <td class="num" data-label="План">{{ amount(it.plan) }}</td>
         <td class="num" data-label="Факт">{% if it.family %}{% if it.fact | round(2) %}{{ bm(it.fact) }}{% else %}<span class="muted">—</span>{% endif %}{% elif it.fact | round(2) %}<button type="button" class="bg-fact" data-dep="{{ d.key }}" data-item="{{ it.code }}"
               data-name="{{ it.name }}{{ ' (' ~ it.code ~ ')' if it.code }}" data-months="{{ months | join(',') }}" title="Розшифровка: документи 1С">{{ bm(it.fact) }}</button>{% else %}<span class="muted">—</span>{% endif %}</td>
@@ -178,7 +179,7 @@
       <tr class="bg-item {{ 'bg-item-top' if d.flat and not multi }}{{ ' bg-fam' if it.family }}{{ ' bg-fam-child' if it.child }}" data-parent="{{ d.key }}|{{ gr.name }}"
           data-search="{{ it.search if it.family else (it.code ~ ' ' ~ it.name) | lower }}"{% if it.fam %} data-fam="{{ it.fam }}"{% endif %}{% if it.family %} data-fam-head="1"{% endif %}
           data-over="{{ 1 if (yf > 0 and yp <= 0) or (yp > 0 and yf / yp > 1.0001) else 0 }}">
-        <td class="bg-sticky" data-label="Стаття">{% if it.family %}{{ fam_name(it) }}{% else %}<span class="bg-item-name">{{ it.name }}</span>{% if it.code %} <span class="bg-code">{{ it.code }}</span>{% endif %}{% endif %}</td>
+        <td class="bg-sticky" data-label="Стаття">{% if it.family %}{{ fam_name(it) }}{% else %}<span class="bg-item-name">{{ it.name }}</span>{% if it.code %} <span class="bg-code">{{ it.code }}</span>{% endif %}{% if it.role %} <span class="badge grey bg-role">{{ VARIANT_LABELS[it.role] }}</span>{% endif %}{% endif %}</td>
         {% for i in range(1, 13) %}{{ cell(i, it.months[i - 1][0], it.months[i - 1][1], d.key, none if it.family else it) }}{% endfor %}
         <td class="num bg-mtotal" data-label="Разом"><span class="bg-mfact">{{ bm(yf) }}</span><span class="bg-mplan">{{ bm(yp) }}</span></td>
       </tr>

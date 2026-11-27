@@ -8,6 +8,7 @@ import app_settings
 import budget
 import budget_access
 import clock
+import item_groups
 import storage as db
 import user_prefs
 from web.auth import login_required, requires, requires_section
@@ -72,7 +73,7 @@ def index(*, context):
                         variants=bool(app_settings.get("budget_group_variants"))) if options else None
     today = clock.today()
     return render_template(
-        "budget.html", user_name=g.user["name"], rep=rep, options=options, dep=dep, year=year, years=years,
+        "budget.html", user_name=g.user["name"], rep=rep, VARIANT_LABELS=item_groups.ROLE_LABELS, options=options, dep=dep, year=year, years=years,
         kind=kind, month=month, quarter=quarter, view=view, months=months, PERIODS=budget.PERIODS,
         VIEWS=budget.VIEWS, MONTHS=budget.MONTHS, MONTHS_SHORT=budget.MONTHS_SHORT, status=budget.status(),
         cur_month=today.month if year == today.year else (13 if year < today.year else 0),

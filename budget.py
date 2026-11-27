@@ -334,6 +334,17 @@ def report(allowed, dept, year, months, view="table", grouped=(), variants=True)
         it["plan_m"][m] += r["plan"]
         it["fact_m"][m] += r["fact"]
 
+    # Варіанти однієї статті (групи статей) — разом: у відділі «за групами статей» усі варіанти йдуть у папку 1С
+    # варіанта з розподілом (немає його — першого за назвою), щоб з'єднатися в один рядок навіть із різних папок
+    fam_of = item_groups.by_code() if variants else {}
+    fam_key = lambda code: tuple(fam_of[code][k] for k in item_groups.ROLES) if code in fam_of else None  # noqa: E731
+    home = {}
+    for it in sorted(items.values(), key=lambda i: (i["name"].lower(), _natural(i["code"]))):
+        k = fam_key(it["code"])
+        if k:
+            if (it["dept"], k) not in home or it["code"] == fam_of[it["code"]]["allocated"]:
+                home[(it["dept"], k)] = it["group"]
+
     total = _blank()
     tree = {}
     over = 0
@@ -351,14 +362,13 @@ def report(allowed, dept, year, months, view="table", grouped=(), variants=True)
                                          "flat": it["dept"] not in grouped,
                                          "name": OTHER_NAME if it["dept"] == OTHER_KEY else
                                          (departments.get_map().get(it["dept"]) or it["dept_name"] or it["dept"])})
-        group = "" if d["flat"] else it["group"]
+        group = "" if d["flat"] else home.get((it["dept"], fam_key(it["code"])), it["group"])
         g = d["groups"].setdefault(group, {**_blank(), "name": group, "rows": []})
         g["rows"].append(node)
         for target in (g, d, total):
             _add(target, it["plan_m"], it["fact_m"], months)
 
     depts = sorted(tree.values(), key=lambda d: (d["key"] == OTHER_KEY, d["name"].lower()))
-    fam_of = item_groups.by_code() if variants else {}
     for d in depts:
         d["groups"] = sorted(d["groups"].values(), key=lambda g: (g["name"] == "(без групи)", g["name"].lower()))
         for g in d["groups"]:
@@ -372,8 +382,10 @@ def report(allowed, dept, year, months, view="table", grouped=(), variants=True)
 
 
 def _families(rows, fam_of, prefix):
-    """Варіанти однієї статті (група статей: з розподілом / пряма / позапланова, item_groups) — одним рядком
-    {"family": True, "children": [...]} на місці першого варіанта; стаття без інших варіантів у цьому списку — як є."""
+    """Стаття з групи статей (з розподілом / пряма / позапланова, item_groups) — рядком групи {"family": True,
+    "children": [...]} з назвою групи, навіть коли у відділі лише один варіант (варіант із розподілом зазвичай іде на
+    відділ-власника, прямий — на профітцентри): назва групи однакова в усіх відділах, розгортання показує, який
+    варіант тут (role). Стаття не з групи — як є. Рядки — за назвою."""
     buckets = {}
     for r in rows:
         g = fam_of.get(r["code"])
@@ -383,7 +395,7 @@ def _families(rows, fam_of, prefix):
     for r in rows:
         g = fam_of.get(r["code"])
         key = tuple(g[k] for k in item_groups.ROLES) if g else None
-        if not key or len(buckets[key]) < 2:
+        if not key:
             out.append(r)
             continue
         if key in done:
@@ -393,7 +405,7 @@ def _families(rows, fam_of, prefix):
         node = {**_blank(), "family": True, "fam": fam, "name": g["name"], "code": "", "dept": r["dept"],
                 "owner": False, "children": buckets[key]}
         for c in node["children"]:
-            c.update(child=True, fam=fam)
+            c.update(child=True, fam=fam, role=next(k for k in item_groups.ROLES if g[k] == c["code"]))
             node["plan"] += c["plan"]
             node["fact"] += c["fact"]
             for i in range(12):
@@ -402,6 +414,7 @@ def _families(rows, fam_of, prefix):
         node["level"] = level(node["plan"], node["fact"])
         node["search"] = " ".join(f"{c['code']} {c['name']}" for c in node["children"]).lower() + " " + node["name"].lower()
         out.append(node)
+    out.sort(key=lambda i: (i["name"].lower(), _natural(i["code"])))
     return out
 
 

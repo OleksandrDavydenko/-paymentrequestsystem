@@ -105,9 +105,33 @@ check("budget: family row with both variants", fam and fam["name"] == "Ремо�
       and round(fam["plan"], 2) == round(sum(c["plan"] for c in fam["children"]), 2))
 check("budget: variants are not separate top rows", not any(r.get("code") in ("05.002", "05.012") for r in rows_)
       and rep["count"] == len([r for r in rows_ if not r.get("family")]) + 2)
+check("budget: children marked with their role", [c["role"] for c in fam["children"]] == ["allocated", "direct"])
+# один варіант у відділі (05.003 + 05.013 → лише 05.003 у LOG) — теж рядок групи з одним варіантом
+app_settings.set("item_groups", [{"allocated": "05.002", "direct": "05.012", "unplanned": "05.022"},
+                                 {"allocated": "05.001", "direct": "05.003", "unplanned": ""}], "t")
+rep = budget.report(None, "LOG", clock.today().year, list(range(1, 13)))
+one = next((r for d in rep["departments"] for g in d["groups"] for r in g["rows"] if r.get("family")), None)
+check("budget: one variant in the department -> group row with it", one and one["name"] == "Ремонт та обслуговування"
+      and [(c["code"], c["role"]) for c in one["children"]] == [("05.003", "direct")])
+# відділ «за групами статей»: варіанти з різних папок 1С — в одному рядку, у папці варіанта з розподілом
+real_rows = budget.rows
+def brow(code, name, group, plan):
+    return {"Month": f"{clock.today().year}-01-01", "DepartmentGUID": "DEP-IT", "DepartmentName": "ІТ",
+            "ExpenseItemGUID": "I-" + code, "ExpenseItemCode": code, "ExpenseItemName": name, "ExpenseGroup": group,
+            "OwnerDepartmentGUID": "0" * 32, "PlanUSD": plan, "FactUSD": 0}
+budget.rows = lambda: budget.parse([brow("05.002", "Ремонт оргтехніки", "Офіс", 100),
+                                    brow("05.012", "Ремонт оргтехніки (прямий)", "Прямі", 40),
+                                    brow("02.001", "Зв'язок та інтернет", "Прямі", 7)])
+rep = budget.report(None, "IT", clock.today().year, list(range(1, 13)), grouped={"IT"})
+gs = {g["name"]: g for d in rep["departments"] for g in d["groups"]}
+check("budget grouped dept: variants from different folders joined in the allocated one's folder",
+      gs["Офіс"]["rows"][0].get("family") and len(gs["Офіс"]["rows"][0]["children"]) == 2
+      and round(gs["Офіс"]["plan"], 2) == 140 and round(gs["Прямі"]["plan"], 2) == 7)
+budget.rows = real_rows
+app_settings.set("item_groups", [{"allocated": "05.002", "direct": "05.012", "unplanned": "05.022"}], "t")
 html = c.get("/budget?dep=IT", follow_redirects=True).get_data(as_text=True)
 check("budget page: family row and its variants", 'data-fam-head="1"' in html and "bg-fam-child" in html
-      and "варіантів: 2" in html)
+      and "варіантів: 2" in html and "bg-role" in html)
 html = c.get("/budget?dep=IT&view=months", follow_redirects=True).get_data(as_text=True)
 check("budget page, months: family row", 'data-fam-head="1"' in html)
 # вимикач «Варіанти статті — одним рядком» (budget_group_variants): вимкнено — кожен варіант окремим рядком
