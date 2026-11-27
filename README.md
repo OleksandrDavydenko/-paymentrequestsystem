@@ -540,9 +540,11 @@ PayDesk нічого не надсилається: звірка сама пер
 
 ### Бюджет відділів
 План і факт бюджету з 1С (USD) — вкладка **«Бюджет»** (`/budget`, `web/budget_routes.py`, дані — `budget.py`) і
-залишок статті у формі заявки. Логіка — як у кубі SSAS `FTP_Budgeting`: план — документ «Бюджет», факт — документ
-«Розподіл накладних витрат» (лише проведені); витрати за статтею з відділом-власником (Owner) ідуть у бюджет власника,
-решта — у відділ рядка, статті немає в довіднику — «Інше / не розподілено».
+залишок статті у формі заявки. Логіка — як у кубі SSAS `FTP_Budgeting`: план — документ «Бюджет», факт — проводки
+регістру «Хозрасчетный» по рахунках 8100/8200 і субрахунках (дебет — витрата, кредит лише при перекласифікації між ними
+— сторно; одразу після проведення документа, без місячного розподілу; без премій керівникам). Стаття — субконто
+проводки; витрати за статтею з відділом-власником (Owner) ідуть у бюджет власника, решта — у відділ проводки (або
+шапки документа), статті немає — «Інше / не розподілено». Перевірки й звірка в SSMS — `sql/BudgetChecks.sql`.
 - **Вимикач** — «Налаштування → Заявка й погодження → Бюджет → Увімкнути бюджет» (`budget_enabled`, типово вимкнено).
   Поки вимкнено, бюджету немає ніде й система працює як без нього: немає вкладки (і для адміністратора — 403), рядка
   «Бюджет» і блоку «Бюджет: які відділи» в картці користувача, залишку у формі заявки й перевірки при відправці; до
@@ -576,8 +578,8 @@ PayDesk нічого не надсилається: звірка сама пер
 - **Залишок у заявці** («Налаштування → Заявка й погодження → Бюджет → Показувати залишок»): коли вибрано статтю, яка є
   в бюджеті відділу (є план у цьому році), під нею видно бюджет місяця оплати (місяць «Дати оплати», не раніше поточного):
   план − факт 1С − **заявки в дорозі** = залишок. Заявки в дорозі — цього місяця з тією ж статтею й відділом бюджету: на
-  погодженні, «До оплати» й оплачені, платіж яких (`payment_links`) ще не з'явився серед документів розподілу місяця
-  (`BudgetFactDetails.SourceDocumentGUID`). Сума заявки — в USD за курсом 1С. Відділ бюджету — Owner статті, інакше
+  погодженні, «До оплати» й оплачені, платіж яких (`payment_links`) ще не з'явився серед документів-джерел проводок
+  8100/8200 місяця (`BudgetFactDetails.SourceDocumentGUID`). Сума заявки — в USD за курсом 1С. Відділ бюджету — Owner статті, інакше
   відділ заявки.
 - **Заявка понад залишок** (`budget_over_mode`): «Лише попередження» (запис «Понад бюджет» в історії); **«Попередження, і
   заявку обов'язково погоджує фіндиректор»** (типово; діє навіть у режимі «Лише спостерігає», причина — у записі «Поріг
@@ -803,7 +805,7 @@ GUID посилання 1С, позначка видалення, дата зм�
 | Departments ✔ | DepartmentCode, DepartmentName, DepartmentGUID, Profitcenter, IsDeleted | відділ співробітника й заявки, профітцентри |
 | Employees ✔ | EmployeeGUID, Code, Name, Email, IsDeleted, DepartmentGUID, DepartmentHead | співробітники з 1С, відділ, керівник |
 | BudgetPlanFact | Month, DepartmentGUID, DepartmentName, ExpenseItemGUID, ExpenseItemCode, ExpenseItemName, ExpenseGroup, OwnerDepartmentGUID, PlanUSD, FactUSD | вкладка «Бюджет», залишок статті в заявці (`sql/BudgetPlanFact.sql`) |
-| BudgetFactDetails | Date, Month, DepartmentGUID, LineDepartmentGUID, AllocationStatus, ExpenseItemGUID, ExpenseItemCode, AmountUSD, DocumentType, SourceDocumentGUID, DocumentNumber, DocumentDate, Comment, EmployeeGUID, EmployeeName, DistributionNumber, LineNo | розшифровка факту бюджету (`sql/BudgetFactDetails.sql`) |
+| BudgetFactDetails | Date, Month, DepartmentGUID, LineDepartmentGUID, AllocationStatus, ExpenseItemGUID, ExpenseItemCode, AmountUSD, DocumentType, SourceDocumentGUID, DocumentNumber, DocumentDate, Comment, EmployeeGUID, EmployeeName, Account, CorrAccount, Side, EntryText | розшифровка факту бюджету — проводки 8100/8200 (`sql/BudgetFactDetails.sql`) |
 | Payments (на майбутнє) | GUID, Дата, Сума, Валюта, GUID контрагента, Номер заявки | автоматична позначка «Оплачено» |
 
 **Організація виду оплати.** `PaymentTypes[OrganizationsGUID]` → `Organizations[GUID]`: у «До оплати» колонка

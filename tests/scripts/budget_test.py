@@ -100,6 +100,16 @@ check("head: foreign department and its details -> 403", c.get("/budget?dep=LOG"
       and c.get(f"/budget/details?dep=-&item=&y={Y}&m={M}").status_code == 403)
 r = c.get(f"/budget/details?dep=BA&item=07.001&y={Y}&m={M}")
 check("head: details of own fact", r.status_code == 200 and r.json["error"] is None and abs(r.json["total"] - 400) < 0.01)
+check("details: postings — account and side, no distribution number", r.json["rows"]
+      and all(x["account"] in ("8100", "8200") and x["side"] in ("Дт", "Кт") and "distribution" not in x for x in r.json["rows"]))
+# сторно (перекласифікація 8100 → 8200): Кт з мінусом і та сама сума на 8200 — факт не змінюється
+real_rows = budget.rows
+budget.rows = lambda: budget.parse([row("DEP-LOG", f"S{k_}", 100, 300) for k_ in range(40)])
+mock = [budget._mock_details("LOG", f"S{k_}", Y, [M]) for k_ in range(40)]
+budget.rows = real_rows
+st = next((d for d in mock if any(x["side"] == "Кт" for x in d)), None)
+check("details mock: storno rows net to zero", st and abs(sum(x["amount"] for x in st) - 300) < 0.01
+      and any(x["amount"] < 0 and x["account"] == "8100" for x in st))
 
 # картка користувача, пункт «Бюджет»: додали відділ — вкладка з'являється сама (окремо дозволяти не треба)
 login("adm@ftpua.com")

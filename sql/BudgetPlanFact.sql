@@ -2,10 +2,17 @@
    Логіка — як у кубі FTP_Budgeting:
      ПЛАН — Документ.Бюджет: шапка _Document11459 (відділ _Fld19037RRef, період _Fld11488 «2026 год»),
             рядки _Document11459_VT11489 (стаття _Fld19038RRef, суми місяців _Fld11505.._Fld11516);
-     ФАКТ — Документ.РаспределениеНакладныхРасходов, ТЧ ВсеРасходы (_Document15134_VT15228), лише проведені;
-            відділ = Owner статті (_Fld19036RRef), якщо заповнений, інакше відділ рядка (_Fld15234RRef);
-            статті немає в довіднику — нульовий відділ («Інше»).
-   GUID — 32 hex без 0x (як Departments[DepartmentGUID]); нулі — «не вказано». */
+     ФАКТ — РегистрБухгалтерии.Хозрасчетный (_AccRg6732), рахунки 8100 / 8200 і їхні субрахунки: рядок факту з'являється
+            одразу після проведення документа-джерела (документ «Розподіл накладних витрат» більше не використовується).
+            +  дебет 8100/8200 (будь-який кор. рахунок)                           -> аналітика Дт;
+            -  кредит 8100/8200, ЛИШЕ якщо дебет теж 8100/8200 (перекласифікація) -> аналітика Кт;
+            кредит 8100/8200 на інші рахунки (закриття періоду тощо) не береться.
+            СТАТТЯ — субконто проводки своєї сторони (_AccRgED6757, тип 0x0000133C = Справочник.ВидыРасходов).
+            ВІДДІЛ — Owner статті (_Fld19036RRef), якщо заповнений; інакше відділ проводки (ОтделДт/Кт _Fld17936),
+            а якщо він порожній — «Отдел» шапки документа-джерела; статті немає — нульовий відділ («Інше»).
+            Без премій керівникам: НачислениеЗПпоОкладам з Вид (_Fld15975RRef, _Enum15970) = порядок 1.
+   GUID — 32 hex без 0x (як Departments[DepartmentGUID]); нулі — «не вказано».
+   Без CTE (WITH): рахунки 8100/8200 — вкладеним запитом, щоб запит працював у Power BI як є. */
 SELECT
     a.[Month],
     CONVERT(varchar(32), a.DepRef, 2)                                   AS DepartmentGUID,
@@ -41,25 +48,63 @@ FROM (
 
         UNION ALL
 
-        /* ---------- ФАКТ ---------- */
+        /* ---------- ФАКТ: проводки 8100 / 8200 ---------- */
         SELECT
             DATEFROMPARTS(YEAR(dt.D), MONTH(dt.D), 1)                        AS [Month],
-            CASE
-                WHEN vr._IDRRef IS NULL THEN 0x00000000000000000000000000000000
-                WHEN vr._Fld19036RRef IS NOT NULL
-                     AND vr._Fld19036RRef <> 0x00000000000000000000000000000000
-                    THEN vr._Fld19036RRef                                            -- Owner статті
-                ELSE COALESCE(vt._Fld15234RRef, 0x00000000000000000000000000000000)  -- відділ рядка
-            END                                                              AS DepRef,
-            COALESCE(vt._Fld15231RRef, 0x00000000000000000000000000000000)   AS ItemRef,
+            CASE rt.Route WHEN 2 THEN k.OwnerDep
+                          WHEN 1 THEN COALESCE(k.DocDep, 0x00000000000000000000000000000000)
+                          ELSE 0x00000000000000000000000000000000 END        AS DepRef,
+            COALESCE(sk.ItemRef, 0x00000000000000000000000000000000)         AS ItemRef,
             CAST(0 AS numeric(28,2))                                         AS PlanUSD,
-            CAST(vt._Fld15232 AS numeric(28,2))                              AS FactUSD
-        FROM dbo._Document15134_VT15228 vt
-        INNER JOIN dbo._Document15134 doc ON doc._IDRRef = vt._Document15134_IDRRef
-        LEFT JOIN dbo._Reference4924 vr  ON vr._IDRRef  = vt._Fld15231RRef   -- без фільтра _Marked, щоб не губити суми
-        CROSS APPLY (SELECT CAST(DATEADD(year, -2000, doc._Date_Time) AS date) AS D) dt
-        WHERE doc._Marked = 0x00 AND doc._Posted = 0x01
-          AND doc._Date_Time >= DATEADD(year, 2000, '2024-01-01')
+            CAST(sd.Sign * r._Fld6735 AS numeric(28,2))                      AS FactUSD
+        FROM dbo._AccRg6732 r
+        CROSS APPLY (VALUES
+            (0,  1, r._AccountDtRRef, r._Fld17936DtRRef),    -- дебет: витрата
+            (1, -1, r._AccountCtRRef, r._Fld17936CtRRef)     -- кредит: сторно при перекласифікації
+        ) sd(Side, Sign, AccRef, DepLineRef)
+        INNER JOIN (
+            SELECT ac._IDRRef
+            FROM dbo._Acc6699 ac
+            LEFT JOIN dbo._Acc6699 p1 ON p1._IDRRef = ac._ParentIDRRef
+            LEFT JOIN dbo._Acc6699 p2 ON p2._IDRRef = p1._ParentIDRRef
+            WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')
+        ) acc ON acc._IDRRef = sd.AccRef
+        OUTER APPLY (
+            SELECT MAX(CASE WHEN ed._Value_RTRef = 0x0000133C THEN ed._Value_RRRef END) AS ItemRef
+            FROM dbo._AccRgED6757 ed
+            WHERE ed._RecorderTRef = r._RecorderTRef AND ed._RecorderRRef = r._RecorderRRef
+              AND ed._LineNo = r._LineNo AND ed._Correspond = sd.Side
+        ) sk
+        LEFT JOIN dbo._Reference4924  vr      ON vr._IDRRef      = sk.ItemRef            -- без фільтра _Marked, щоб не губити суми
+        LEFT JOIN dbo._Document7811   spis    ON spis._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x00001E83
+        LEFT JOIN dbo._Document7810   nakl    ON nakl._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x00001E82
+        LEFT JOIN dbo._Document15307  zp_okl  ON zp_okl._IDRRef  = r._RecorderRRef AND r._RecorderTRef = 0x00003BCB
+        LEFT JOIN dbo._Document15308  zp_proc ON zp_proc._IDRRef = r._RecorderRRef AND r._RecorderTRef = 0x00003BCC
+        LEFT JOIN dbo._Enum15970      zp_vid  ON zp_vid._IDRRef  = zp_okl._Fld15975RRef  -- ВидЗП документа нарахування ЗП
+        LEFT JOIN dbo._Reference13165 hdr_dep ON hdr_dep._IDRRef = CASE r._RecorderTRef  -- «Отдел» шапки документа-джерела
+                WHEN 0x00001E83 THEN spis._Fld14095RRef     -- СписаниеДенСредств.Отдел
+                WHEN 0x00001E82 THEN nakl._Fld13855RRef     -- НакладныеРасходы.Отдел
+                WHEN 0x00003BCB THEN zp_okl._Fld15638RRef   -- НачислениеЗПпоОкладам.Отдел
+                WHEN 0x00003BCC THEN zp_proc._Fld15639RRef  -- ПрочееНачислениеУдержаниеПоЗП.Отдел
+            END
+        CROSS APPLY (SELECT
+            COALESCE(NULLIF(sd.DepLineRef, 0x00000000000000000000000000000000), hdr_dep._IDRRef) AS DocDep,
+            NULLIF(vr._Fld19036RRef, 0x00000000000000000000000000000000)                        AS OwnerDep) k
+        CROSS APPLY (SELECT CASE
+            WHEN vr._IDRRef IS NULL        THEN 0   -- статті немає
+            WHEN k.OwnerDep IS NOT NULL    THEN 2   -- непряма: Owner статті
+            ELSE                                1   -- пряма: відділ документа
+            END AS Route) rt
+        CROSS APPLY (SELECT CAST(DATEADD(year, -2000, r._Period) AS date) AS D) dt
+        WHERE r._Active = 0x01
+          AND r._Period >= '4024-01-01'
+          AND (sd.Side = 0 OR r._AccountDtRRef IN (
+                SELECT ac._IDRRef
+                FROM dbo._Acc6699 ac
+                LEFT JOIN dbo._Acc6699 p1 ON p1._IDRRef = ac._ParentIDRRef
+                LEFT JOIN dbo._Acc6699 p2 ON p2._IDRRef = p1._ParentIDRRef
+                WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')))
+          AND NOT (r._RecorderTRef = 0x00003BCB AND COALESCE(zp_vid._EnumOrder, -1) = 1)   -- без премій керівникам
     ) u
     GROUP BY u.[Month], u.DepRef, u.ItemRef
 ) a

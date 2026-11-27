@@ -5,8 +5,11 @@
     ExpenseItemGUID, ExpenseItemCode, ExpenseItemName, ExpenseGroup, OwnerDepartmentGUID, PlanUSD, FactUSD.
     Кешується (pbi_cache) з 1 січня минулого року; оновлення — «Інтеграція з 1С → Бюджет з 1С» (budget_sync_minutes,
     типово 30 хв): фонова задача budget_sync, кнопка «Оновити зараз», а при відкритті застарілої копії — у фоні.
-  • BudgetFactDetails (PBI_BUDGET_DETAILS_TABLE) — рядки розподілу накладних з документом-джерелом: розшифровка
-    факту (живий запит по кліку) і SourceDocumentGUID — які платежі вже потрапили у факт місяця.
+  • BudgetFactDetails (PBI_BUDGET_DETAILS_TABLE) — проводки 1С по рахунках 8100/8200 з документом-джерелом
+    (розшифровка факту — живий запит по кліку; рахунок, Дт/Кт, зміст проводки) і SourceDocumentGUID — документ-
+    реєстратор проводки: які платежі вже потрапили у факт місяця.
+Факт — як у кубі: регістр «Хозрасчетный», дебет 8100/8200 (+), кредит лише при перекласифікації між ними (−, сторно);
+з'являється одразу після проведення документа, без місячного розподілу накладних.
 Суми — у USD. GUID — 32 hex без 0x (як Departments[DepartmentGUID]); нулі — «Інше / не розподілено».
 
 Відділ у звіті — ключ: код відділу з довідника (departments.code_by_guid), "-" — «Інше / не розподілено» (нульовий
@@ -15,7 +18,7 @@ GUID), "?<GUID>" — відділ, якого немає в довіднику �
 Залишок статті для заявки (remaining) = план місяця − факт 1С − заявки PayDesk у дорозі. Відділ бюджету — Owner
 статті (OwnerDepartmentGUID), якщо він є, інакше відділ заявки (так само факт розноситься в 1С). «У дорозі» —
 заявки цього місяця з тією ж статтею й відділом бюджету: на погодженні, «До оплати» й оплачені, платіж яких
-(payment_links) ще не з'явився серед документів розподілу місяця. Місяць заявки — місяць оплати для оплачених,
+(payment_links) ще не з'явився серед документів-джерел проводок 8100/8200 місяця. Місяць заявки — місяць оплати для оплачених,
 інакше місяць «Дати оплати», але не раніше поточного. Стаття «є в бюджеті», якщо у відділу на неї є план у цьому році.
 Без Power BI — мокові дані. Усе це діє, лише коли бюджет увімкнено в адмінці (enabled()).
 """
@@ -404,7 +407,7 @@ def _families(rows, fam_of, prefix):
 # ---------------------------------------------------------------- розшифровка факту
 
 def details(key, item, year, months):
-    """Рядки розподілу (документи 1С) за відділом, статтею й місяцями: {"rows", "total", "error"}."""
+    """Проводки 1С по 8100/8200 (документи-джерела) за відділом, статтею й місяцями: {"rows", "total", "error"}."""
     months = sorted(months) or [1]
     m1, m2 = months[0], months[-1]
     if not expense_items._configured():
@@ -424,7 +427,8 @@ def details(key, item, year, months):
     out = [{"date": str(r.get("Date") or "")[:10], "doc_type": r.get("DocumentType") or "",
             "doc_number": str(r.get("DocumentNumber") or "").strip(), "doc_date": str(r.get("DocumentDate") or "")[:10],
             "employee": r.get("EmployeeName") or "", "comment": str(r.get("Comment") or "").strip(),
-            "status": r.get("AllocationStatus") or "", "distribution": str(r.get("DistributionNumber") or "").strip(),
+            "status": r.get("AllocationStatus") or "", "account": str(r.get("Account") or "").strip(),
+            "side": str(r.get("Side") or "").strip(), "entry": str(r.get("EntryText") or "").strip(),
             "amount": _num(r.get("AmountUSD"))} for r in raw]
     out.sort(key=lambda r: (r["date"], r["doc_date"], r["doc_number"]))
     return {"rows": out, "error": None}
@@ -441,16 +445,24 @@ def _mock_details(key, item, year, months):
         h = zlib.crc32(f"{key}{item}{r['month']}".encode())
         parts = 1 + h % 3
         left = r["fact"]
+        storno = parts == 3 and h % 2 == 0  # іноді — перекласифікація: сторно (Кт) і повторна витрата (Дт)
         for i in range(parts):
             amount = round(left if i == parts - 1 else r["fact"] * (0.5 if parts == 2 else 0.3), 2)
             left = round(left - amount, 2)
             k = (h >> (i * 3)) % len(kinds)
             day = 3 + (h >> i) % 24
-            out.append({"date": f"{r['month']}-28", "doc_type": kinds[k], "doc_number": f"FTP{(h + i) % 100000:08d}",
-                        "doc_date": f"{r['month']}-{day:02d}", "employee": people[k], "status":
-                        "На Owner статті" if r["owner"] else "Прямий (відділ рядка)",
-                        "comment": f"{r['item_name']} — {MONTHS[int(r['month'][5:7]) - 1].lower()}",
-                        "distribution": f"РН{int(r['month'][5:7]):04d}", "amount": amount})
+            account = "8200" if r["owner"] else "8100"
+            row_ = {"date": f"{r['month']}-{day:02d}", "doc_type": kinds[k], "doc_number": f"FTP{(h + i) % 100000:08d}",
+                    "doc_date": f"{r['month']}-{day:02d}", "employee": people[k], "status":
+                    "На Owner статті" if r["owner"] else "Прямий (відділ рядка)",
+                    "comment": f"{r['item_name']} — {MONTHS[int(r['month'][5:7]) - 1].lower()}",
+                    "account": account, "side": "Дт", "entry": "", "amount": amount}
+            if storno and i == 1:  # сторно з 8100 і та сама сума на 8200 — разом 0, факт не змінюється
+                out.append({**row_, "doc_type": "Операция (бухгалтерская)", "side": "Кт", "account": "8100",
+                            "amount": -amount, "entry": "Перекласифікація 8100 → 8200", "employee": ""})
+                out.append({**row_, "doc_type": "Операция (бухгалтерская)", "account": "8200", "amount": amount,
+                            "entry": "Перекласифікація 8100 → 8200", "employee": ""})
+            out.append(row_)
     out.sort(key=lambda r: (r["date"], r["doc_date"], r["doc_number"]))
     return out
 
@@ -521,7 +533,8 @@ _fact_docs_lock = threading.Lock()
 
 
 def in_fact_docs(month):
-    """GUID документів-джерел, що вже потрапили в розподіл місяця (BudgetFactDetails), — кеш на 30 хв."""
+    """GUID документів-джерел проводок 8100/8200 місяця (BudgetFactDetails.SourceDocumentGUID) — платежі, що вже у
+    факті; кеш на час оновлення бюджету."""
     if not expense_items._configured():
         return frozenset()
     with _fact_docs_lock:

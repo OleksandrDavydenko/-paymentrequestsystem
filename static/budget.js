@@ -112,14 +112,17 @@
         if (res.error) { body.innerHTML = '<p class="err">Не вдалося отримати документи: ' + esc(res.error) + '</p>'; return; }
         if (!res.rows.length) { body.innerHTML = '<p class="muted">Документів немає.</p>'; return; }
         const rows = res.rows.map(r => '<tr>' +
-          '<td data-label="Дата розподілу">' + day(r.date) + (r.distribution ? '<div class="muted">№ ' + esc(r.distribution) + '</div>' : '') + '</td>' +
+          '<td data-label="Дата проводки">' + day(r.date) +
+            (r.account ? '<div class="muted">' + esc(r.side ? r.side + ' ' : '') + esc(r.account) + '</div>' : '') + '</td>' +
           '<td data-label="Документ"><strong>' + esc(r.doc_type) + '</strong>' + (r.doc_number ? ' № ' + esc(r.doc_number) : '') +
             (r.doc_date ? '<div class="muted">від ' + day(r.doc_date) + '</div>' : '') + '</td>' +
           '<td data-label="Співробітник">' + (esc(r.employee) || '<span class="muted">—</span>') + '</td>' +
           '<td data-label="Примітка">' + esc(r.comment) +
+            (r.entry && r.entry !== r.comment ? '<div class="muted">' + esc(r.entry) + '</div>' : '') +
+            (Number(r.amount) < 0 ? ' <span class="badge grey" title="Кредит 8100/8200 при перекласифікації між рахунками">сторно</span>' : '') +
             (r.status && r.status !== 'Прямий (відділ рядка)' ? ' <span class="badge grey">' + esc(r.status.toLowerCase()) + '</span>' : '') + '</td>' +
           '<td class="num" data-label="Сума, USD">' + fmt(r.amount) + '</td></tr>').join('');
-        body.innerHTML = '<div class="table-wrap"><table class="stack bg-details"><thead><tr><th>Дата розподілу</th><th>Документ</th>' +
+        body.innerHTML = '<div class="table-wrap"><table class="stack bg-details"><thead><tr><th>Дата проводки</th><th>Документ</th>' +
           '<th>Співробітник</th><th>Примітка</th><th class="num">Сума, USD</th></tr></thead><tbody>' + rows +
           '</tbody><tfoot><tr><td colspan="4">Разом: ' + res.rows.length + ' рядк(ів)</td><td class="num">' + fmt(res.total) +
           '</td></tr></tfoot></table></div>';

@@ -1,80 +1,196 @@
-/* PayDesk · BudgetFactDetails — розшифровка факту бюджету: рядки розподілу накладних з документом-джерелом, USD.
-   DepartmentGUID / ExpenseItemGUID / Month — ті самі, що в BudgetPlanFact (маршрут по Owner статті).
-   EmployeeGUID — поки лише для «Списання» (СписаниеДенСредств.Сотрудник = _Fld10416RRef, підтверджено);
-   для інших типів — нулі, доки не звірено поле (як у кубі). */
+/* PayDesk · BudgetFactDetails — розшифровка факту бюджету: проводки 1С по рахунках 8100 / 8200 з документом-джерелом, USD.
+   Та сама логіка, що й ФАКТ у BudgetPlanFact (і fact_actual куба FTP_Budgeting): регістр «Хозрасчетный» (_AccRg6732),
+   дебет 8100/8200 (+), кредит 8100/8200 лише при перекласифікації між ними (−, сторно); стаття — субконто своєї сторони;
+   відділ — Owner статті, інакше відділ проводки (ОтделДт/Кт), інакше «Отдел» шапки документа-джерела; без премій
+   керівникам (НачислениеЗПпоОкладам, Вид = порядок 1).
+   DepartmentGUID / ExpenseItemGUID / Month — ті самі, що в BudgetPlanFact. LineDepartmentGUID — відділ документа.
+   SourceDocumentGUID — документ-реєстратор проводки: за ним PayDesk бачить, що платіж оплаченої заявки вже у факті.
+   EmployeeGUID — лише для «Списання» (СписаниеДенСредств.Сотрудник = _Fld10416RRef), як у кубі.
+   Без CTE (WITH): рахунки й типи документів — вкладеними запитами, щоб запит працював у Power BI як є. */
 SELECT
     dt.D                                                                AS [Date],
     DATEFROMPARTS(YEAR(dt.D), MONTH(dt.D), 1)                           AS [Month],
-    CONVERT(varchar(32), r.DepRef, 2)                                   AS DepartmentGUID,
-    CONVERT(varchar(32), COALESCE(vt._Fld15234RRef, 0x00000000000000000000000000000000), 2) AS LineDepartmentGUID,
-    r.AllocationStatus,
-    CONVERT(varchar(32), COALESCE(vt._Fld15231RRef, 0x00000000000000000000000000000000), 2) AS ExpenseItemGUID,
+    CONVERT(varchar(32), CASE rt.Route WHEN 2 THEN k.OwnerDep
+                                       WHEN 1 THEN COALESCE(k.DocDep, 0x00000000000000000000000000000000)
+                                       ELSE 0x00000000000000000000000000000000 END, 2) AS DepartmentGUID,
+    CONVERT(varchar(32), COALESCE(k.DocDep, 0x00000000000000000000000000000000), 2)    AS LineDepartmentGUID,
+    CASE rt.Route WHEN 2 THEN N'На Owner статті'
+                  WHEN 1 THEN N'Прямий (відділ рядка)'
+                  ELSE        N'Не розподілено: стаття не знайдена' END             AS AllocationStatus,
+    CONVERT(varchar(32), COALESCE(sk.ItemRef, 0x00000000000000000000000000000000), 2) AS ExpenseItemGUID,
     COALESCE(RTRIM(vr._Code), N'')                                      AS ExpenseItemCode,
-    CAST(vt._Fld15232 AS numeric(28,2))                                 AS AmountUSD,
-    src.DocumentType,
-    CONVERT(varchar(32), vt._Fld15230_RRRef, 2)                         AS SourceDocumentGUID,
-    src.DocumentNumber,
-    CAST(DATEADD(year, -2000, src.DocDateTime) AS date)                 AS DocumentDate,
-    src.Comment,
-    CONVERT(varchar(32), COALESCE(src.EmpRef, 0x00000000000000000000000000000000), 2) AS EmployeeGUID,
-    COALESCE(p._Description, N'')                                       AS EmployeeName,
-    doc._Number                                                         AS DistributionNumber,
-    CAST(vt._LineNo15229 AS int)                                        AS [LineNo]
-FROM dbo._Document15134_VT15228 vt
-INNER JOIN dbo._Document15134 doc ON doc._IDRRef = vt._Document15134_IDRRef
-LEFT JOIN dbo._Reference4924  vr       ON vr._IDRRef       = vt._Fld15231RRef
-LEFT JOIN dbo._Document7811   spis     ON spis._IDRRef     = vt._Fld15230_RRRef AND vt._Fld15230_RTRef = 0x00001E83
-LEFT JOIN dbo._Document7810   nakl     ON nakl._IDRRef     = vt._Fld15230_RRRef AND vt._Fld15230_RTRef = 0x00001E82
-LEFT JOIN dbo._Document4935   prih     ON prih._IDRRef     = vt._Fld15230_RRRef AND vt._Fld15230_RTRef = 0x00001347
-LEFT JOIN dbo._Document6618   vnutr    ON vnutr._IDRRef    = vt._Fld15230_RRRef AND vt._Fld15230_RTRef = 0x000019DA
-LEFT JOIN dbo._Document13888  obmen    ON obmen._IDRRef    = vt._Fld15230_RRRef AND vt._Fld15230_RTRef = 0x00003640
-LEFT JOIN dbo._Document15307  zp_okl   ON zp_okl._IDRRef   = vt._Fld15230_RRRef AND vt._Fld15230_RTRef = 0x00003BCB
-LEFT JOIN dbo._Document15308  zp_proc  ON zp_proc._IDRRef  = vt._Fld15230_RRRef AND vt._Fld15230_RTRef = 0x00003BCC
-LEFT JOIN dbo._Document18759  kom_bank ON kom_bank._IDRRef = vt._Fld15230_RRRef AND vt._Fld15230_RTRef = 0x00004947
-CROSS APPLY (SELECT CAST(DATEADD(year, -2000, doc._Date_Time) AS date) AS D) dt
-CROSS APPLY (SELECT
-    CASE
-        WHEN vr._IDRRef IS NULL THEN 0x00000000000000000000000000000000
-        WHEN vr._Fld19036RRef IS NOT NULL AND vr._Fld19036RRef <> 0x00000000000000000000000000000000
-            THEN vr._Fld19036RRef
-        ELSE COALESCE(vt._Fld15234RRef, 0x00000000000000000000000000000000)
-    END AS DepRef,
-    CASE
-        WHEN vr._IDRRef IS NULL THEN N'Не розподілено: стаття не знайдена'
-        WHEN vr._Fld19036RRef IS NOT NULL AND vr._Fld19036RRef <> 0x00000000000000000000000000000000
-            THEN N'На Owner статті'
-        ELSE N'Прямий (відділ рядка)'
-    END AS AllocationStatus) r
-CROSS APPLY (SELECT
-    CASE vt._Fld15230_RTRef
-        WHEN 0x00001E83 THEN N'Списання'           WHEN 0x00001E82 THEN N'Накладні витрати'
-        WHEN 0x00001347 THEN N'Прихід'             WHEN 0x000019DA THEN N'Внутрішнє переміщення'
-        WHEN 0x00003640 THEN N'Обмін'              WHEN 0x00003BCB THEN N'Нарахування ЗП по окладах'
-        WHEN 0x00003BCC THEN N'Інше нарахування/утримання ЗП' WHEN 0x00004947 THEN N'Розподіл комісій банку'
-        ELSE N'Інше'
-    END AS DocumentType,
-    CASE vt._Fld15230_RTRef
+    CAST(sd.Sign * r._Fld6735 AS numeric(28,2))                         AS AmountUSD,
+    COALESCE(tp.Name, N'Інше')                                          AS DocumentType,
+    CONVERT(varchar(32), r._RecorderRRef, 2)                            AS SourceDocumentGUID,
+    CASE r._RecorderTRef
         WHEN 0x00001E83 THEN spis._Number    WHEN 0x00001E82 THEN nakl._Number
         WHEN 0x00001347 THEN prih._Number    WHEN 0x000019DA THEN vnutr._Number
         WHEN 0x00003640 THEN obmen._Number   WHEN 0x00003BCB THEN zp_okl._Number
         WHEN 0x00003BCC THEN zp_proc._Number WHEN 0x00004947 THEN kom_bank._Number
-    END AS DocumentNumber,
-    CASE vt._Fld15230_RTRef
-        WHEN 0x00001E83 THEN spis._Date_Time    WHEN 0x00001E82 THEN nakl._Date_Time
-        WHEN 0x00001347 THEN prih._Date_Time    WHEN 0x000019DA THEN vnutr._Date_Time
-        WHEN 0x00003640 THEN obmen._Date_Time   WHEN 0x00003BCB THEN zp_okl._Date_Time
-        WHEN 0x00003BCC THEN zp_proc._Date_Time WHEN 0x00004947 THEN kom_bank._Date_Time
-    END AS DocDateTime,
-    CASE vt._Fld15230_RTRef
-        WHEN 0x00001E83 THEN spis._Fld7982    WHEN 0x00001E82 THEN nakl._Fld7938
-        WHEN 0x00001347 THEN prih._Fld5110    WHEN 0x000019DA THEN vnutr._Fld6630
-        WHEN 0x00003640 THEN obmen._Fld13903  WHEN 0x00003BCB THEN zp_okl._Fld15323
+    END                                                                 AS DocumentNumber,
+    CAST(DATEADD(year, -2000, COALESCE(
+        spis._Date_Time, nakl._Date_Time, prih._Date_Time, vnutr._Date_Time,
+        obmen._Date_Time, zp_okl._Date_Time, zp_proc._Date_Time, kom_bank._Date_Time, r._Period)) AS date) AS DocumentDate,
+    CASE r._RecorderTRef
+        WHEN 0x00001E83 THEN spis._Fld7982     WHEN 0x00001E82 THEN nakl._Fld7938
+        WHEN 0x00001347 THEN prih._Fld5110     WHEN 0x000019DA THEN vnutr._Fld6630
+        WHEN 0x00003640 THEN obmen._Fld13903   WHEN 0x00003BCB THEN zp_okl._Fld15323
         WHEN 0x00003BCC THEN zp_proc._Fld15350 WHEN 0x00004947 THEN kom_bank._Fld18761
-    END AS Comment,
-    CASE vt._Fld15230_RTRef
-        WHEN 0x00001E83 THEN spis._Fld10416RRef     -- СписаниеДенСредств.Сотрудник (підтверджено)
-        -- інші типи: дописати поле, коли буде звірене (як у кубі)
-    END AS EmpRef) src
-LEFT JOIN dbo._Reference59 p ON p._IDRRef = src.EmpRef
-WHERE doc._Marked = 0x00 AND doc._Posted = 0x01
-  AND doc._Date_Time >= DATEADD(year, 2000, '2024-01-01')
+    END                                                                 AS Comment,
+    CONVERT(varchar(32), COALESCE(CASE WHEN r._RecorderTRef = 0x00001E83 THEN spis._Fld10416RRef END,
+                                  0x00000000000000000000000000000000), 2) AS EmployeeGUID,
+    COALESCE(p._Description, N'')                                       AS EmployeeName,
+    RTRIM(a.Code)                                                       AS Account,
+    RTRIM(cor._Code)                                                    AS CorrAccount,
+    CASE sd.Side WHEN 0 THEN N'Дт' ELSE N'Кт' END                       AS Side,
+    r._Fld6738                                                          AS EntryText
+FROM dbo._AccRg6732 r
+CROSS APPLY (VALUES
+    (0,  1, r._AccountDtRRef, r._AccountCtRRef, r._Fld17936DtRRef),    -- дебет: витрата
+    (1, -1, r._AccountCtRRef, r._AccountDtRRef, r._Fld17936CtRRef)     -- кредит: сторно при перекласифікації
+) sd(Side, Sign, AccRef, CorAccRef, DepLineRef)
+INNER JOIN (
+    SELECT ac._IDRRef, ac._Code AS Code
+    FROM dbo._Acc6699 ac
+    LEFT JOIN dbo._Acc6699 p1 ON p1._IDRRef = ac._ParentIDRRef
+    LEFT JOIN dbo._Acc6699 p2 ON p2._IDRRef = p1._ParentIDRRef
+    WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')
+) a ON a._IDRRef = sd.AccRef
+LEFT JOIN dbo._Acc6699 cor ON cor._IDRRef = sd.CorAccRef
+LEFT JOIN (VALUES
+        (0x000012EB, N'Сделка'),
+        (0x00001318, N'Счет'),
+        (0x00001344, N'Коносамент'),
+        (0x00001345, N'Наряд'),
+        (0x00001347, N'Прихід'),
+        (0x00001428, N'Расход'),
+        (0x000014C2, N'Поручение'),
+        (0x00001517, N'ДвижениеКонтейнеров'),
+        (0x00001599, N'CMR'),
+        (0x00001601, N'Котировка'),
+        (0x000016BE, N'НалоговыеНакладные'),
+        (0x00001708, N'ПроформаСчета'),
+        (0x00001873, N'Аванс2'),
+        (0x000018F3, N'ДебитНота'),
+        (0x00001903, N'КредитНота'),
+        (0x000019DA, N'Внутрішнє переміщення'),
+        (0x00001A9B, N'ЗаявкаНаОплату'),
+        (0x00001B41, N'ОсновныеСредства'),
+        (0x00001B76, N'ОперацияБух'),
+        (0x00001BCD, N'КурсовыеРазницы'),
+        (0x00001C19, N'СохранениеОстатков'),
+        (0x00001CA2, N'Акты'),
+        (0x00001CE1, N'ЗакрытиеПериода'),
+        (0x00001D6B, N'СтатусКонтейнера'),
+        (0x00001D6C, N'ЗаявкаНаАвтоперевозку'),
+        (0x00001E81, N'РасходнаяНакладная'),
+        (0x00001E82, N'Накладні витрати'),
+        (0x00001E83, N'Списання'),
+        (0x00001E84, N'ВыгрузкаРегламентированныхОтчетов'),
+        (0x00002068, N'ИзвещениеНаДемередж'),
+        (0x00002240, N'ПоступлениеАктивов'),
+        (0x00002241, N'НачислениеЗП'),
+        (0x00002242, N'ВводВЭксплуатацию'),
+        (0x00002243, N'ВыплатаЗП'),
+        (0x00002244, N'Взаимозачет'),
+        (0x00002544, N'НачислениеИзноса'),
+        (0x00002545, N'Агенты'),
+        (0x00002546, N'ЗаправкаАвтомобилей'),
+        (0x00002547, N'ЭлектронноеПисьмо'),
+        (0x00002548, N'ФинансовыйРезультат'),
+        (0x00002549, N'НалоговаяНакладнаяВходящая'),
+        (0x0000254A, N'НачислениеВДРпоАвансам'),
+        (0x0000296F, N'ПланКасса'),
+        (0x00002BA0, N'БалансСЛинией'),
+        (0x00002BB8, N'СливГСМ'),
+        (0x00002BB9, N'РемонтныйЛист'),
+        (0x00002CC3, N'Бюджет'),
+        (0x00002D1C, N'ЗаявкаНаЖДконтейнер'),
+        (0x00002D81, N'Аванс'),
+        (0x00002D82, N'ПереоценкаВалютныхОстатков'),
+        (0x00002E06, N'РегламентированныйОтчет'),
+        (0x000034EC, N'ПоступлениеДС'),
+        (0x0000350A, N'СписаниеДС'),
+        (0x00003560, N'ОбязательствоДебет'),
+        (0x00003561, N'ОбязательствоКредит'),
+        (0x00003598, N'Кредит'),
+        (0x00003640, N'Обмін'),
+        (0x000036CB, N'ОбменСделка'),
+        (0x00003925, N'ПоступлениеТоваров'),
+        (0x00003926, N'СписаниеТоваров'),
+        (0x00003927, N'ПеремещениеТоваров'),
+        (0x00003928, N'ПоступлениеДопРасходов'),
+        (0x00003AAA, N'ОбъединениеБалансов'),
+        (0x00003AAB, N'ОбменБалансами'),
+        (0x00003B1E, N'РаспределениеНакладныхРасходов'),
+        (0x00003BAD, N'ПланированиеАванса'),
+        (0x00003BCB, N'Нарахування ЗП по окладах'),
+        (0x00003BCC, N'Інше нарахування/утримання ЗП'),
+        (0x00003BCD, N'ВыплатаЗПпоВалютам'),
+        (0x00003C2A, N'ЗаявкаНаАвтоперевозкуКлиент'),
+        (0x00003CC6, N'НачислениеБонусов'),
+        (0x00003D45, N'OLDНачислениеБонусовОперативный'),
+        (0x00003DA1, N'НачислениеПремий'),
+        (0x00003E0C, N'НачислениеБонусовОперативнымМенеджерам'),
+        (0x00003E59, N'НачислениеШтрафа'),
+        (0x00003ED0, N'НачислениеБонусовУчредителям'),
+        (0x00003FA1, N'Консоль'),
+        (0x000040F7, N'СправкаОТранспортныхРасходах'),
+        (0x00004168, N'КонсольLCL'),
+        (0x00004231, N'ЗаявкаМореАвиаЖДУкр'),
+        (0x00004239, N'ЗаявкаМореАвиаЖДАнгл'),
+        (0x0000424E, N'ИнвойсыКонтрактодержатель'),
+        (0x00004266, N'РаспределениеКурсовыхРазниц'),
+        (0x00004267, N'КупляПродажаВалюты'),
+        (0x0000446A, N'ЗаявкаАвто'),
+        (0x00004616, N'ЗаявкаНаОплатуСчета'),
+        (0x00004617, N'ЗаявкаНаОплатуРасходов'),
+        (0x00004743, N'КомандаОтделаПродаж'),
+        (0x0000476C, N'НачислениеПремийНачальникамОтделов'),
+        (0x00004832, N'ВнутреннееПеремещениеФин'),
+        (0x0000492D, N'КомплексФинСделок'),
+        (0x00004947, N'Розподіл комісій банку'),
+        (0x00004A00, N'БюджетНовый'),
+        (0x00004A01, N'ПланированиеПродаж')
+) tp(TRef, Name) ON tp.TRef = r._RecorderTRef
+OUTER APPLY (
+    SELECT MAX(CASE WHEN ed._Value_RTRef = 0x0000133C THEN ed._Value_RRRef END) AS ItemRef
+    FROM dbo._AccRgED6757 ed
+    WHERE ed._RecorderTRef = r._RecorderTRef AND ed._RecorderRRef = r._RecorderRRef
+      AND ed._LineNo = r._LineNo AND ed._Correspond = sd.Side
+) sk
+LEFT JOIN dbo._Reference4924  vr       ON vr._IDRRef       = sk.ItemRef           -- без фільтра _Marked, щоб не губити суми
+LEFT JOIN dbo._Document7811   spis     ON spis._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001E83
+LEFT JOIN dbo._Document7810   nakl     ON nakl._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001E82
+LEFT JOIN dbo._Document4935   prih     ON prih._IDRRef     = r._RecorderRRef AND r._RecorderTRef = 0x00001347
+LEFT JOIN dbo._Document6618   vnutr    ON vnutr._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x000019DA
+LEFT JOIN dbo._Document13888  obmen    ON obmen._IDRRef    = r._RecorderRRef AND r._RecorderTRef = 0x00003640
+LEFT JOIN dbo._Document15307  zp_okl   ON zp_okl._IDRRef   = r._RecorderRRef AND r._RecorderTRef = 0x00003BCB
+LEFT JOIN dbo._Document15308  zp_proc  ON zp_proc._IDRRef  = r._RecorderRRef AND r._RecorderTRef = 0x00003BCC
+LEFT JOIN dbo._Document18759  kom_bank ON kom_bank._IDRRef = r._RecorderRRef AND r._RecorderTRef = 0x00004947
+LEFT JOIN dbo._Enum15970      zp_vid   ON zp_vid._IDRRef   = zp_okl._Fld15975RRef  -- ВидЗП документа нарахування ЗП
+LEFT JOIN dbo._Reference13165 hdr_dep  ON hdr_dep._IDRRef  = CASE r._RecorderTRef  -- «Отдел» шапки документа-джерела
+        WHEN 0x00001E83 THEN spis._Fld14095RRef     -- СписаниеДенСредств.Отдел
+        WHEN 0x00001E82 THEN nakl._Fld13855RRef     -- НакладныеРасходы.Отдел
+        WHEN 0x00003BCB THEN zp_okl._Fld15638RRef   -- НачислениеЗПпоОкладам.Отдел
+        WHEN 0x00003BCC THEN zp_proc._Fld15639RRef  -- ПрочееНачислениеУдержаниеПоЗП.Отдел
+    END
+LEFT JOIN dbo._Reference59    p        ON p._IDRRef        = CASE WHEN r._RecorderTRef = 0x00001E83 THEN spis._Fld10416RRef END
+CROSS APPLY (SELECT
+    COALESCE(NULLIF(sd.DepLineRef, 0x00000000000000000000000000000000), hdr_dep._IDRRef) AS DocDep,
+    NULLIF(vr._Fld19036RRef, 0x00000000000000000000000000000000)                        AS OwnerDep) k
+CROSS APPLY (SELECT CASE
+    WHEN vr._IDRRef IS NULL        THEN 0   -- статті немає
+    WHEN k.OwnerDep IS NOT NULL    THEN 2   -- непряма: Owner статті
+    ELSE                                1   -- пряма: відділ документа
+    END AS Route) rt
+CROSS APPLY (SELECT CAST(DATEADD(year, -2000, r._Period) AS date) AS D) dt
+WHERE r._Active = 0x01
+  AND r._Period >= '4024-01-01'
+  AND (sd.Side = 0 OR r._AccountDtRRef IN (
+        SELECT ac._IDRRef
+            FROM dbo._Acc6699 ac
+            LEFT JOIN dbo._Acc6699 p1 ON p1._IDRRef = ac._ParentIDRRef
+            LEFT JOIN dbo._Acc6699 p2 ON p2._IDRRef = p1._ParentIDRRef
+            WHERE RTRIM(ac._Code) IN ('8100', '8200') OR RTRIM(p1._Code) IN ('8100', '8200') OR RTRIM(p2._Code) IN ('8100', '8200')))
+  AND NOT (r._RecorderTRef = 0x00003BCB AND COALESCE(zp_vid._EnumOrder, -1) = 1)   -- без премій керівникам
