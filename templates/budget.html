@@ -27,8 +27,8 @@
     <span class="spacer"></span>
     <span class="muted bg-source">
       {% if status.source == 'mock' %}<span class="badge amber">демо-дані</span> Power BI не підключено
-      {% else %}Дані 1С через Power BI{% if status.updated %} · оновлено {{ status.updated[:16].replace('T', ' ') }}{% endif %}{% if status.error %} · <span class="err">помилка оновлення: {{ status.error }}</span>{% endif %}{% endif %}
-      · суми в USD</span>
+      {% else %}{% if status.updated %}Оновлено {{ status.updated[:16].replace('T', ' ') }} · {% endif %}{% if status.error %}<span class="err">помилка оновлення: {{ status.error }}</span> · {% endif %}{% endif %}
+      суми в USD</span>
   </div>
 
   {% if not options %}
